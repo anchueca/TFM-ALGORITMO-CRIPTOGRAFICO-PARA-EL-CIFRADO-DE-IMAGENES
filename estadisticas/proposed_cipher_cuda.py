@@ -111,43 +111,41 @@ def plot_histograms(image): # para pruebas luego eliminar
 
 def generate_password(initial_password, num_blocks, row_number, column_number, byte_precission_level, color_depth, flow_rounds):
 
-    # Cálculo de tamaños en bytes
+    # Required lengths
     bytes_for_rows = row_number * color_depth // 8
     bytes_for_columns = column_number * color_depth // 8
     bytes_for_blocks = num_blocks * byte_precission_level
     bytes_for_flow = row_number * byte_precission_level
 
-    # Longitud total de los bytes necesarios
+    # Total length
     length_bytes = bytes_for_rows + bytes_for_columns + bytes_for_blocks + bytes_for_flow * flow_rounds
-    hash = get_Hash(initial_password, length_bytes)  # Asumiendo que get_Hash está definida
+    hash = get_Hash(initial_password, length_bytes)
 
     index = 0
 
-    # Procesar filas
+    # rows
     n = bytes_for_rows
     rows_automata_hash = np.array([int(bit) for byte in hash[index:index+n] for bit in format(byte, '08b')])
-    index += n  # Actualizar el índice
+    index += n
 
-    # Procesar columnas
+    # columns
     n = bytes_for_columns
     columns_automata_hash = np.array([int(bit) for byte in hash[index:index+n] for bit in format(byte, '08b')])
-    index += n  # Actualizar el índice
+    index += n
 
-    # Procesar bloques (float normalizado en el rango [0, 1])
+    # Blocks
     n = bytes_for_blocks
     blocks_hash = [struct.unpack('>H', bytes(hash[index + i:index + i + 2]))[0] / 65535.0 for i in range(0, n, 2)]
-    index += n  # Actualizar el índice
+    index += n
 
-    # Procesar flujo (también como un float normalizado)
+    # Flow
     flow_hash = []
     for r in range(flow_rounds):
         n = bytes_for_flow
         flow_hash.append([struct.unpack('>H', bytes(hash[index + i:index + i + 2]))[0] / 65535.0 for i in range(0, n, 2)])
-        index += n  # Actualizar el índice
+        index += n
     
     return rows_automata_hash, columns_automata_hash, blocks_hash, flow_hash
-
-
 
 
 def encrypt_image(image,model, password, rounds, show=0):
@@ -161,24 +159,37 @@ def encrypt_image(image,model, password, rounds, show=0):
 
     num_blocks= 256
     precission_level=2
-    rows,columns = image.shape[:2]
+    image_rows,image_columns = image.shape[:2]
     color_depth = 8
-    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,rows,columns,precission_level,color_depth,rounds)
+    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,color_depth,rounds)
 
-    permutation_rows = generate_partition_from_automata(row_password,image.shape[0])
-    permutation_columns = generate_partition_from_automata(column_password,image.shape[1])
+    # Calculate the number of rows and columns
+    num_rows = int(math.ceil(math.sqrt(num_blocks)))  # Rows
+    num_cols = int(math.ceil(num_blocks / num_rows))  # Columns
+
+    # BLock size as square as possible
+    block_height = image_rows // num_rows
+    block_width = image_columns // num_cols
+
+    block_data_lenght=np.prod(block_height*block_width)
+    bloock_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
+
+    permutation_rows = generate_partition_from_automata(row_password,image_rows)
+    permutation_columns = generate_partition_from_automata(column_password,image_columns)
     
     for round_number in range(rounds):
 
-        image = permute_image_rows(image,permutation_rows)
-        show_image(image,"permuted rows") if show>1 else None
+        for n in range(2):
 
-        
-        image = permute_image_columns(image,permutation_columns)
-        show_image(image,"permuted columns") if show>1 else None
+            image = permute_image_rows(image,permutation_rows)
+            show_image(image,"permuted rows") if show>1 else None
 
-        image = block_phase(image,num_blocks,model,block_password,False)
-        show_image(image,"reconstructed blocks") if show>1 else None
+            image = permute_image_columns(image,permutation_columns)
+            show_image(image,"permuted columns") if show>1 else None
+
+            image = image = block_phase(image,num_blocks,num_rows,num_cols,block_height,block_width,image_rows,image_columns,model,bloock_permutations,False)
+
+            show_image(image,"reconstructed blocks") if show>1 else None
 
         if round_number < rounds - 1:  # The last rounds do not flow encrypt
             actual_flow_password=flow_password[round_number]
@@ -245,13 +256,25 @@ def unencrypt_image(image,model, password, rounds, show=0):
 
     num_blocks= 256
     precission_level=2
-    rows,columns = image.shape[:2]
+    image_rows,image_columns = image.shape[:2]
     color_depth = 8
-    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,rows,columns,precission_level,color_depth,rounds)
+    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,color_depth,rounds)
     flow_password.reverse()
 
-    permutation_columns = invert_permutation(generate_partition_from_automata(column_password,image.shape[1]))
-    permutation_rows = invert_permutation(generate_partition_from_automata(row_password,image.shape[0]))
+    # Calculate the number of rows and columns
+    num_rows = int(math.ceil(math.sqrt(num_blocks)))  # Rows
+    num_cols = int(math.ceil(num_blocks / num_rows))  # Columns
+
+    # BLock size as square as possible
+    block_height = image_rows // num_rows
+    block_width = image_columns // num_cols
+
+    block_data_lenght=np.prod(block_height*block_width)
+    bloock_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
+    bloock_permutations= [invert_permutation(permitation) for permitation in bloock_permutations] # all blocks have the same size
+
+    permutation_columns = invert_permutation(generate_partition_from_automata(column_password,image_columns))
+    permutation_rows = invert_permutation(generate_partition_from_automata(row_password,image_rows))
     
     for round_number in range(rounds):
 
@@ -261,13 +284,14 @@ def unencrypt_image(image,model, password, rounds, show=0):
                 image,actual_flow_password=flow_encrypt_image_cuda(image,actual_flow_password)
                 show_image(image,"flow image") if show>1 else None
 
-        image = block_phase(image,num_blocks,model,block_password,True)
-        show_image(image,"reconstructed blocks") if show>1 else None
-        
-        image = permute_image_columns(image,permutation_columns)
-        
-        image = permute_image_rows(image,permutation_rows)
-        show_image(image,"unpermuted") if show>1 else None
+        for n in range(2):
+            image = block_phase(image,num_blocks,num_rows,num_cols,block_height,block_width,image_rows,image_columns,model,bloock_permutations,True)
+            show_image(image,"reconstructed blocks") if show>1 else None
+            
+            image = permute_image_columns(image,permutation_columns)
+            
+            image = permute_image_rows(image,permutation_rows)
+            show_image(image,"unpermuted") if show>1 else None
 
     if gris_scale:
         image = stack_image(image)
@@ -275,17 +299,10 @@ def unencrypt_image(image,model, password, rounds, show=0):
 
     return image
 
-def block_phase(image,num_blocks,model,block_password,unencryption):
+def block_phase(image,num_blocks,num_rows,num_cols,block_height,block_width,image_rows,image_columns,model,bloock_permutations,unencryption):
     '''Contains the block phase encryption'''
-    x,y = image.shape[:2]
 
-    # Calculate the number of rows and columns
-    num_rows = int(math.ceil(math.sqrt(num_blocks)))  # Rows
-    num_cols = int(math.ceil(num_blocks / num_rows))  # Columns
-
-    # BLock size as square as possible
-    block_height = x // num_rows
-    block_width = y // num_cols
+    
 
     blocks = []
     
@@ -295,10 +312,10 @@ def block_phase(image,num_blocks,model,block_password,unencryption):
         for j in range(num_cols):
             # begin and end of the block
             start_x = i * block_height
-            end_x = (i + 1) * block_height if (i + 1) * block_height <= x else x
+            end_x = (i + 1) * block_height if (i + 1) * block_height <= image_rows else image_rows
             
             start_y = j * block_width
-            end_y = (j + 1) * block_width if (j + 1) * block_width <= y else y
+            end_y = (j + 1) * block_width if (j + 1) * block_width <= image_columns else image_columns
             
             # Get the block
             block = image[start_x:end_x, start_y:end_y]
@@ -306,12 +323,6 @@ def block_phase(image,num_blocks,model,block_password,unencryption):
         blocks.append(row_blocks)
 
     blocks = np.array(blocks)
-
-
-    block_data_lenght=np.prod(blocks[0][0].shape[:2])
-    bloock_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
-    if unencryption:
-        bloock_permutations= [invert_permutation(permitation) for permitation in bloock_permutations] # all blocks have the same size
     
     #Permute the blocks in a 2D list (matrix) using a corresponding list of permutations.
     num_rows = len(blocks)
@@ -431,12 +442,9 @@ def invert_permutation(permutation):
 
 def generate_partition_from_automata(state,lenght):
     '''Generate a permutation from an automata'''
-
-    bit_depth= 8
-
     automata = ElementalCelularAutomata(state,len(state),30)
 
-    automata.step_cuda(10)
+    automata.step_cuda(100)
 
     number_list = automata.convert_to_int()[:lenght]
 

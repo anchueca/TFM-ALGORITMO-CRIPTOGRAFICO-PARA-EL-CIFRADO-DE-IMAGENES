@@ -31,3 +31,6 @@ estadisticas/__pycache__/lyapunov.cpython-313.pyc
 estadisticas/__pycache__/modeloCaos.cpython-313.pyc
 estadisticas/__pycache__/proposed_cipher.cpython-313.pyc
 estadisticas/__pycache__/stats.cpython-313.pyc
+permuted_columns.png
+permuted_rows.png
+reconstructed_blocks.png

@@ -5,7 +5,7 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
 
-kernel_code = """
+mod = SourceModule("""
 __global__ void evolve(unsigned char *current, unsigned char *next, int rule, int size) {
     int i = threadIdx.x + blockDim.x * blockIdx.x;
     if (i >= size) return;
@@ -17,32 +17,39 @@ __global__ void evolve(unsigned char *current, unsigned char *next, int rule, in
     int pattern = (left << 2) | (center << 1) | right;
     next[i] = (rule >> pattern) & 1;
 }
-"""
-
-mod = SourceModule(kernel_code)
+""")
 evolve_gpu = mod.get_function("evolve")
 
 class ElementalCelularAutomata:
 
-    def __init__(self,initial_state,size,rule):
+    def __init__(self,initial_state,size,rule,num_buffered=2):
         self.rule=np.int32(rule)
         self.size=size
         self.num_step=0
+        self.num_buffered = num_buffered  # Number of device buffers to cycle through
 
         if initial_state is None:
-            seed = int(time.time())
-            self.randomize(initial_state)
+            self.randomize( int(time.time()))
         else:
             if type(initial_state) is int:
                 self.randomize(initial_state)
             else:
-                self.state=initial_state
+                self.state = np.array(initial_state, dtype=np.uint8)
 
-        self.history = self.state.copy()
-        # GPU memory
-        self.dev_current = cuda.mem_alloc(self.state.nbytes)
-        self.dev_next = cuda.mem_alloc(self.state.nbytes)
-        cuda.memcpy_htod(self.dev_current, self.state)
+        # Use pinned memory for fast copy from device
+        self.state = cuda.pagelocked_empty(shape=self.size, dtype=np.uint8)
+        self.state[:] = np.random.randint(0, 2, size=self.size).astype(np.uint8)
+
+        self.history = self.state.copy().reshape(1, -1)
+
+        # Pre-allocate GPU buffers
+        self.dev_buffers = [cuda.mem_alloc(self.state.nbytes) for _ in range(num_buffered)]
+        for buf in self.dev_buffers:
+            cuda.memset_d8(buf, 0, self.state.nbytes)
+
+        # Copy initial state to first GPU buffer
+        cuda.memcpy_htod(self.dev_buffers[0], self.state)
+        self.current_index = 0
 
     def step(self,num_steps=1):
         for _ in range(num_steps):
@@ -52,22 +59,29 @@ class ElementalCelularAutomata:
                 new_state[i]=(self.rule>>value) & 1
                     
             self.state = new_state
-            #self.history = np.vstack((self.history, self.state))
+            self.history = np.vstack((self.history, self.state))
             self.num_step+=1
 
     def step_cuda(self, num_steps=1):
         for _ in range(num_steps):
+            current_buf = self.dev_buffers[self.current_index]
+            next_index = (self.current_index + 1) % self.num_buffered
+            next_buf = self.dev_buffers[next_index]
+
             evolve_gpu(
-                self.dev_current,
-                self.dev_next,
+                current_buf,
+                next_buf,
                 self.rule,
                 np.int32(self.size),
                 block=(256, 1, 1),
                 grid=((self.size + 255) // 256, 1)
             )
-            cuda.memcpy_dtoh(self.state, self.dev_next)
-            # swap buffers
-            self.dev_current, self.dev_next = self.dev_next, self.dev_current
+
+            # Copy result to pinned host memory (fast)
+            cuda.memcpy_dtoh(self.state, next_buf)
+
+            self.current_index = next_index
+            #self.history = np.vstack((self.history, self.state.copy()))
             self.num_step += 1
 
     def cleanup(self):
@@ -76,14 +90,13 @@ class ElementalCelularAutomata:
 
     
     def show(self):
-        cv2.imshow("Cellular Automata", self.state.astype(np.uint8) * 255)
+        cv2.imshow("Cellular Automata", self.history.astype(np.uint8) * 255)
         cv2.waitKey(0)
         
 
     def convert_to_int(self):
         # Convert matrix to bytes
         int_list = []
-
         # Process in chunks of 8 bits
         for n in range(0, len(self.state) - 7, 8):
             new_value = 0
