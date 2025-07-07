@@ -1,6 +1,5 @@
 import numpy as np
 import cv2
-import time
 import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
@@ -28,18 +27,10 @@ class ElementalCelularAutomata:
         self.num_step=0
         self.num_buffered = num_buffered  # Number of device buffers to cycle through
 
-        if initial_state is None:
-            self.randomize( int(time.time()))
-        else:
-            if type(initial_state) is int:
-                self.randomize(initial_state)
-            else:
-                self.state = np.array(initial_state, dtype=np.uint8)
+        self.state = np.array(initial_state, dtype=np.uint8)
 
         # Use pinned memory for fast copy from device
         self.state = cuda.pagelocked_empty(shape=self.size, dtype=np.uint8)
-        self.state[:] = np.random.randint(0, 2, size=self.size).astype(np.uint8)
-
         self.history = self.state.copy().reshape(1, -1)
 
         # Pre-allocate GPU buffers
@@ -85,8 +76,8 @@ class ElementalCelularAutomata:
             self.num_step += 1
 
     def cleanup(self):
-        self.dev_current.free()
-        self.dev_next.free()
+        for buf in self.dev_buffers:
+            buf.free()
 
     
     def show(self):
@@ -104,16 +95,3 @@ class ElementalCelularAutomata:
                 new_value = (new_value << 1) | int(self.state[n + i])
             int_list.append(new_value)
         return int_list
-
-
-    def randomize(self,seed):
-        np.random.seed(seed)
-        self.state = np.random.randint(0, 2, self.size).astype(bool)
-    
-if __name__ == "__main__":
-    iteraciones = input("iteraciones: ")
-    ca = ElementalCelularAutomata(None, 100, 30)
-    for n in range(int(iteraciones)):
-        ca.step_cuda(5)
-        ca.show()
-        ca.convert_to_int()

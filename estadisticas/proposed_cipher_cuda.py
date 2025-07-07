@@ -50,38 +50,52 @@ __global__ void flow_encrypt_recursive(
     }
 }
                          
-__global__ void permute_block_kernel(
-    unsigned char* block_in,
-    unsigned char* block_out,
-    int* permutation,
-    int h,
-    int w,
-    int channels)
-{
-    int idx = threadIdx.x + blockDim.x * blockIdx.x;
-    int size = h * w;
+__global__ void permute_blocks_kernel(
+    unsigned char *input,
+    unsigned char *output,
+    int *permutations,
+    int block_height,
+    int block_width,
+    int image_rows,
+    int image_cols,
+    int num_blocks_row,
+    int num_blocks_col,
+    int channels
+) {
+    int block_size = block_height * block_width;
+    int total_blocks = num_blocks_row * num_blocks_col;
+    int total_threads = block_size * total_blocks;
 
-    if (idx >= size) return;
+    int tid = threadIdx.x + blockDim.x * blockIdx.x;
+    if (tid >= total_threads) return;
 
-    int perm_idx = permutation[idx];
+    int block_id = tid / block_size;
+    int pixel_id = tid % block_size;
 
-    int h_norm = idx / w;
-    int w_norm = idx % w;
+    int block_row = block_id / num_blocks_col;
+    int block_col = block_id % num_blocks_col;
 
-    int h_perm = perm_idx / w;
-    int w_perm = perm_idx % w;
+    int perm_index = block_id * block_size + pixel_id;
+    int src_pos = permutations[perm_index];
 
-    for (int c = 0; c < channels; c++) {
-        int out_pos = (h_norm * w + w_norm) * channels + c;
-        int in_pos = (h_perm * w + w_perm) * channels + c;
-        block_out[out_pos] = block_in[in_pos];
+    int dst_y = block_row * block_height + pixel_id / block_width;
+    int dst_x = block_col * block_width + pixel_id % block_width;
+
+    int src_y = block_row * block_height + src_pos / block_width;
+    int src_x = block_col * block_width + src_pos % block_width;
+
+    for (int c = 0; c < channels; ++c) {
+        if (dst_y < image_rows && dst_x < image_cols && src_y < image_rows && src_x < image_cols) {
+            output[(dst_y * image_cols + dst_x) * channels + c] =
+                input[(src_y * image_cols + src_x) * channels + c];
+        }
     }
 }
 //CUDA
 """)
 
 flow_encrypt_recursive = cuda_code.get_function("flow_encrypt_recursive")
-permute_block_kernel = cuda_code.get_function("permute_block_kernel")
+permute_blocks_kernel = cuda_code.get_function("permute_blocks_kernel")
 
 def get_Hash(text,length_bytes):
     hash= hashlib.sha512(text.encode('utf-8'))
@@ -182,13 +196,12 @@ def encrypt_image(image,model, password, rounds, show=0):
         for n in range(2):
 
             image = permute_image_rows(image,permutation_rows)
-            show_image(image,"permuted rows") if show>1 else None
+            show_image(image,"permuted rows") if show>2 else None
 
             image = permute_image_columns(image,permutation_columns)
-            show_image(image,"permuted columns") if show>1 else None
+            show_image(image,"permuted columns") if show>2 else None
 
-            image = image = block_phase(image,num_blocks,num_rows,num_cols,block_height,block_width,image_rows,image_columns,model,bloock_permutations,False)
-
+            image = image = block_phase_parallel_cuda(image,num_rows,num_cols,block_height,block_width,bloock_permutations)
             show_image(image,"reconstructed blocks") if show>1 else None
 
         if round_number < rounds - 1:  # The last rounds do not flow encrypt
@@ -208,7 +221,7 @@ def encrypt_image(image,model, password, rounds, show=0):
 
 
 def flow_encrypt_image_cuda(image, seeds, r=0.6):
-    h, w = image.shape
+    h, w = image.shape[:2]
     image = image.astype(np.uint8).copy()
     seeds = np.array(seeds, dtype=np.float32)
     finals = np.zeros(h, dtype=np.float32)
@@ -285,7 +298,7 @@ def unencrypt_image(image,model, password, rounds, show=0):
                 show_image(image,"flow image") if show>1 else None
 
         for n in range(2):
-            image = block_phase(image,num_blocks,num_rows,num_cols,block_height,block_width,image_rows,image_columns,model,bloock_permutations,True)
+            image = block_phase_parallel_cuda(image,num_rows,num_cols,block_height,block_width,bloock_permutations)
             show_image(image,"reconstructed blocks") if show>1 else None
             
             image = permute_image_columns(image,permutation_columns)
@@ -299,111 +312,47 @@ def unencrypt_image(image,model, password, rounds, show=0):
 
     return image
 
-def block_phase(image,num_blocks,num_rows,num_cols,block_height,block_width,image_rows,image_columns,model,bloock_permutations,unencryption):
-    '''Contains the block phase encryption'''
+def block_phase_parallel_cuda(image, num_rows, num_cols, block_height, block_width, block_permutations):
+    h, w = image.shape[:2]
+    channels = 1 if image.ndim == 2 else image.shape[2]
+    total_blocks = num_rows * num_cols
+    block_size = block_height * block_width
 
-    
+    image_in = image.astype(np.uint8).ravel()
+    image_out = np.empty_like(image_in)
 
-    blocks = []
-    
-    # Split image into blocks
-    for i in range(num_rows):
-        row_blocks = []
-        for j in range(num_cols):
-            # begin and end of the block
-            start_x = i * block_height
-            end_x = (i + 1) * block_height if (i + 1) * block_height <= image_rows else image_rows
-            
-            start_y = j * block_width
-            end_y = (j + 1) * block_width if (j + 1) * block_width <= image_columns else image_columns
-            
-            # Get the block
-            block = image[start_x:end_x, start_y:end_y]
-            row_blocks.append(block)
-        blocks.append(row_blocks)
+    # Permutations: must be 1D array of shape (num_blocks * block_size)
+    flat_permutations = np.concatenate(block_permutations).astype(np.int32)
 
-    blocks = np.array(blocks)
-    
-    #Permute the blocks in a 2D list (matrix) using a corresponding list of permutations.
-    num_rows = len(blocks)
-    num_cols = len(blocks[0])
-    permuted_blocks = []
+    # Allocate device memory
+    d_input = cuda.mem_alloc(image_in.nbytes)
+    d_output = cuda.mem_alloc(image_out.nbytes)
+    d_permutations = cuda.mem_alloc(flat_permutations.nbytes)
 
-    for i in range(num_rows):
-        row = []
-        for j in range(num_cols):
-            block = blocks[i][j]
-            idx = i * num_cols + j  # linear index for permutation
-            row.append(permute_block_cuda(block, bloock_permutations[idx]))
-        permuted_blocks.append(row)
+    cuda.memcpy_htod(d_input, image_in)
+    cuda.memcpy_htod(d_permutations, flat_permutations)
 
-    blocks = np.array(permuted_blocks)
-    image = compose_image_from_blocks(blocks,image.shape,num_blocks)
+    threads_per_block = 256
+    grid_dim = (block_size + threads_per_block - 1)
 
-    return image
-
-
-def permute_block_cuda(block, permutation):
-    h, w = block.shape[:2]
-    channels = 1 if block.ndim == 2 else block.shape[2]
-
-    block_in = block.astype(np.uint8).ravel()
-    block_out = np.empty_like(block_in)
-    perm = np.array(permutation).astype(np.int32)
-
-    d_block_in = cuda.mem_alloc(block_in.nbytes)
-    d_block_out = cuda.mem_alloc(block_out.nbytes)
-    d_perm = cuda.mem_alloc(perm.nbytes)
-
-    cuda.memcpy_htod(d_block_in, block_in)
-    cuda.memcpy_htod(d_perm, perm)
-
-    block_size = 256
-    grid_size = (h * w + block_size - 1) // block_size
-
-    permute_block_kernel(
-        d_block_in,
-        d_block_out,
-        d_perm,
+    permute_blocks_kernel(
+        d_input,
+        d_output,
+        d_permutations,
+        np.int32(block_height),
+        np.int32(block_width),
         np.int32(h),
         np.int32(w),
+        np.int32(num_rows),
+        np.int32(num_cols),
         np.int32(channels),
-        block=(block_size,1,1),
-        grid=(grid_size,1)
+        block = (threads_per_block, 1, 1),
+        grid = (grid_dim, 1)
     )
 
-    cuda.memcpy_dtoh(block_out, d_block_out)
-
-    if channels == 1:
-        return block_out.reshape(h, w)
-    else:
-        return block_out.reshape(h, w, channels)
+    cuda.memcpy_dtoh(image_out, d_output)
+    return image_out.reshape((h, w) if channels == 1 else (h, w, channels))
             
-
-def compose_image_from_blocks(blocks, image_shape, num_blocks=64):
-    x, y = image_shape[:2]
-    
-    num_rows,num_cols= blocks.shape[:2]
-
-    block_height = x // num_rows
-    block_width = y // num_cols
-
-    reconstructed_image = np.empty((x,y),dtype=np.uint8) if len(image_shape) == 2 else np.zeros((x,y,3), dtype=np.uint8)
-
-    # Build the image
-    for i in range(num_rows):
-        for j in range(num_cols):
-            
-            start_x = i * block_height
-            end_x = (i + 1) * block_height if (i + 1) * block_height <= x else x
-
-            start_y = j * block_width
-            end_y = (j + 1) * block_width if (j + 1) * block_width <= y else y
-
-            # Put the block into the image
-            reconstructed_image[start_x:end_x, start_y:end_y] = blocks[i][j]
-
-    return reconstructed_image
 
 def permute_image_rows(image, permutation):
     permuted_image = np.empty_like(image)
@@ -442,6 +391,7 @@ def invert_permutation(permutation):
 
 def generate_partition_from_automata(state,lenght):
     '''Generate a permutation from an automata'''
+
     automata = ElementalCelularAutomata(state,len(state),30)
 
     automata.step_cuda(100)
@@ -500,7 +450,7 @@ def unstack_image(image):
 
 
 def stack_image(concatenated):
-    height, width = concatenated.shape[:2]
+    _, width = concatenated.shape[:2]
     width_per_channel = width // 3
     
     img_r = concatenated[:, :width_per_channel]
