@@ -21,8 +21,8 @@ def calcular_exponentes(f,r_values, x0, iteraciones, puntos):
         # Crear el sistema discreto
         f_ajustada=lambda x, t: f(x,r)
         j_ajustado=lambda x, t: (jacobi.jacobi(lambda z: f_ajustada(z,t),x)[0])[0]
-        #discrete_system = lyapynov.DiscreteDS(x0, 1, f_ajustada, j_ajustado) #Más lento, pero automático
-        discrete_system = lyapynov.DiscreteDS(x0, 1, f_ajustada, lambda x, t: jac(x, t, r)) # Más rápidp, pero ay que ajustar el jacobiano
+        discrete_system = lyapynov.DiscreteDS(x0, 1, f_ajustada, j_ajustado) #Más lento, pero automático
+        #discrete_system = lyapynov.DiscreteDS(x0, 1, f_ajustada, lambda x, t: jac(x, t, r)) # Más rápidp, pero ay que ajustar el jacobiano
         #print(j_ajustado(x0,0)[0])
         #print(jac(x0,0,r))
         # Calcular los exponentes de Lyapunov

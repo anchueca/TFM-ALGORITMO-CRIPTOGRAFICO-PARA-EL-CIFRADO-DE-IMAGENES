@@ -18,7 +18,7 @@ def bifurcation(function,r,r_min,r_max,num_r,iterations,transition,initial_condi
             x = function(x,r)
             if i >= (transition):
                 plt.plot(r[n], x[n], ',k', alpha=0.25)  # ',' = tiny point
-
+        
         #plt.title("Bifurcation diagram - "+name)
         plt.xlabel("r")
         plt.ylabel("x")
@@ -28,6 +28,7 @@ def bifurcation(function,r,r_min,r_max,num_r,iterations,transition,initial_condi
             plt.savefig(save, dpi=dpi, bbox_inches='tight')
         else:
             plt.show()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Bifurcation diagram")
@@ -58,6 +59,6 @@ if __name__ == "__main__":
         r_max = [r_max]
         r_min = [r_min]
         r_num = [r_num]
-        r = [r]
+        r = [0]
     
     bifurcation(function,r,r_min, r_max,r_num, iterations, transition, initial_condition,functionName,save,dpi,num_params)

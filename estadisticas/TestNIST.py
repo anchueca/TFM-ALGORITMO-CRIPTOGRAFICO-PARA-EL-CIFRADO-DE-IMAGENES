@@ -143,22 +143,12 @@ def main():
                         help="Número de bits por secuencia para el análisis NIST STS (-n). Default: 1,000,000.")
     args = parser.parse_args()
 
-    # --- 1. Mapeo de función y estado inicial ---
-    function_map = {
-        "logistic": logistic,
-        "sine": sine,
-        "tent": tent,
-        "superModelo": superModelo
-    }
-
-    selected_function = function_map.get(args.functionName)
+    selected_function = selectFunction(args.functionName)[0]
     if not selected_function:
         print(f"Error: Función '{args.functionName}' no reconocida.", file=sys.stderr)
         sys.exit(1)
 
     initial_state = args.x0
-    if args.functionName == "superModelo":
-        initial_state = [args.x0, args.x0, args.x0] # superModelo espera un vector
 
     num_values = args.num_values
     if num_values <= 0:

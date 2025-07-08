@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import math
 import hashlib
 import struct
-from CelularAutoma2d import CelularAutomata2d
 from ElementalCelularAutomata import ElementalCelularAutomata
 from modeloCaos import selectFunction
 import pycuda.autoinit
@@ -91,11 +90,33 @@ __global__ void permute_blocks_kernel(
         }
     }
 }
+                         
+extern "C"
+__global__ void generate_chaotic(float* passwords, float* chaotic_vals, int* indices, float r, int length) {
+    int bid = blockIdx.x;
+
+    if (threadIdx.x != 0) return;
+
+    float x = passwords[bid];
+
+    // Disipación inicial (20 pasos)
+    for (int i = 0; i < 20; ++i)
+        x = uno(x, r);
+
+    // Generar valores caóticos y guardar índice
+    for (int i = 0; i < length; ++i) {
+        x = uno(x, r);
+        chaotic_vals[bid * length + i] = x;
+        indices[bid * length + i] = i;
+    }
+}
 //CUDA
 """)
 
 flow_encrypt_recursive = cuda_code.get_function("flow_encrypt_recursive")
 permute_blocks_kernel = cuda_code.get_function("permute_blocks_kernel")
+generate_chaotic = cuda_code.get_function("generate_chaotic")
+
 
 def get_Hash(text,length_bytes):
     hash= hashlib.sha512(text.encode('utf-8'))
@@ -123,11 +144,11 @@ def plot_histograms(image): # para pruebas luego eliminar
     plt.tight_layout()
     plt.show()
 
-def generate_password(initial_password, num_blocks, row_number, column_number, byte_precission_level, color_depth, flow_rounds):
+def generate_password(initial_password, num_blocks, row_number, column_number, byte_precission_level, flow_rounds):
 
     # Required lengths
-    bytes_for_rows = row_number * color_depth // 8
-    bytes_for_columns = column_number * color_depth // 8
+    bytes_for_rows = row_number
+    bytes_for_columns = column_number
     bytes_for_blocks = num_blocks * byte_precission_level
     bytes_for_flow = row_number * byte_precission_level
 
@@ -171,11 +192,10 @@ def encrypt_image(image,model, password, rounds, show=0):
         image = unstack_image(image)
         show_image(image,"unstacked") if show>1 else None
 
-    num_blocks= 256
+    num_blocks= 64
     precission_level=2
     image_rows,image_columns = image.shape[:2]
-    color_depth = 8
-    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,color_depth,rounds)
+    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,rounds)
 
     # Calculate the number of rows and columns
     num_rows = int(math.ceil(math.sqrt(num_blocks)))  # Rows
@@ -186,8 +206,8 @@ def encrypt_image(image,model, password, rounds, show=0):
     block_width = image_columns // num_cols
 
     block_data_lenght=np.prod(block_height*block_width)
-    bloock_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
-
+    bloock_permutations=generate_permutations_cuda(np.array(block_password, dtype=np.float32), int(block_data_lenght))
+    
     permutation_rows = generate_partition_from_automata(row_password,image_rows)
     permutation_columns = generate_partition_from_automata(column_password,image_columns)
     
@@ -206,10 +226,10 @@ def encrypt_image(image,model, password, rounds, show=0):
 
         if round_number < rounds - 1:  # The last rounds do not flow encrypt
             actual_flow_password=flow_password[round_number]
-            for n in range(2):
+            for _ in range(2):
                 image,actual_flow_password=flow_encrypt_image_cuda(image,actual_flow_password)
                 show_image(image,"flow image") if show>1 else None
-            plot_histograms(image) if show>1 else None
+                plot_histograms(image) if show>1 else None
 
     if gris_scale:
         image = stack_image(image)
@@ -218,9 +238,49 @@ def encrypt_image(image,model, password, rounds, show=0):
     return image
 
 
+def generate_permutations_cuda(block_passwords: np.ndarray, block_data_length: int) -> np.ndarray:
+    """
+    Genera permutaciones caóticas en GPU con PyCUDA.
 
+    Args:
+        block_passwords: Array (num_blocks,) de float32
+        block_data_length: Tamaño de los datos por bloque
 
-def flow_encrypt_image_cuda(image, seeds, r=0.6):
+    Returns:
+        Array (num_blocks, block_data_length) con permutaciones
+    """
+    num_blocks = len(block_passwords)
+
+    # Reservar memoria y copiar datos
+    passwords_gpu = cuda.mem_alloc(block_passwords.nbytes)
+    cuda.memcpy_htod(passwords_gpu, block_passwords)
+
+    chaotic_vals_gpu = cuda.mem_alloc(num_blocks * block_data_length * np.float32().nbytes)
+    indices_gpu = cuda.mem_alloc(num_blocks * block_data_length * np.int32().nbytes)
+
+    threads_per_block = 256  # o 512
+    n_chunks = (block_data_length + threads_per_block - 1) // threads_per_block
+
+    generate_chaotic(passwords_gpu, chaotic_vals_gpu, indices_gpu,
+                 np.float32(6.1), np.int32(block_data_length),
+                 block=(1, 1, 1), grid=(num_blocks, 1, 1))
+
+    cuda.Context.synchronize()
+
+    # Copiar de vuelta
+    chaotic_vals_host = np.empty((num_blocks, block_data_length), dtype=np.float32)
+    indices_host = np.empty((num_blocks, block_data_length), dtype=np.int32)
+
+    cuda.memcpy_dtoh(chaotic_vals_host, chaotic_vals_gpu)
+    cuda.memcpy_dtoh(indices_host, indices_gpu)
+
+    # Ordenar en CPU (por fila)
+    sorted_idx = np.argsort(chaotic_vals_host, axis=1, kind='stable')
+    permutations = np.take_along_axis(indices_host, sorted_idx, axis=1)
+
+    return permutations
+
+def flow_encrypt_image_cuda(image, seeds, r=0.61):
     h, w = image.shape[:2]
     image = image.astype(np.uint8).copy()
     seeds = np.array(seeds, dtype=np.float32)
@@ -267,11 +327,10 @@ def unencrypt_image(image,model, password, rounds, show=0):
         show_image(image,"unstacked") if show>1 else None
 
 
-    num_blocks= 256
+    num_blocks= 64
     precission_level=2
     image_rows,image_columns = image.shape[:2]
-    color_depth = 8
-    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,color_depth,rounds)
+    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,rounds)
     flow_password.reverse()
 
     # Calculate the number of rows and columns
@@ -283,7 +342,8 @@ def unencrypt_image(image,model, password, rounds, show=0):
     block_width = image_columns // num_cols
 
     block_data_lenght=np.prod(block_height*block_width)
-    bloock_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
+    bloock_permutations=generate_permutations_cuda(np.array(block_password, dtype=np.float32), int(block_data_lenght))# all blocks have the same size
+    
     bloock_permutations= [invert_permutation(permitation) for permitation in bloock_permutations] # all blocks have the same size
 
     permutation_columns = invert_permutation(generate_partition_from_automata(column_password,image_columns))
@@ -388,34 +448,23 @@ def invert_permutation(permutation):
         
     return inverted_permutation
 
-def generate_partition_from_automata(state,lenght):
+def generate_partition_from_automata(state,length):
     '''Generate a permutation from an automata'''
     automata = ElementalCelularAutomata(state,len(state),30)
 
     automata.step_cuda(100)
 
-    number_list = automata.convert_to_int()[:lenght]
+    number_list = automata.convert_to_int()[:length]
 
-    permutation = getPermutation(number_list)
+    permutation = generate_permutation_from_values(number_list)
 
     return permutation
-
-def getPermutation(source):
-    ''' Generate the partititon from a list of values'''
-    if type(source[0]) is int: # case not numbered
-        source = [ [n,value] for n,value in enumerate(source) ]
-
-    sorted_list = sorted(source, key=lambda x: x[1])
-    permutation_list = [sorted_list[n][0] for n in range(len(sorted_list))]
-    
-    return permutation_list
-
 
 def generate_partiton(model,seed,length):
     '''Generates a permutation list based on the chaotic model.
     Args:
         seed: The initial value for the chaotic model.
-        lenght: The maximum value for the permutation.
+        length: The maximum value for the permutation.
     Returns:
         A list of integers representing the permutation.
     '''
@@ -429,7 +478,17 @@ def generate_partiton(model,seed,length):
         xn = model(xn)
         xn_list.append((n, xn))
 
-    permutation_list = getPermutation(xn_list)
+    permutation_list = generate_permutation_from_values(xn_list)
+    
+    return permutation_list
+
+def generate_permutation_from_values(source):
+    ''' Generate the partititon from a list of values'''
+    if type(source[0]) is int: # case not numbered
+        source = [ [n,value] for n,value in enumerate(source) ]
+
+    sorted_list = sorted(source, key=lambda x: x[1])
+    permutation_list = [sorted_list[n][0] for n in range(len(sorted_list))]
     
     return permutation_list
 

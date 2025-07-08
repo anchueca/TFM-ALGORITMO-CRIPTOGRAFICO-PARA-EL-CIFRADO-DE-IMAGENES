@@ -7,8 +7,8 @@ def superModelo(x,r):
         logistic(r[0],x[1])/3 + sine(r[1],x[2])/3 + tent(r[2],x[0])/3,
     ]
 
-def uno(x,r=0.6):
-    return  np.abs( np.cos( np.pi*r*np.cos( np.pi*(r+3*x*x) )*(r+3*x*x) ) )
+def uno(x,r=6.1):
+    return np.abs( np.cos( r*np.cos( np.pi*(r+3*x*x) )*(r+3*x*x)*np.pi ) )
 
 def logistic(x,r=3.8):
     return r*x*(1-x)

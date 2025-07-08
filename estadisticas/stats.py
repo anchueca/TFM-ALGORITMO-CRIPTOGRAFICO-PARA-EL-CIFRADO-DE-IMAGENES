@@ -8,7 +8,6 @@ import subprocess
 import os
 import sys
 import time
-import hashlib
 
 from proposed_cipher_cuda import encrypt_image,unencrypt_image
 from modeloCaos import selectFunction
