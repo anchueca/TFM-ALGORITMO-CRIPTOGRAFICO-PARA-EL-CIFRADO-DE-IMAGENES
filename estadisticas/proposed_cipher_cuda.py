@@ -206,7 +206,7 @@ def encrypt_image(image,model, password, rounds, show=0):
 
         if round_number < rounds - 1:  # The last rounds do not flow encrypt
             actual_flow_password=flow_password[round_number]
-            for n in range(4):
+            for n in range(2):
                 image,actual_flow_password=flow_encrypt_image_cuda(image,actual_flow_password)
                 show_image(image,"flow image") if show>1 else None
             plot_histograms(image) if show>1 else None
@@ -293,7 +293,7 @@ def unencrypt_image(image,model, password, rounds, show=0):
 
         if round_number != 0:  # The last rounds do not flow encrypt
             actual_flow_password=flow_password[round_number]
-            for n in range(4):
+            for n in range(2):
                 image,actual_flow_password=flow_encrypt_image_cuda(image,actual_flow_password)
                 show_image(image,"flow image") if show>1 else None
 
@@ -315,7 +315,6 @@ def unencrypt_image(image,model, password, rounds, show=0):
 def block_phase_parallel_cuda(image, num_rows, num_cols, block_height, block_width, block_permutations):
     h, w = image.shape[:2]
     channels = 1 if image.ndim == 2 else image.shape[2]
-    total_blocks = num_rows * num_cols
     block_size = block_height * block_width
 
     image_in = image.astype(np.uint8).ravel()
@@ -391,7 +390,6 @@ def invert_permutation(permutation):
 
 def generate_partition_from_automata(state,lenght):
     '''Generate a permutation from an automata'''
-
     automata = ElementalCelularAutomata(state,len(state),30)
 
     automata.step_cuda(100)

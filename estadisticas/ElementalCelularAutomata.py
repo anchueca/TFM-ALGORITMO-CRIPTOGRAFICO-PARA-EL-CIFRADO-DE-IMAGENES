@@ -27,11 +27,10 @@ class ElementalCelularAutomata:
         self.num_step=0
         self.num_buffered = num_buffered  # Number of device buffers to cycle through
 
-        self.state = np.array(initial_state, dtype=np.uint8)
-
         # Use pinned memory for fast copy from device
         self.state = cuda.pagelocked_empty(shape=self.size, dtype=np.uint8)
-        self.history = self.state.copy().reshape(1, -1)
+        self.state[:] = initial_state
+        #self.history = self.state.copy().reshape(1, -1)
 
         # Pre-allocate GPU buffers
         self.dev_buffers = [cuda.mem_alloc(self.state.nbytes) for _ in range(num_buffered)]
@@ -50,7 +49,7 @@ class ElementalCelularAutomata:
                 new_state[i]=(self.rule>>value) & 1
                     
             self.state = new_state
-            self.history = np.vstack((self.history, self.state))
+            self.history = np.vstack((self.history, self.state.copy()))
             self.num_step+=1
 
     def step_cuda(self, num_steps=1):

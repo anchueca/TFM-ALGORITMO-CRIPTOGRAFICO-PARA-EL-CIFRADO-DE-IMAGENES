@@ -10,7 +10,7 @@ import sys
 import time
 import hashlib
 
-from proposed_cipher import encrypt_image,unencrypt_image
+from proposed_cipher_cuda import encrypt_image,unencrypt_image
 from modeloCaos import selectFunction
 
 def plot_histograms(original, ciphered):
@@ -354,7 +354,7 @@ def main():
         #print(f"\nNPCR: {npcr:.4f}%")
         #print(f"UACI: {uaci:.4f}%")
 
-        npcr, uaci = password_sensitivity_test(original,chaos_model, args.password, args.rounds, *args.other_args)
+        npcr, uaci = password_sensitivity_test(original,chaos_model, args.password, args.rounds)
         print("\n[Prueba de Sensibilidad a la contraseña]")
         print(f"\nNPCR: {npcr:.4f}%")
         print(f"UACI: {uaci:.4f}%")

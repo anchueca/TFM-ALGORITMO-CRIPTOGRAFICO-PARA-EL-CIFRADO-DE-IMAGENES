@@ -85,10 +85,10 @@ def encrypt_image(image,model, password, rounds, show=0):
 
     if len(image.shape) > 2:
         gris_scale=True
-        image = unstack_image(image)
+        #image = unstack_image(image)
         show_image(image,"unstacked") if show>1 else None
 
-    num_blocks= 256
+    num_blocks= 64
     precission_level=2
     rows,columns = image.shape[:2]
     color_depth = 8
@@ -98,8 +98,6 @@ def encrypt_image(image,model, password, rounds, show=0):
     permutation_columns = generate_partition_from_automata(column_password,image.shape[1])
     
     for round_number in range(rounds):
-
-        
         image = permute_image_rows(image,permutation_rows)
         show_image(image,"permuted rows") if show>1 else None
 
@@ -108,10 +106,18 @@ def encrypt_image(image,model, password, rounds, show=0):
         show_image(image,"permuted columns") if show>1 else None
 
         blocks= get_image_blocks(image,num_blocks)
+        show_image(blocks[0][0])
+        show_image(blocks[0][1])
+        show_image(blocks[-1][-1])
 
         block_data_lenght=np.prod(blocks[0][0].shape[:2])
         block_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
+
         blocks=permute_block_matrix(blocks,block_permutations)
+        show_image(blocks[0][0])
+        show_image(blocks[0][1])
+        show_image(blocks[-1][-1])
+        
 
         image = compose_image_from_blocks(blocks,image.shape,num_blocks)
         show_image(image,"reconstructed blocks") if show>1 else None
