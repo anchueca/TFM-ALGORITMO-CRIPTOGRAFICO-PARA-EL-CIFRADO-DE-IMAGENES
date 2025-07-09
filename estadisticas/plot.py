@@ -18,8 +18,8 @@ def plot(function,r,iterations,x0,y0,save,dpi):
         ys.append(y)
         print(x)
 
-    plt.plot(range(iterations), xs, color='blue', label=f"x₀ = {x0}")
-    plt.plot(range(iterations), ys, color='red', label=f"y₀ = {y0}")
+    plt.scatter(range(iterations), xs, color='blue', label=f"x₀ = {x0}")
+    plt.scatter(range(iterations), ys, color='red', label=f"y₀ = {y0}")
     
     plt.xlabel("Iteraciones")
     plt.ylabel("Valor")

@@ -11,8 +11,6 @@ import struct
 from ElementalCelularAutomata import ElementalCelularAutomata
 import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
-from modeloCaos import uno
-from proposed_cipher import flow_encrypt_image# prueba
 
 cuda_code = SourceModule("""
 //CUDA
@@ -195,7 +193,7 @@ def generate_password(initial_password, num_blocks, row_number, column_number, b
     return rows_automata_hash, columns_automata_hash, blocks_hash, flow_hash
 
 
-def encrypt_image(image, password, rounds, show=0):
+def encrypt_image(image, password, rounds=3, show=0):
 
     gris_scale=False
 
@@ -204,10 +202,14 @@ def encrypt_image(image, password, rounds, show=0):
         image = unstack_image(image)
         show_image(image,"unstacked") if show>1 else None
 
-    num_blocks= 64
+    num_blocks= 256
     precission_level=2
     image_rows,image_columns = image.shape[:2]
-    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,rounds)
+
+    if isinstance(password, str):
+        row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,rounds)
+    else:
+        row_password, column_password, block_password, flow_password = password
 
     # Calculate the number of rows and columns
     num_rows = int(math.ceil(math.sqrt(num_blocks)))  # Rows
@@ -351,7 +353,7 @@ def flow_encrypt_image_cuda(image, seeds, rounds, r=6.1):
 
     return image
 
-def unencrypt_image(image, password, rounds, show=0):
+def unencrypt_image(image, password, rounds=3, show=0):
 
     gris_scale=False
     if len(image.shape) > 2:
@@ -360,10 +362,14 @@ def unencrypt_image(image, password, rounds, show=0):
         show_image(image,"unstacked") if show>1 else None
 
 
-    num_blocks= 64
+    num_blocks= 256
     precission_level=2
     image_rows,image_columns = image.shape[:2]
-    row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,rounds)
+    if isinstance(password, str):
+        row_password, column_password, block_password, flow_password = generate_password(password,num_blocks,image_rows,image_columns,precission_level,rounds)
+    else:
+        row_password, column_password, block_password, flow_password = password
+    
     flow_password.reverse()
 
     # Calculate the number of rows and columns

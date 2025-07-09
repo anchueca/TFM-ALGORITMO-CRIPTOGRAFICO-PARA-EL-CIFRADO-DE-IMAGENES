@@ -38,3 +38,5 @@ Memoria
 estadisticas/__pycache__/proposed_cipher_cuda.cpython-313.pyc
 rule30.jpg
 flow2.png
+ciphered_output.png
+deciphered_output.png
