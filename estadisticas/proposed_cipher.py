@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import math
 import hashlib
 import struct
-from CelularAutoma2d import CelularAutomata2d
 from ElementalCelularAutomata import ElementalCelularAutomata
 from modeloCaos import selectFunction
 
@@ -77,15 +76,13 @@ def generate_password(initial_password, num_blocks, row_number, column_number, b
     return rows_automata_hash, columns_automata_hash, blocks_hash, flow_hash
 
 
-
-
 def encrypt_image(image,model, password, rounds, show=0):
 
     gris_scale=False
 
     if len(image.shape) > 2:
         gris_scale=True
-        #image = unstack_image(image)
+        image = unstack_image(image)
         show_image(image,"unstacked") if show>1 else None
 
     num_blocks= 64
@@ -99,24 +96,16 @@ def encrypt_image(image,model, password, rounds, show=0):
     
     for round_number in range(rounds):
         image = permute_image_rows(image,permutation_rows)
-        show_image(image,"permuted rows") if show>1 else None
-
         
         image = permute_image_columns(image,permutation_columns)
-        show_image(image,"permuted columns") if show>1 else None
 
         blocks= get_image_blocks(image,num_blocks)
-        show_image(blocks[0][0])
-        show_image(blocks[0][1])
-        show_image(blocks[-1][-1])
 
         block_data_lenght=np.prod(blocks[0][0].shape[:2])
         block_permutations= [generate_partiton(model,block_password[i],block_data_lenght ) for i in range(num_blocks)] # all blocks have the same size
 
         blocks=permute_block_matrix(blocks,block_permutations)
-        show_image(blocks[0][0])
-        show_image(blocks[0][1])
-        show_image(blocks[-1][-1])
+
         
 
         image = compose_image_from_blocks(blocks,image.shape,num_blocks)
@@ -319,11 +308,9 @@ def invert_permutation(permutation):
 def generate_partition_from_automata(state,lenght):
     '''Generate a permutation from an automata'''
 
-    bit_depth= 8
-
     automata = ElementalCelularAutomata(state,len(state),30)
 
-    automata.step(10)
+    automata.step(100)
 
     number_list = automata.convert_to_int()[:lenght]
 
@@ -351,14 +338,13 @@ def generate_partiton(model,seed,lenght):
         A list of integers representing the permutation.
     '''
     xn = seed
-    b1 = 4.0
     xn_list = []
     
     for n in range(50):
-        xn = model(xn,b1)
+        xn = model(xn)
     
     for n in range(lenght):
-        xn = model(xn,b1)
+        xn = model(xn)
         xn_list.append([n, xn])
 
     permutation_list = getPermutation(xn_list)
@@ -380,7 +366,7 @@ def unstack_image(image):
 
 
 def stack_image(concatenated):
-    height, width = concatenated.shape[:2]
+    _, width = concatenated.shape[:2]
     width_per_channel = width // 3
     
     img_r = concatenated[:, :width_per_channel]

@@ -222,7 +222,7 @@ def message_sensitivity_test(image,model, password,rounds, *args):
     return npcr, uaci
 
 # Prueba de sensibilidad al mensaje (cambio de un bit)
-def password_sensitivity_test(image,model, password,rounds, *args):
+def password_sensitivity_test(image, password,rounds, *args):
     
     if image is None:
         print(f"Error: No se pudo cargar la imagen desde {image}.")
@@ -231,8 +231,8 @@ def password_sensitivity_test(image,model, password,rounds, *args):
     # Crear una copia de la imagen y modificar un bit
     altered_password = "juan"
     # Cifra las dos imágenes
-    cipher1 = encrypt_image(image,model,password, rounds, *args)
-    cipher2 = encrypt_image(image,model, altered_password, rounds, *args)
+    cipher1 = encrypt_image(image,password, rounds, *args)
+    cipher2 = encrypt_image(image, altered_password, rounds, *args)
     
     if cipher1 is None or cipher2 is None:
         print("Error en el proceso de cifrado.")
@@ -307,7 +307,6 @@ def main():
     
     # Argumentos de entrada
     #parser.add_argument("cipher_program_path", help="Ruta al programa de cifrado")
-    parser.add_argument("chaos_model", help="Modleo caótico")
     parser.add_argument("input_image", help="Ruta de la imagen a cifrar")
     #parser.add_argument("output_image", help="Ruta donde guardar la imagen cifrada")
     parser.add_argument("password", type=str, help="Contraseña para el cifrado")
@@ -324,7 +323,6 @@ def main():
         print(f"Error: La imagen de entrada '{args.input_image}' no existe.")
         sys.exit(1)
 
-    chaos_model = selectFunction(args.chaos_model)[0]
     original = cv2.imread(args.input_image)
 
     if np.all(original[:, :, 0] == original[:, :, 1]) and np.all(original[:, :, 1] == original[:, :, 2]):
@@ -332,13 +330,13 @@ def main():
 
     # Cifrado de la imagen usando los parámetros proporcionados
     start_time = time.time()
-    encrypted_image = encrypt_image(original,chaos_model,args.password, args.rounds)
+    encrypted_image = encrypt_image(original,args.password, args.rounds)
         #encrypt_image_external_cypher(args.input_image, args.output_image, args.password, args.cipher_program_path, *args.other_args)
     end_time = time.time()
     print(f"Encryption time: {end_time - start_time} s")
 
     start_time = time.time()
-    unencrypted_image = unencrypt_image(encrypted_image,chaos_model,args.password, args.rounds)
+    unencrypted_image = unencrypt_image(encrypted_image,args.password, args.rounds)
     end_time = time.time()
     print(f"Unencryption time: {end_time - start_time} s")
     if encrypted_image is not None:
@@ -353,7 +351,7 @@ def main():
         #print(f"\nNPCR: {npcr:.4f}%")
         #print(f"UACI: {uaci:.4f}%")
 
-        npcr, uaci = password_sensitivity_test(original,chaos_model, args.password, args.rounds)
+        npcr, uaci = password_sensitivity_test(original, args.password, args.rounds)
         print("\n[Prueba de Sensibilidad a la contraseña]")
         print(f"\nNPCR: {npcr:.4f}%")
         print(f"UACI: {uaci:.4f}%")

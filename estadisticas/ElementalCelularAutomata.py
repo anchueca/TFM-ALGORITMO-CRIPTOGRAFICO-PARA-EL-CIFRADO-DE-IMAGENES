@@ -1,8 +1,10 @@
 import numpy as np
-import cv2
+#import cv2
 import pycuda.driver as cuda
 import pycuda.autoinit
 from pycuda.compiler import SourceModule
+import sys
+
 
 mod = SourceModule("""
 __global__ void evolve(unsigned char *current, unsigned char *next, int rule, int size) {
@@ -27,6 +29,9 @@ class ElementalCelularAutomata:
         self.num_step=0
         self.num_buffered = num_buffered  # Number of device buffers to cycle through
 
+        if initial_state is None:
+            initial_state = np.random.randint(0, 2, size, dtype=np.uint8)
+
         # Use pinned memory for fast copy from device
         self.state = cuda.pagelocked_empty(shape=self.size, dtype=np.uint8)
         self.state[:] = initial_state
@@ -49,7 +54,7 @@ class ElementalCelularAutomata:
                 new_state[i]=(self.rule>>value) & 1
                     
             self.state = new_state
-            self.history = np.vstack((self.history, self.state.copy()))
+            #self.history = np.vstack((self.history, self.state.copy()))
             self.num_step+=1
 
     def step_cuda(self, num_steps=1):
@@ -79,9 +84,9 @@ class ElementalCelularAutomata:
             buf.free()
 
     
-    def show(self):
-        cv2.imshow("Cellular Automata", self.history.astype(np.uint8) * 255)
-        cv2.waitKey(0)
+    #def show(self):
+        #cv2.imshow("Cellular Automata", self.history.astype(np.uint8) * 255)
+        #cv2.waitKey(0)
         
 
     def convert_to_int(self):
@@ -94,3 +99,41 @@ class ElementalCelularAutomata:
                 new_value = (new_value << 1) | int(self.state[n + i])
             int_list.append(new_value)
         return int_list
+    def convert_to_bitstream(self):
+            """Devuelve los bits actuales como un bytearray empaquetado (cada byte contiene 8 bits)."""
+            bitstream = bytearray()
+            for i in range(0, len(self.state), 8):
+                byte = 0
+                for j in range(8):
+                    if i + j < len(self.state):
+                        byte = (byte << 1) | int(self.state[i + j])
+                    else:
+                        byte <<= 1  # Relleno con 0 si la longitud no es múltiplo de 8
+                bitstream.append(byte)
+            return bitstream
+
+def main():
+    if len(sys.argv) < 3:
+        print("Uso: python script.py <longitud> <salida.bin>")
+        sys.exit(1)
+
+    size = int(sys.argv[1])
+    output_file = sys.argv[2]
+    rule = 30
+
+    automata = ElementalCelularAutomata(initial_state=None, size=size, rule=rule)
+
+
+    steps = 10000
+    for _ in range(steps):
+        automata.step_cuda()
+
+    bitstream = automata.convert_to_bitstream()
+
+    with open(output_file, 'wb') as f:
+        f.write(bitstream)
+
+    print(f"Secuencia de {len(bitstream)*8} bits escrita en: {output_file}")
+
+if __name__ == "__main__":
+    main()

@@ -6,67 +6,89 @@ import os
 
 from modeloCaos import *
 
-def generate_chaos_data(function, x0, num_values, data_format='d', output_file=None):
+def generate_chaos_data(function, x0, num_values, output_file=None):
     """
-    Generate chaotic data and writes it to a file or returns it as bytes
+    Genera datos caóticos binarizados y los escribe en un archivo o los devuelve como bytes.
 
     Args:
-        function (callable): chaotic function.
-        x0 (float or list): Intial condition.
-        num_values (int): El número de valores a generar.
-        data_format (str): El formato de empaquetado ('d' para double, 'f' para float).
-        output_file (str, optional): Si se especifica, los datos se escriben a este archivo.
-                                     Si es None, la función devuelve los bytes generados.
+        function (callable): Función caótica.
+        x0 (float o lista): Condición inicial.
+        num_values (int): Número de valores a generar.
+        output_file (str, opcional): Archivo de salida. Si es None, devuelve los bytes generados.
 
     Returns:
-        bytes or None: Los bytes generados si output_file es None, de lo contrario None.
+        bytes o None: Bytes generados si no se especifica archivo, sino None.
     """
-    generated_bytes = b'' # Para acumular bytes si la salida es en memoria
+    bit_buffer = []
+    output_bytes = bytearray()
+
+    for n in range(200):
+        x0 = function(x0)
 
     try:
+        def write_byte(byte):
+            if output_file:
+                f.write(struct.pack("B", byte))
+            else:
+                output_bytes.append(byte)
+
         if output_file:
-            # Si se especifica un archivo, abrimos y escribimos directamente
-            with open(output_file, 'wb') as f:
-                print(f"Escribiendo {num_values} valores en '{output_file}'...", file=sys.stderr)
-                for n in range(num_values):
-                    x0 = function(x0)
-                    if isinstance(x0, (list, tuple)):
-                        for val in x0:
-                            f.write(struct.pack(data_format, val))
-                    else:
-                        f.write(struct.pack(data_format, x0))
+            f = open(output_file, 'wb')
+            print(f"Escribiendo {num_values} valores en '{output_file}'...", file=sys.stderr)
 
-                    if num_values > 10 and n % (num_values // 10) == 0:
-                        print(f"Progreso: {(n / num_values) * 100:.2f}%", file=sys.stderr)
-                print("Progreso: 100.00%", file=sys.stderr)
+        for n in range(num_values):
+            x0 = function(x0)
+            values = x0 if isinstance(x0, (list, tuple)) else [x0]
+
+            for val in values:
+                # Convertimos el float a 64 bits IEEE 754
+                float_bits = struct.unpack('>Q', struct.pack('>d', val))[0]
+
+                # Extraemos la mantisa de 52 bits
+                mantissa = float_bits & ((1 << 52) - 1)
+
+                # Tomamos los 32 bits más significativos de la mantisa
+                top32 = mantissa >> (52 - 32)
+
+                # Dividimos en 4 bloques de 8 bits y aplicamos XOR entre ellos
+                b0 = (top32 >> 24) & 0xFF
+                b1 = (top32 >> 16) & 0xFF
+                b2 = (top32 >> 8)  & 0xFF
+                b3 = top32 & 0xFF
+
+                result_byte = b0 ^ b1 ^ b2 ^ b3  # XOR final
+
+                write_byte(result_byte)
+
+            if output_file and num_values > 10 and n % (num_values // 10) == 0:
+                print(f"Progreso: {(n / num_values) * 100:.2f}%", file=sys.stderr)
+
+        # Escribir bits restantes si no múltiplo de 8
+        if bit_buffer:
+            while len(bit_buffer) < 8:
+                bit_buffer.append(0)
+            byte = sum((bit << (7 - i)) for i, bit in enumerate(bit_buffer))
+            write_byte(byte)
+
+        if output_file:
+            f.close()
+            print("Progreso: 100.00%", file=sys.stderr)
             print(f"Escritura completada en '{output_file}'.", file=sys.stderr)
-            return None # No se devuelven bytes si se escribió a un archivo
+            return None
         else:
-            # Si no hay archivo, generamos bytes en memoria
-            print(f"Generando {num_values} valores en memoria para tubería...", file=sys.stderr)
-            for n in range(num_values):
-                x0 = function(x0)
-                if isinstance(x0, (list, tuple)):
-                    for val in x0:
-                        generated_bytes += struct.pack(data_format, val)
-                else:
-                    generated_bytes += struct.pack(data_format, x0)
             print("Generación en memoria completada.", file=sys.stderr)
-            return generated_bytes
+            return bytes(output_bytes)
 
-    except struct.error as e:
-        print(f"Error de formato al empaquetar datos: {e}. Asegúrate de que el formato '{data_format}' sea compatible con el tipo de datos generado.", file=sys.stderr)
-        sys.exit(1)
     except Exception as e:
         print(f"Ocurrió un error inesperado durante la generación: {e}", file=sys.stderr)
         sys.exit(1)
 
 
 
-def porTuberia(selected_function, initial_state,num_values,format,nist_command_base):
+def porTuberia(selected_function, initial_state,num_values,nist_command_base):
 # Modo tubería: Generamos los bytes en memoria y los pasamos a subprocess.run.
     print("\nModo tubería: Generando datos y pasándolos directamente a NIST STS...", file=sys.stderr)
-    generated_data_bytes = generate_chaos_data(selected_function, initial_state,num_values,format, output_file=None)
+    generated_data_bytes = generate_chaos_data(selected_function, initial_state,num_values, output_file=None)
 
     if generated_data_bytes is None:
             print("Error: No se generaron datos para la tubería.", file=sys.stderr)
@@ -97,9 +119,9 @@ def porTuberia(selected_function, initial_state,num_values,format,nist_command_b
 
 
 
-def porArchivo(selected_function, initial_state,num_values,format,nist_command_base, output_file):
+def porArchivo(selected_function, initial_state,num_values,nist_command_base, output_file):
 
-    generate_chaos_data(selected_function, initial_state,num_values,format,output_file)
+    generate_chaos_data(selected_function, initial_state,num_values,output_file)
 
     if run_nist:
         # Si se generó un archivo y se pidió ejecutar NIST STS, lo hacemos.
@@ -136,7 +158,6 @@ def main():
     parser.add_argument("x0", help="Condición inicial (número flotante)", type=float)
     parser.add_argument("num_values", help="Número de valores a generar", type=int)
     parser.add_argument("--output_file", help="Nombre del archivo de salida. Si no se especifica, los datos se pasan a NIST STS.", type=str)
-    parser.add_argument("--format", default='d', help="Formato de empaquetado ('d' para double, 'f' para float). Default: 'd'", type=str)
     parser.add_argument("--run_nist", action="store_true", help="Ejecuta la suite NIST STS con los datos generados. Requiere --nist_path.")
     parser.add_argument("--nist_path", default="./nist/sts", help="Ruta al ejecutable de la suite NIST STS.")
     parser.add_argument("--nist_bits_per_sequence", type=int, default=1000000,
@@ -156,34 +177,23 @@ def main():
         sys.exit(1)
 
 # --- 2. Preparación para NIST STS (si se solicita) ---
-    nist_bits_per_value = None
-    data_format= args.format
-    if data_format == 'd':
-        nist_bits_per_value = "64"
-    elif data_format == 'f':
-        nist_bits_per_value = "32"
-    else:
-        print(f"Advertencia: Formato '{data_format}' no reconocido para NIST STS. Usando 32 bits por defecto.", file=sys.stderr)
-        nist_bits_per_value = "32"
-
-    total_generated_bits = num_values * int(nist_bits_per_value)
-    num_sequences_for_nist = total_generated_bits // args.nist_bits_per_sequence
+    
     nist_command_base = [
         args.nist_path,
         "-v", "1",
-        "-i", nist_bits_per_value,
+        "-i", 128,
         "-I", "1",
         "-w", ".", # Escribe los resultados en el directorio actual
         "-F", "r"  # Formato de entrada "raw"
     ]
 
-    return selected_function,initial_state,num_values,nist_command_base, args.run_nist,args.output_file,data_format
+    return selected_function,initial_state,num_values,nist_command_base, args.run_nist,args.output_file
 
 if __name__ == "__main__":
-    selected_function,initial_state,num_values,nist_command_base,run_nist,output_file,data_format = main()
+    selected_function,initial_state,num_values,nist_command_base,run_nist,output_file = main()
 
     # --- 3. Generar datos y manejar la salida/tubería ---
     if not output_file:
-        porTuberia(selected_function, initial_state,num_values,data_format,nist_command_base)
+        porTuberia(selected_function, initial_state,num_values,nist_command_base)
     else:
-        porArchivo(selected_function, initial_state,num_values,data_format,nist_command_base, output_file)
+        porArchivo(selected_function, initial_state,num_values,nist_command_base, output_file)
