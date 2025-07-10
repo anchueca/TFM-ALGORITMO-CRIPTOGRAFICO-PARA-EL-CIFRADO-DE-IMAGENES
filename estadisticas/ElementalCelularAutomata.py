@@ -1,9 +1,9 @@
 import numpy as np
-#import cv2
 import pycuda.driver as cuda
-import pycuda.autoinit
 from pycuda.compiler import SourceModule
 import sys
+import pycuda.autoinit
+
 
 
 mod = SourceModule("""
@@ -82,11 +82,6 @@ class ElementalCelularAutomata:
     def cleanup(self):
         for buf in self.dev_buffers:
             buf.free()
-
-    
-    #def show(self):
-        #cv2.imshow("Cellular Automata", self.history.astype(np.uint8) * 255)
-        #cv2.waitKey(0)
         
 
     def convert_to_int(self):
@@ -100,7 +95,6 @@ class ElementalCelularAutomata:
             int_list.append(new_value)
         return int_list
     def convert_to_bitstream(self):
-            """Devuelve los bits actuales como un bytearray empaquetado (cada byte contiene 8 bits)."""
             bitstream = bytearray()
             for i in range(0, len(self.state), 8):
                 byte = 0
@@ -108,13 +102,12 @@ class ElementalCelularAutomata:
                     if i + j < len(self.state):
                         byte = (byte << 1) | int(self.state[i + j])
                     else:
-                        byte <<= 1  # Relleno con 0 si la longitud no es múltiplo de 8
+                        byte <<= 1  # Padding
                 bitstream.append(byte)
             return bitstream
 
 def main():
     if len(sys.argv) < 3:
-        print("Uso: python script.py <longitud> <salida.bin>")
         sys.exit(1)
 
     size = int(sys.argv[1])
@@ -132,8 +125,6 @@ def main():
 
     with open(output_file, 'wb') as f:
         f.write(bitstream)
-
-    print(f"Secuencia de {len(bitstream)*8} bits escrita en: {output_file}")
 
 if __name__ == "__main__":
     main()

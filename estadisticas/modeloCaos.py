@@ -1,12 +1,5 @@
 import numpy as np
 
-def superModelo(x,r):
-    return [
-        logistic(r[0],x[2])/3 + sine(r[1],x[0])/3 + tent(r[2],x[1])/3,
-        logistic(r[0],x[0])/3 + sine(r[1],x[1])/3 + tent(r[2],x[2])/3,
-        logistic(r[0],x[1])/3 + sine(r[1],x[2])/3 + tent(r[2],x[0])/3,
-    ]
-
 def uno(x,r=6.1):
     return np.abs( np.cos( r*np.cos( np.pi*(r+3*x*x) )*(r+3*x*x)*np.pi ) )
 
@@ -19,11 +12,6 @@ def sine(x,r=0.9):
 def tent(x,r):
     return np.where(x < 0.5, r*x, r*(1-x))
 
-def gauss(x,r):
-    if r is not list:
-        r = [6, r]
-    return np.exp(-r[0]*x*x) + r[1]
-
 def selectFunction(functionName):
     if functionName == "logistic":
         return logistic,1
@@ -31,10 +19,6 @@ def selectFunction(functionName):
         return sine,1
     elif functionName == "tent":
         return tent,1
-    elif functionName == "superModelo":
-        return superModelo,3
-    elif functionName == "gauss":
-        return gauss,1
     elif functionName == "uno":
         return uno,1
     else:
