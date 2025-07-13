@@ -45,7 +45,18 @@ __global__ void flow_encrypt_recursive(
             xn = uno(xn, r);
         }
 
-        image[idx] ^= (unsigned char)(fminf(fmaxf(xn, 0.0f), 0.999999f) * 256.0f);
+            union {
+            float f;
+            unsigned int u;
+        } conv;
+        conv.f = xn;
+
+        unsigned int mantisa = conv.u & 0x007FFFFF;
+        unsigned char b1 = (mantisa >> 4) & 0xFF;
+        unsigned char b2 = (mantisa >> 12) & 0xFF;
+        unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
+
+        image[idx] ^= mixed;
     }
 }
                          
