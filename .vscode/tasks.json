@@ -1,0 +1,24 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Normal",
+            "type": "shell",
+            "command": "make",
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}/c++"
+            },
+            "group": {"kind": "build", "isDefault": true},
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "Build Debug",
+            "type": "shell",
+            "command": "make",
+            "args": ["MODE=debug"],
+            "group": "build",
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}

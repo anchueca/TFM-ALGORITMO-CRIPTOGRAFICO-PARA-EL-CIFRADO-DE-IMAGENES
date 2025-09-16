@@ -647,7 +647,7 @@ def main():
     rounds = args.rounds
     show = args.show
 
-    # Berify if the image exists
+    # Verify if the image exists
     if not os.path.exists(args.input_image):
         print(f"Error: La imagen de entrada '{args.input_image}' no existe.")
         sys.exit(1)

@@ -1,0 +1,4 @@
+# Archivos y directorios de compilación
+/c++/bin/
+*.o
+*.out
