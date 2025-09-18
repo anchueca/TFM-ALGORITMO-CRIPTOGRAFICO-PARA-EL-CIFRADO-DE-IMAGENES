@@ -12,7 +12,6 @@ void stack_image(cv::Mat& image) {
     int width = image.cols;
     int width_per_channel = width / 3;
 
-    // Extraer los tres canales (Rojo, Verde, Azul) de la imagen concatenada
     cv::Mat img_b = image(cv::Rect(0, 0, width_per_channel, image.rows));
     cv::Mat img_g = image(cv::Rect(width_per_channel, 0, width_per_channel, image.rows));
     cv::Mat img_r = image(cv::Rect(2 * width_per_channel, 0, width_per_channel, image.rows));
@@ -82,6 +81,6 @@ std::vector<std::vector<unsigned char>> calculate_password(const std::string &in
     password_segments[0] = std::vector<unsigned char>(password.begin(), password.begin() + bytes_for_rows);
     password_segments[1] = std::vector<unsigned char>(password.begin() + bytes_for_rows, password.begin() + bytes_for_rows + bytes_for_columns);
     password_segments[2] = std::vector<unsigned char>(password.begin() + bytes_for_rows + bytes_for_columns, password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks);
-    password_segments[3] = std::vector<unsigned char>(password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks, password.end());
+    password_segments[3] = std::vector<unsigned char>(password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_flow, password.end());
     return password_segments;
 }

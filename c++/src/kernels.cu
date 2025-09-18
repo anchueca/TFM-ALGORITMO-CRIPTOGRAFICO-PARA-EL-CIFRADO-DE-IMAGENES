@@ -1,11 +1,12 @@
 #include "../include/kernels.cuh"
+#include <cstddef>
 
 __device__ double uno(double x, double r)
 {
     double t = r + 3.0 * x * x;
     return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
 }
-
+/*
 __global__ void flow_encrypt_recursive(
     unsigned char *image,
     float *seeds,
@@ -47,53 +48,22 @@ __global__ void flow_encrypt_recursive(
         image[idx] ^= mixed;
     }
 }
-
+*/
 __global__ void permute_blocks_kernel(
-    unsigned char *input,
-    unsigned char *output,
-    int *permutations,
-    int block_height,
-    int block_width,
-    int image_rows,
-    int image_cols,
-    int num_blocks_row,
-    int num_blocks_col,
-    int channels)
+    unsigned char *image, int *permutations,
+    size_t block_size, size_t blocks_per_row)
 {
-    int block_size = block_height * block_width;
-    int total_blocks = num_blocks_row * num_blocks_col;
-    int total_threads = block_size * total_blocks;
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
-    int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    if (tid >= total_threads)
-        return;
-
-    int block_id = tid / block_size;
-    int pixel_id = tid % block_size;
-
-    int block_row = block_id / num_blocks_col;
-    int block_col = block_id % num_blocks_col;
-
-    int perm_index = block_id * block_size + pixel_id;
-    int src_pos = permutations[perm_index];
-
-    int dst_y = block_row * block_height + pixel_id / block_width;
-    int dst_x = block_col * block_width + pixel_id % block_width;
-
-    int src_y = block_row * block_height + src_pos / block_width;
-    int src_x = block_col * block_width + src_pos % block_width;
-
-    for (int c = 0; c < channels; ++c)
-    {
-        if (dst_y < image_rows && dst_x < image_cols && src_y < image_rows && src_x < image_cols)
-        {
-            output[(dst_y * image_cols + dst_x) * channels + c] =
-                input[(src_y * image_cols + src_x) * channels + c];
-        }
+    for(int i=0; i<block_size; i++) {
+        unsigned char temp = image[idx * block_size + i];
+        image[idx * block_size + i] =
+            image[idx * block_size + permutations[idx * block_size + i]];
+        image[idx * block_size + permutations[idx * block_size + i]] = temp;
     }
 }
 
-__global__ void invert_permutations_kernel(int *permutations, int *inverses, int length)
+/*__global__ void invert_permutations_kernel(int *permutations, int *inverses, int length)
 {
     int block_id = blockIdx.x;
     int thread_id = threadIdx.x;
@@ -105,103 +75,167 @@ __global__ void invert_permutations_kernel(int *permutations, int *inverses, int
         int pos = permutations[idx];
         inverses[block_id * length + pos] = i;
     }
-}
+}*/
 
-/// @brief Genera una permutación a partir de la contraseña del bloque.
+/// @brief Generate a set of permutations based on chaotic sequences derived from block passwords.
 /// @param block_passwords Vector de contraseñas de los bloques.
 /// @param block_length La longitud de los bloques.
 /// @param num_blocks El número de bloques.
 /// @return Un vector de vectores de enteros que representa las permutaciones generadas.
-__host__ std::vector<std::vector<int>> generate_permutations(const std::vector<unsigned char> block_passwords, int block_length, int num_blocks)
+__host__ std::vector<std::vector<int>> generate_permutations(const std::vector<unsigned char> block_passwords, size_t block_length, size_t num_blocks)
 {
-    unsigned char *d_passwords;
-    int *d_indices;
-    double *d_chaotic_values;
-
-    int chaos_memory_length = num_blocks * block_length;
-
-    cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned char));
-    cudaMalloc(&d_indices, chaos_memory_length * sizeof(int));
-    cudaMalloc(&d_chaotic_values, chaos_memory_length * sizeof(double));
-
-    cudaMemcpy(d_passwords, block_passwords.data(), num_blocks * sizeof(unsigned char), cudaMemcpyHostToDevice);
-
-    double r = 0.998; // Control parameter for the chaotic map
-    int transition_length = 20;
-
-    int threads = 256;
-    int blocks  = (num_blocks + threads - 1) / threads;
-    generate_chaotic<<<blocks, threads>>>(d_passwords, num_blocks, d_chaotic_values, d_indices, r, block_length, transition_length);
-
-    cudaDeviceSynchronize();
+    if (block_passwords.size() < num_blocks) {
+        throw std::runtime_error("Insufficient passwords for blocks");
+    }
 
     std::vector<std::vector<int>> indices(num_blocks, std::vector<int>(block_length));
-    cudaMemcpy(indices[0].data(), d_indices, chaos_memory_length * sizeof(int), cudaMemcpyDeviceToHost);
-
+    
+    size_t total_size = num_blocks * block_length;
+    
+    unsigned char *d_passwords = nullptr;
+    int *d_indices = nullptr;
+    double *d_chaotic_values = nullptr;
+    
+    cudaError_t err = cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned char));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate device memory for passwords");
+    }
+    
+    err = cudaMalloc(&d_indices, total_size * sizeof(int));
+    if (err != cudaSuccess) {
+        cudaFree(d_passwords);
+        throw std::runtime_error("Failed to allocate device memory for indices");
+    }
+    
+    err = cudaMalloc(&d_chaotic_values, total_size * sizeof(double));
+    if (err != cudaSuccess) {
+        cudaFree(d_passwords);
+        cudaFree(d_indices);
+        throw std::runtime_error("Failed to allocate device memory for chaotic values");
+    }
+    
+    // Copy
+    err = cudaMemcpy(d_passwords, block_passwords.data(), num_blocks * sizeof(unsigned char), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        cudaFree(d_passwords);
+        cudaFree(d_indices);
+        cudaFree(d_chaotic_values);
+        throw std::runtime_error("Failed to copy passwords to device");
+    }
+    
+    const int threadsPerBlock = 256;
+    const int numBlocks = (num_blocks + threadsPerBlock - 1) / threadsPerBlock;
+    double r = 0.998;
+    int transition_length = 20;
+    
+    generate_chaotic<<<numBlocks, threadsPerBlock>>>(
+        d_passwords, num_blocks, d_chaotic_values, d_indices, r, block_length, transition_length
+    );
+    
+    err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        cudaFree(d_passwords);
+        cudaFree(d_indices);
+        cudaFree(d_chaotic_values);
+        throw std::runtime_error("Kernel execution failed");
+    }
+    
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        cudaFree(d_passwords);
+        cudaFree(d_indices);
+        cudaFree(d_chaotic_values);
+        throw std::runtime_error("Kernel synchronization failed");
+    }
+    
+    // return values
+    std::vector<int> flat_indices(total_size);
+    err = cudaMemcpy(flat_indices.data(), d_indices, total_size * sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        cudaFree(d_passwords);
+        cudaFree(d_indices);
+        cudaFree(d_chaotic_values);
+        throw std::runtime_error("Failed to copy results from device");
+    }
+    
     cudaFree(d_passwords);
     cudaFree(d_indices);
     cudaFree(d_chaotic_values);
-
+    
+    for (int i = 0; i < num_blocks; ++i) {
+        std::copy(
+            flat_indices.begin() + i * block_length,
+            flat_indices.begin() + (i + 1) * block_length,
+            indices[i].begin()
+        );
+    }
+    
     return indices;
 }
 
-__global__ void generate_chaotic(unsigned char* passwords, int num_blocks, double* chaotic_vals, int *indices, double r, int block_length, int transition_length)
+__global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, double* chaotic_vals, int *indices, double r, size_t block_length, size_t transition_length)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx >= gridDim.x * blockDim.x) return;
     if (idx >= num_blocks) return;
 
+    double x = (static_cast<double>(passwords[idx]) + 1.0) / 257.0;  // Normalizar a (0,1)
 
-    double x = static_cast<double>(passwords[idx]);
-
-    for (int i = 0; i < transition_length; ++i)
-        x = uno(x, r);
-
-    for (int i = 0; i < block_length; i++)
-    {
-        chaotic_vals[idx * block_length + i] = 5;
-        indices[idx * block_length + i] = i;
+    for (int i = 0; i < transition_length; ++i) {
         x = uno(x, r);
     }
 
-    // sort_indices_by_chaotic_values(chaotic_vals + idx * length, indices + idx * length, length);
+    int base_idx = idx * block_length;
+    for (int i = 0; i < block_length; i++) {
+        x = uno(x, r);
+        chaotic_vals[base_idx + i] = x;
+        indices[base_idx + i] = i;
+    }
+
+    __syncthreads();
+
+    for (int i = 0; i < block_length - 1; i++) {
+        int min_idx = i;
+        for (int j = i + 1; j < block_length; j++) {
+            if (chaotic_vals[base_idx + j] < chaotic_vals[base_idx + min_idx]) {
+                min_idx = j;
+            }
+        }
+
+        if (min_idx != i) {
+            double temp_val = chaotic_vals[base_idx + i];
+            chaotic_vals[base_idx + i] = chaotic_vals[base_idx + min_idx];
+            chaotic_vals[base_idx + min_idx] = temp_val;
+
+            int temp_idx = indices[base_idx + i];
+            indices[base_idx + i] = indices[base_idx + min_idx];
+            indices[base_idx + min_idx] = temp_idx;
+        }
+    }
 }
 
 __host__ void block_phase_permutation(
-    cv::Mat &image, int num_rows, int num_cols, int block_height, int block_width, const std::vector<int> &block_permutations)
+    cv::cuda::GpuMat image, std::vector<std::vector<int>> &block_permutations)
 {
-    unsigned char *d_input;
-    unsigned char *d_output;
-    int *d_permutations;
+    unsigned char *d_image = image.ptr<unsigned char>();
+    int *d_permutations = nullptr;
+    
+    size_t block_number = block_permutations.size();
+    size_t block_size = block_permutations[0].size();
+    size_t image_size = image.rows * image.cols * sizeof(unsigned char);
+    size_t permutations_size = block_size * block_number * sizeof(int);
+    size_t blocks_per_row = image.cols / block_size;
 
-    int channels = image.channels();
-    int image_size = num_rows * num_cols * channels * sizeof(unsigned char);
-    int block_size = block_height * block_width;
-    int total_blocks = (num_rows / block_height) * (num_cols / block_width);
-    int permutations_size = total_blocks * block_size * sizeof(int);
-
-    cudaMalloc(&d_input, image_size);
-    cudaMalloc(&d_output, image_size);
     cudaMalloc(&d_permutations, permutations_size);
 
-    cudaMemcpy(d_input, image.data, image_size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_permutations, block_permutations.data(), permutations_size, cudaMemcpyHostToDevice);
 
-    dim3 blockDim(16, 16);
-    dim3 gridDim((num_cols + blockDim.x - 1) / blockDim.x, (num_rows + blockDim.y - 1) / blockDim.y);
-
-    permute_blocks_kernel<<<gridDim, blockDim>>>(
-        d_input, d_output, d_permutations,
-        block_height, block_width,
-        num_rows, num_cols,
-        num_rows / block_height, num_cols / block_width,
-        channels);
+    permute_blocks_kernel<<<32, 128>>>(
+        d_image, d_permutations, block_size, blocks_per_row);
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(image.data, d_output, image_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(image.data, d_image, image_size, cudaMemcpyDeviceToHost);
 
-    cudaFree(d_input);
-    cudaFree(d_output);
     cudaFree(d_permutations);
+
 }

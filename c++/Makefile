@@ -1,5 +1,5 @@
 # Variables
-CXX = g++
+CXX = g++-12
 NVCC = nvcc
 
 # Flags normales
@@ -11,8 +11,8 @@ CXXFLAGS_DEBUG = -std=c++17 -g -O0 -Wall -pedantic
 NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
 
 # Librerías e includes
-LDFLAGS = $(shell pkg-config --libs opencv4) -lssl -lcrypto
-CXXINCLUDES = $(shell pkg-config --cflags opencv4) -I./include
+LDFLAGS = $(shell pkg-config --libs opencv4) -lssl -lcrypto -lcudart 
+CXXINCLUDES = $(shell pkg-config --cflags opencv4) -I./include -I/usr/local/cuda/include
 
 # Directorios
 SRC_DIR = ./src
@@ -36,6 +36,8 @@ else
     NVCCFLAGS = $(NVCCFLAGS_NORMAL)
 endif
 
+NVCCFLAGS += -ccbin g++-12
+
 # Regla principal
 $(TARGET): $(OBJS_CPP) $(OBJS_CU)
 	@mkdir -p $(BIN_DIR)
@@ -47,7 +49,7 @@ $(SRC_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 # Compilación de .cu
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
-	$(NVCC) $(NVCCFLAGS) $(CXXINCLUDES) -c $< -o $@
+	$(NVCC) $(NVCCFLAGS) $(CXXINCLUDES) -dc $< -o $@
 
 # Limpieza
 clean:

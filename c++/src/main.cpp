@@ -1,6 +1,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/highgui.hpp>
+#include <opencv2/core/cuda.hpp>
 #include <iostream>
 #include <math.h>
 
@@ -9,37 +10,36 @@
 
 using namespace std;
 
-void encrypt_image(cv::Mat& image, const string& password, int rounds, int verbose) {
-    int num_blocks = 256;
+void encrypt_image(cv::cuda::GpuMat image, const string& password, int rounds, int verbose) {
+    int block_size = 16;
     int precision_level = 2;
+    // For now we assume the image dimensions are multiples of block_size
+    int num_blocks_per_row = image.rows / block_size + (image.rows % block_size != 0);
+    int num_blocks_per_col = image.cols / block_size + (image.cols % block_size != 0);
+    int num_blocks = num_blocks_per_row * num_blocks_per_col;
+    int block_data_length = block_size*block_size;
 
     std::vector<std::vector<unsigned char>> password_segments = calculate_password(password, num_blocks, precision_level, rounds, image.rows, image.cols);
 
-    // Pruebas
-    std::cout << "Passwords: "<< password_segments[3].size() << std::endl;
-    for(int i=0; i<password_segments[3].size();i++){
-        std::cout << static_cast<int>(password_segments[3][i]) << " ";
-    }
-    
-    int num_rows = floor(sqrt(num_blocks));
-    int num_cols = floor(sqrt(num_blocks / num_rows));
+    std::cout<< "Block size: " << block_size << std::endl;
+    std::cout<< "Num blocks per row: " << num_blocks_per_row << std::endl;
+    std::cout<< "Num blocks per col: " << num_blocks_per_col << std::endl;
+    std::cout<< "Num blocks: " << num_blocks << std::endl;
+    std::cout<< "Block data length: " << block_data_length << std::endl;
+    std::cout<< "Password segment size: " << password_segments[3].size() << std::endl;
+    std::cout<< image.rows << "x" << image.cols << std::endl;
 
-    // Block size as square as possible
-    int block_height = image.rows / num_rows; // num_rows
-    int block_width = image.cols / num_cols; // num_cols
-
-    int block_data_length = block_height * block_width;
-
-    std::vector<std::vector<int>> permutations = generate_permutations(password_segments[3],block_data_length, num_blocks);
+    std::vector<std::vector<int>> permutations =
+    generate_permutations(password_segments[3],block_data_length, num_blocks);
     
     for (int b = 0; b < num_blocks; b++) {
         for (int i = 0; i < block_data_length; i++) {
             std::cout << permutations[b][i] << " ";
         }
-        std::cout << std::endl << "Permutations: ";
+        std::cout << std::endl << "Permutations: " << std::endl;
     }
 
-    //block_phase_permutation(image, num_rows, num_cols, block_height, block_width, permutations);
+    block_phase_permutation(image, permutations);
 
 }
 
@@ -55,17 +55,24 @@ int main(int argc, char** argv) {
     string output_image_path = argv[4];
     int verbose = stoi(argv[5]);
 
-    cv::Mat image = cv::imread(input_image_path, cv::IMREAD_COLOR);
+    cv::Mat image = cv::imread(input_image_path);
     if (image.empty()) {
         cerr << "Could not open or find the image!" << endl;
         return -1;
     }
 
-    unstack_image(image);
+    int channels = image.channels();
 
-    encrypt_image(image, password, rounds, verbose);
+    if(channels !=1) unstack_image(image);
 
-    stack_image(image);
+    cv::cuda::GpuMat d_image;
+    d_image.upload(image);
+
+    encrypt_image(d_image, password, rounds, verbose);
+
+    d_image.download(image);
+
+    if(channels !=1) stack_image(image);
 
     if (image.empty()) {
         cerr << "Encryption failed!" << endl;
