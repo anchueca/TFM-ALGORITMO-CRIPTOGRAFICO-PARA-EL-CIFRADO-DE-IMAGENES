@@ -1,13 +1,10 @@
 # Variables
-CXX = g++-12
 NVCC = nvcc
 
 # Flags normales
-CXXFLAGS_NORMAL = -std=c++17 -O2 -Wall -pedantic
 NVCCFLAGS_NORMAL = -O2 -rdc=true
 
 # Flags de depuración
-CXXFLAGS_DEBUG = -std=c++17 -g -O0 -Wall -pedantic
 NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
 
 # Librerías e includes
@@ -20,9 +17,7 @@ BIN_DIR = ./bin
 INCLUDE_DIR = ./include
 
 # Archivos
-SRCS_CPP = $(wildcard $(SRC_DIR)/*.cpp)
 SRCS_CU = $(wildcard $(SRC_DIR)/*.cu)
-OBJS_CPP = $(SRCS_CPP:.cpp=.o)
 OBJS_CU = $(SRCS_CU:.cu=.o)
 TARGET = $(BIN_DIR)/cipher.out
 
@@ -42,10 +37,6 @@ NVCCFLAGS += -ccbin g++-12
 $(TARGET): $(OBJS_CPP) $(OBJS_CU)
 	@mkdir -p $(BIN_DIR)
 	$(NVCC) $(NVCCFLAGS) $(OBJS_CPP) $(OBJS_CU) -o $@ $(LDFLAGS)
-
-# Compilación de .cpp
-$(SRC_DIR)/%.o: $(SRC_DIR)/%.cpp
-	$(CXX) $(CXXFLAGS) $(CXXINCLUDES) -c $< -o $@
 
 # Compilación de .cu
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu

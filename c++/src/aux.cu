@@ -1,25 +1,58 @@
-#include "../include/aux.hpp"
+#include "../include/aux.cuh"
 
-void unstack_image(cv::Mat& image){
-    std::vector<cv::Mat> channels(3);
-
-    cv::split(image, channels);
-
-    cv::hconcat(channels, image);
-}
-
-void stack_image(cv::Mat& image) {
+__host__ cv::Mat unstack_image(cv::Mat image){
     int width = image.cols;
-    int width_per_channel = width / 3;
+    int height = image.rows;
 
-    cv::Mat img_b = image(cv::Rect(0, 0, width_per_channel, image.rows));
-    cv::Mat img_g = image(cv::Rect(width_per_channel, 0, width_per_channel, image.rows));
-    cv::Mat img_r = image(cv::Rect(2 * width_per_channel, 0, width_per_channel, image.rows));
+    cv::Mat unstacked_image(height, width * 3, CV_8UC1);
 
-    cv::merge(std::vector<cv::Mat>{img_b, img_g, img_r}, image);
+    unsigned char *d_src, *d_dst;
+
+    cudaMalloc(&d_src, width * height * 3 * sizeof(unsigned char));
+    cudaMalloc(&d_dst, width * height * 3 * sizeof(unsigned char));
+
+    cudaMemcpy(d_src, image.data, width * height * 3 * sizeof(unsigned char), cudaMemcpyHostToDevice);
+
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x, (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+    split_and_concat_kernel<<<numBlocks, threadsPerBlock>>>(d_src, d_dst, width, height);
+
+    cudaMemcpy(unstacked_image.data, d_dst, width * height * 3 * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_src);
+    cudaFree(d_dst);
+
+    return unstacked_image;
 }
 
-std::vector<unsigned char> generate_sha3_hash(const std::string &input, size_t length) {
+__host__ cv::Mat stack_image(cv::Mat image) {
+    int dst_width = image.cols / 3;
+    int dst_height = image.rows;
+
+    cv::Mat stacked_image(dst_height, dst_width, CV_8UC3);
+    
+    unsigned char *d_src, *d_dst;
+    
+    cudaMalloc(&d_src, image.total() * image.elemSize());
+    cudaMalloc(&d_dst, stacked_image.total() * stacked_image.elemSize());
+
+    cudaMemcpy(d_src, image.data, image.total() * image.elemSize(), cudaMemcpyHostToDevice);
+
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks((dst_width + threadsPerBlock.x - 1) / threadsPerBlock.x, (dst_height + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+    merge_and_stack_kernel<<<numBlocks, threadsPerBlock>>>(d_src, d_dst, dst_width, dst_height);
+
+    cudaMemcpy(stacked_image.data, d_dst, stacked_image.total() * stacked_image.elemSize(), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_src);
+    cudaFree(d_dst);
+
+    return stacked_image;
+}
+
+__host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input, size_t length) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     const EVP_MD *sha3 = EVP_sha3_512();  // SHA3-512 (64 bytes)
 
@@ -58,7 +91,7 @@ std::vector<unsigned char> generate_sha3_hash(const std::string &input, size_t l
     return result;
 }
 
-std::vector<std::vector<unsigned char>> calculate_password(const std::string &input, int num_blocks, int precision_level, int rounds, int image_height, int image_width){
+__host__ std::vector<std::vector<unsigned char>> calculate_password(const std::string &input, int num_blocks, int precision_level, int rounds, int image_height, int image_width){
 
     // Required lengths
     int bytes_for_rows = image_height * precision_level;
