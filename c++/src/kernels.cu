@@ -5,13 +5,14 @@ __device__ double uno(double x, double r)
     double t = r + 3.0 * x * x;
     return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
 }
-/*
+
 __global__ void flow_encrypt_recursive(
     unsigned char *image,
-    float *seeds,
+    unsigned char *image_out,
+    const unsigned char *seeds,
     int width,
     int height,
-    float r,
+    double r,
     int rounds)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -20,7 +21,7 @@ __global__ void flow_encrypt_recursive(
     if (x >= width || y_start >= height)
         return;
 
-    float xn = seeds[y_start];
+    double xn = seeds[y_start] / static_cast<double>(INT_MAX);
 
     for (int r_idx = 0; r_idx < rounds; ++r_idx)
     {
@@ -34,7 +35,7 @@ __global__ void flow_encrypt_recursive(
 
         union
         {
-            float f;
+            double f;
             unsigned int u;
         } conv;
         conv.f = xn;
@@ -44,14 +45,14 @@ __global__ void flow_encrypt_recursive(
         unsigned char b2 = (mantisa >> 12) & 0xFF;
         unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
 
-        image[idx] ^= mixed;
+        image_out[idx] = image[idx] ^ mixed;
     }
 }
-*/
+
 
 //block_size: length of one side of a block
 __global__ void permute_blocks_kernel(
-    unsigned char *image, unsigned char *image_out, int *permutations,
+    unsigned char *image, unsigned char *image_out, unsigned int *permutations,
     size_t block_size, size_t cols, size_t rows)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -84,7 +85,7 @@ __global__ void permute_blocks_kernel(
 }
 
 __global__ void permute_rows_kernel(
-    unsigned char *image, unsigned char *image_out, int *permutation, size_t cols, size_t rows)
+    unsigned char *image, unsigned char *image_out, unsigned int *permutation, size_t cols, size_t rows)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -95,7 +96,7 @@ __global__ void permute_rows_kernel(
 }
 
 __global__ void permute_columns_kernel(
-    unsigned char *image, unsigned char *image_out, int *permutation, size_t cols, size_t rows)
+    unsigned char *image, unsigned char *image_out, unsigned int *permutation, size_t cols, size_t rows)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -105,26 +106,12 @@ __global__ void permute_columns_kernel(
     }
 }
 
-__global__ void invert_permutations_kernel(int *permutations, int *inverses, int length)
-{
-    int block_id = blockIdx.x;
-    int thread_id = threadIdx.x;
-    int threads_per_block = blockDim.x;
-
-    for (int i = thread_id; i < length; i += threads_per_block)
-    {
-        int idx = block_id * length + i;
-        int pos = permutations[idx];
-        inverses[block_id * length + pos] = i;
-    }
-}
-
-__global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, double* chaotic_vals, int *indices, double r, size_t block_length, size_t transition_length)
+__global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, double* chaotic_vals, unsigned int *indices, double r, size_t block_length, size_t transition_length)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= num_blocks) return;
 
-    double x = (static_cast<double>(passwords[idx]) + 1.0) / 257.0;  // Normalizar a (0,1)
+    double x = (static_cast<double>(passwords[idx]) + 1.0) / 257.0;  // Normalize to (0,1)
 
     for (int i = 0; i < transition_length; ++i) {
         x = uno(x, r);
@@ -137,26 +124,19 @@ __global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, do
         indices[base_idx + i] = i;
     }
 
-    __syncthreads();
-
-    for (int i = 0; i < block_length - 1; i++) {
-        int min_idx = i;
-        for (int j = i + 1; j < block_length; j++) {
-            if (chaotic_vals[base_idx + j] < chaotic_vals[base_idx + min_idx]) {
-                min_idx = j;
-            }
-        }
-
-        if (min_idx != i) {
-            double temp_val = chaotic_vals[base_idx + i];
-            chaotic_vals[base_idx + i] = chaotic_vals[base_idx + min_idx];
-            chaotic_vals[base_idx + min_idx] = temp_val;
-
-            int temp_idx = indices[base_idx + i];
-            indices[base_idx + i] = indices[base_idx + min_idx];
-            indices[base_idx + min_idx] = temp_idx;
-        }
-    }
+    sort_indices_by_chaotic_values<double>(base_idx,chaotic_vals, indices, block_length);
 }
 
+__global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned int* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length)
+{
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx >= num_blocks) return;
+    int base_idx = idx * block_length;
+    //TODO: Tengo que tomar los punteros en automata_states y copiar su contenido en chaotic_values
+    unsigned int* automata_state = automata_states[idx];
+    for(int i=0;i<block_length;i++ ){
+        d_chaotic_values[base_idx+i] = automata_state[i];
+    }
 
+    sort_indices_by_chaotic_values<unsigned int>(base_idx,d_chaotic_values, indices, block_length);
+}
