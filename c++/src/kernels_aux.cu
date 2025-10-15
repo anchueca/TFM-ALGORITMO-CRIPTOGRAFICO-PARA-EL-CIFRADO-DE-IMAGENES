@@ -1,26 +1,5 @@
 #include "../include/kernels_aux.cuh"
 
-__device__ void sort_indices_by_chaotic_values(double* chaotic_vals, int* indices, int length) {
-    // Usamos el algoritmo de ordenación por burbuja (Bubble Sort)
-    for (int i = 0; i < length - 1; i++) {
-        for (int j = 0; j < length - 1 - i; j++) {
-            // Si el valor caótico actual es mayor que el siguiente, intercambiamos
-            if (chaotic_vals[j] > chaotic_vals[j + 1]) {
-                // Intercambiar los valores de chaotic_vals
-                double temp = chaotic_vals[j];
-                chaotic_vals[j] = chaotic_vals[j + 1];
-                chaotic_vals[j + 1] = temp;
-
-                // Intercambiar los índices correspondientes
-                int temp_index = indices[j];
-                indices[j] = indices[j + 1];
-                indices[j + 1] = temp_index;
-            }
-        }
-    }
-}
-
-
 __global__ void split_and_concat_kernel(const unsigned char* src, unsigned char* dst, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -56,5 +35,19 @@ __global__ void merge_and_stack_kernel(const unsigned char* src, unsigned char* 
         dst[dst_idx]     = src[src_idx_b]; // Escribir B
         dst[dst_idx + 1] = src[src_idx_g]; // Escribir G
         dst[dst_idx + 2] = src[src_idx_r]; // Escribir R
+    }
+}
+
+__global__ void invert_permutations_kernel(int *permutations, int *inverses, int length)
+{
+    int block_id = blockIdx.x;
+    int thread_id = threadIdx.x;
+    int threads_per_block = blockDim.x;
+
+    for (int i = thread_id; i < length; i += threads_per_block)
+    {
+        int idx = block_id * length + i;
+        int pos = permutations[idx];
+        inverses[block_id * length + pos] = i;
     }
 }

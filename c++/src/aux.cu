@@ -91,6 +91,14 @@ __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
     return result;
 }
 
+/// @brief Generate a password bitstream 
+/// @param input password
+/// @param num_blocks 
+/// @param precision_level 
+/// @param rounds 
+/// @param image_height 
+/// @param image_width 
+/// @return a vector of bitsream. Rows, cols, blocks and flow
 __host__ std::vector<std::vector<unsigned char>> calculate_password(const std::string &input, int num_blocks, int precision_level, int rounds, int image_height, int image_width){
 
     // Required lengths
@@ -114,6 +122,6 @@ __host__ std::vector<std::vector<unsigned char>> calculate_password(const std::s
     password_segments[0] = std::vector<unsigned char>(password.begin(), password.begin() + bytes_for_rows);
     password_segments[1] = std::vector<unsigned char>(password.begin() + bytes_for_rows, password.begin() + bytes_for_rows + bytes_for_columns);
     password_segments[2] = std::vector<unsigned char>(password.begin() + bytes_for_rows + bytes_for_columns, password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks);
-    password_segments[3] = std::vector<unsigned char>(password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_flow, password.end());
+    password_segments[3] = std::vector<unsigned char>(password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks, password.end());
     return password_segments;
 }
