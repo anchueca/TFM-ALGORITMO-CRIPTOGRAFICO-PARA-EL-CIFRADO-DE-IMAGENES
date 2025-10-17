@@ -20,13 +20,13 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, int roun
     std::cout<< image.rows << "x" << image.cols << std::endl;
 
     //Automatas
-    ElementalCelularAutomata automata(password_segments[0],image.cols* precision_level * 8, 30);
-    automata.iterate(50);
+    ElementalCelularAutomata automata(password_segments[1],image.cols* precision_level * 8, 30);
+    automata.iterate(500);
     const std::vector<ElementalCelularAutomata*> container1 = {&automata};
     unsigned int* permutation_cols = generate_automata_permutations(container1,image.cols,1);
 
-    ElementalCelularAutomata automata1(password_segments[1],image.rows* precision_level * 8, 30);
-    automata1.iterate(50);
+    ElementalCelularAutomata automata1(password_segments[0],image.rows* precision_level * 8, 30);
+    automata1.iterate(500);
     const std::vector<ElementalCelularAutomata*> container = {&automata1};
     unsigned int* permutation_rows = generate_automata_permutations(container,image.rows,1);
 

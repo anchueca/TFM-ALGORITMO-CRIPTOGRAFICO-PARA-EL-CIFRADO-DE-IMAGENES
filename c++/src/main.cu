@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
 
     encrypt_image(image, password, rounds, verbose);
 
-    //if(channels !=1) image= stack_image(image);
+    if(channels !=1) image= stack_image(image);
 
     if (image.empty()) {
         cerr << "Encryption failed!" << endl;
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
 
     //cv::imshow("Encrypted Image", image);
     //cv::waitKey(0);
-    cv::imwrite("bin/salida.jpg",image);
+    cv::imwrite(output_image_path,image);
 
     return 0;
 }

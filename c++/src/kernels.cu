@@ -127,16 +127,18 @@ __global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, do
     sort_indices_by_chaotic_values<double>(base_idx,chaotic_vals, indices, block_length);
 }
 
-__global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned int* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length)
+__global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned short* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= num_blocks) return;
     int base_idx = idx * block_length;
-    //TODO: Tengo que tomar los punteros en automata_states y copiar su contenido en chaotic_values
     unsigned int* automata_state = automata_states[idx];
-    for(int i=0;i<block_length;i++ ){
-        d_chaotic_values[base_idx+i] = automata_state[i];
+    for(int i=0;i<block_length;i+=2 ){
+        d_chaotic_values[base_idx+i] = automata_state[i] >> 16;
+        d_chaotic_values[base_idx+i+1] = automata_state[i] & 0x0000FFFF;
+        printf("%d: (%u) ",i,d_chaotic_values[base_idx+i]);
+        printf("%d: ((%u) ",i+1,d_chaotic_values[base_idx+i+1]);
     }
 
-    sort_indices_by_chaotic_values<unsigned int>(base_idx,d_chaotic_values, indices, block_length);
+    sort_indices_by_chaotic_values<unsigned short>(base_idx,d_chaotic_values, indices, block_length);
 }

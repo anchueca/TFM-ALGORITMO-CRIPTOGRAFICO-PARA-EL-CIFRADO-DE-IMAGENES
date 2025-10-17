@@ -97,7 +97,7 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
     
     unsigned int **d_automatas = nullptr; //Array of pointers to automata states
     unsigned int *d_indices = nullptr;
-    unsigned int *d_chaotic_values = nullptr; // Here the automata states are gonna be copied
+    unsigned short *d_chaotic_values = nullptr; // Here the automata states are gonna be copied
     
     cudaError_t err = cudaMalloc(&d_automatas, automatas.size() * sizeof(unsigned int*));
     if (err != cudaSuccess) {
@@ -110,14 +110,14 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
         throw std::runtime_error("Failed to allocate device memory for indices");
     }
     
-    err = cudaMalloc(&d_chaotic_values, total_size * sizeof(unsigned int));
+    err = cudaMalloc(&d_chaotic_values, total_size * sizeof(unsigned short));
     if (err != cudaSuccess) {
         cudaFree(d_automatas);
         cudaFree(d_indices);
         throw std::runtime_error("Failed to allocate device memory for chaotic values");
     }
     
-    unsigned int **pointers_to_automata_states = new unsigned int *[automatas.size()];
+    const unsigned int **pointers_to_automata_states = new const unsigned int *[automatas.size()];
     for(int i=0; i< automatas.size();i++){
         pointers_to_automata_states[i]=automatas[i]->get_cuda_state();
     }
