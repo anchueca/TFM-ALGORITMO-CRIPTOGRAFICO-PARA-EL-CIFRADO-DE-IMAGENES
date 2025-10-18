@@ -15,9 +15,7 @@ __device__ inline void sort_indices_by_chaotic_values(
     int block_length
 ) {
 
-    //indices[base_idx + block_length - 1] = block_length - 1;
     for (int i = 0; i < block_length - 1; i++) {
-        //indices[base_idx + i] = i;
         int min_idx = i;
         for (int j = i + 1; j < block_length; j++) {
             if (chaotic_vals[base_idx + j] < chaotic_vals[base_idx + min_idx]) {
@@ -37,6 +35,21 @@ __device__ inline void sort_indices_by_chaotic_values(
             indices[base_idx + min_idx] = temp_idx;
         }
     }
+};
+
+template<typename T>
+__global__ inline void sort_indices_by_chaotic_values_global(
+    T* d_chaotic_values,
+    size_t num_blocks,
+    unsigned int *indices,
+    size_t block_length
+) {
+
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx >= num_blocks) return;
+    int base_idx = idx * block_length;
+
+    sort_indices_by_chaotic_values<T>(base_idx,d_chaotic_values, indices, block_length);
 };
 
 __global__ void merge_and_stack_kernel(

@@ -89,7 +89,6 @@ __global__ void permute_rows_kernel(
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-
     if (x < cols && y < rows) {
         image_out[y * cols + x] = image[permutation[y] * cols + x];
     }
@@ -130,15 +129,9 @@ __global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, do
 __global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned short* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx >= num_blocks) return;
-    int base_idx = idx * block_length;
-    unsigned int* automata_state = automata_states[idx];
-    for(int i=0;i<block_length;i+=2 ){
-        d_chaotic_values[base_idx+i] = automata_state[i] >> 16;
-        d_chaotic_values[base_idx+i+1] = automata_state[i] & 0x0000FFFF;
-        printf("%d: (%u) ",i,d_chaotic_values[base_idx+i]);
-        printf("%d: ((%u) ",i+1,d_chaotic_values[base_idx+i+1]);
-    }
-
-    sort_indices_by_chaotic_values<unsigned short>(base_idx,d_chaotic_values, indices, block_length);
+    if (idx >= num_blocks*block_length) return;
+    unsigned int* automata_state = automata_states[idx/block_length];
+    if(idx & 1)d_chaotic_values[idx] = automata_state[idx] >> 16;
+    else d_chaotic_values[idx] = automata_state[idx] & 0x0000FFFF;
+    indices[idx] = idx;
 }

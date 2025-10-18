@@ -1,13 +1,16 @@
 #include "../include/encryption.cuh"
 
 __host__ void encrypt_image(cv::Mat image, const std::string& password, int rounds, int verbose) {
-    size_t block_size = 32;
-    size_t precision_level = 2; // 2 bytes
+    
+    // Setting parameters
+    const size_t block_size = 32;
+    const size_t precision_level = 2; // 2 bytes
+    const size_t automata_steps = 50;
     // For now we assume the image dimensions are multiples of block_size
-    size_t num_blocks_per_row = image.rows / block_size + (image.rows % block_size != 0);
-    size_t num_blocks_per_col = image.cols / block_size + (image.cols % block_size != 0);
-    size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
-    size_t block_data_length = block_size*block_size;
+    const size_t num_blocks_per_row = image.rows / block_size + (image.rows % block_size != 0);
+    const size_t num_blocks_per_col = image.cols / block_size + (image.cols % block_size != 0);
+    const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
+    const size_t block_data_length = block_size*block_size;
 
     const std::vector<std::vector<unsigned char>> password_segments = calculate_password(password, num_blocks, precision_level, rounds, image.rows, image.cols);
 
@@ -21,32 +24,21 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, int roun
 
     //Automatas
     ElementalCelularAutomata automata(password_segments[1],image.cols* precision_level * 8, 30);
-    automata.iterate(500);
     const std::vector<ElementalCelularAutomata*> container1 = {&automata};
-    unsigned int* permutation_cols = generate_automata_permutations(container1,image.cols,1);
+    unsigned int* d_permutation_cols = generate_automata_permutations(container1,automata_steps,image.cols);
 
     ElementalCelularAutomata automata1(password_segments[0],image.rows* precision_level * 8, 30);
-    automata1.iterate(500);
     const std::vector<ElementalCelularAutomata*> container = {&automata1};
-    unsigned int* permutation_rows = generate_automata_permutations(container,image.rows,1);
+    unsigned int* d_permutation_rows = generate_automata_permutations(container,automata_steps,image.rows);
 
     //Generate permutations
     unsigned int* permutations =
         generate_flow_permutations(password_segments[2],block_data_length, num_blocks);
 
-    /*std::cout << std::endl << "Permutations rows: " << std::endl;
-    for (int i = 0; i < block_data_length; i++) {
-        std::cout << permutation_rows[i] << " ";
-    }
-    std::cout << std::endl << "Permutations cols: " << std::endl;
-    for (int i = 0; i < block_data_length; i++) {
-        std::cout << permutation_cols[i] << " ";
-    }*/
-
 
     unsigned char* d_image = nullptr;
     unsigned char* d_image_out = nullptr;
-    size_t img_size = image.total() * image.elemSize();
+    const size_t img_size = image.total() * image.elemSize();
 
     cudaMalloc(&d_image, img_size);
     cudaMalloc(&d_image_out, img_size);
@@ -59,14 +51,14 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, int roun
     for (size_t i=0;i<rounds;i++){
         for(size_t j=0; j<2;j++){//Each round two permtations
             //Rows an columns
-            rows_and_columns_permutation(d_image,d_image_out, permutation_rows, permutation_cols, image.cols, image.rows, false);
+            rows_and_columns_permutation(d_image,d_image_out,d_permutation_rows,d_permutation_cols, image.cols, image.rows, false);
             
             //Block
-            //block_phase_permutation(d_image,d_image_out, permutations, image.cols, image.rows, block_size);
+            block_phase_permutation(d_image,d_image_out, permutations, image.cols, image.rows, block_size);
             
-            /*temp = d_image;
+            temp = d_image;
             d_image = d_image_out;
-            d_image_out = temp;*/
+            d_image_out = temp;
         }
 
         /*flow_encrypt(d_image, d_image_out, password_segments[3], image.cols, image.rows, 3.999,1);

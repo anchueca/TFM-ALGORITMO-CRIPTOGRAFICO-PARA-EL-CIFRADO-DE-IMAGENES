@@ -18,7 +18,7 @@ __host__ void block_phase_permutation(
     unsigned char* d_image, unsigned char* d_image_out, unsigned int* block_permutations, size_t cols, size_t rows, size_t block_size);
 
 __host__ void rows_and_columns_permutation(
-    unsigned char* d_image, unsigned char* d_image_out, unsigned int *row_permutation, unsigned int *col_permutation, size_t cols, size_t rows, bool inverse);
+    unsigned char* d_image, unsigned char* d_image_out, unsigned int *d_row_permutations, unsigned int *d_col_permutations, size_t cols, size_t rows, bool inverse);
 
 __host__ void flow_encrypt(
     unsigned char *image,
@@ -29,6 +29,6 @@ __host__ void flow_encrypt(
     double r,
     int rounds);
 
-__host__ unsigned int* generate_automata_permutations(const std::vector<ElementalCelularAutomata*> automatas, size_t block_length, size_t num_blocks);
+__host__ unsigned int* generate_automata_permutations(const std::vector<ElementalCelularAutomata*> automatas, const size_t steps, const size_t block_length);
 
 # endif // ENCRYPTION_AUX_CUH
