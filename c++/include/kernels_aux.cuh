@@ -57,8 +57,14 @@ __global__ void merge_and_stack_kernel(
 
 __global__ void split_and_concat_kernel(
     const unsigned char* src, unsigned char* dst, int width, int height);
+/**
+ * @brief Kernel to invert a batch of permutations in parallel.
+ * Each CUDA block is responsible for inverting one permutation.
+ * @param permutations Input array of permutations on the GPU.
+ * @param inverses Output array for the inverted permutations on the GPU.
+ * @param block_length The length of a single permutation.
+ * @param num_blocks (Unused) The total number of permutations. The kernel deduces this from the grid size.
+ */
+__global__ void invert_permutations_kernel(unsigned int *d_permutations, unsigned int *inverses, size_t block_length, size_t num_blocks);
 
-__global__ void invert_permutations_kernel(
-    int* permutations, int* inverses, int length);
-    
 # endif // KERNELS_AUX_CUH

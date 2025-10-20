@@ -8,8 +8,6 @@
 #include "kernels.cuh"
 #include "automata.cuh"
 
-using namespace std;
-
 __host__ unsigned int* generate_flow_permutations(
     const std::vector<unsigned char> block_passwords, size_t block_length,
     size_t num_blocks);
@@ -30,5 +28,14 @@ __host__ void flow_encrypt(
     int rounds);
 
 __host__ unsigned int* generate_automata_permutations(const std::vector<ElementalCelularAutomata*> automatas, const size_t steps, const size_t block_length);
+
+/**
+ * @brief Inverts a batch of permutations stored on the GPU.
+ * @param d_permutations Device pointer to the input array containing N contiguous permutations.
+ * @param block_length The length of a single permutation.
+ * @param num_permutations The total number of permutations in the batch.
+ * @return A new device pointer to the array of inverted permutations. The caller is responsible for freeing this memory.
+ */
+__host__ void inverse_permutations(unsigned int** d_permutations, size_t block_length, size_t num_blocks);
 
 # endif // ENCRYPTION_AUX_CUH

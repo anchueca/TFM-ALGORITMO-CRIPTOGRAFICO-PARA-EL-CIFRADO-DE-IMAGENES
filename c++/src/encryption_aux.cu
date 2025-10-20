@@ -239,14 +239,46 @@ __host__ void flow_encrypt(
     if (cudaGetLastError() != cudaSuccess) {
             cudaFree(d_seeds);
             throw std::runtime_error("Seeds copy error.");
-        }
+    }
 
-    dim3 threadsPerBlock(16, 16);
-    dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x, (rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
-    flow_encrypt_recursive<<<numBlocks, threadsPerBlock>>>(image, image_out, seeds.data(), cols, rows, r, rounds);
+    dim3 threadsPerBlock(256);
+    dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x);
+    flow_encrypt_recursive<<<numBlocks, threadsPerBlock>>>(image, image_out, d_seeds, cols, rows, r, rounds);
     if (cudaGetLastError() != cudaSuccess) {
             cudaFree(d_seeds);
             throw std::runtime_error("Flow encryption error");
         }
     cudaFree(d_seeds);
+}
+
+__host__ void inverse_permutations(
+    unsigned int** d_permutations, 
+    size_t block_length, 
+    size_t num_permutations)
+{
+    unsigned int* d_permutations_inverse = nullptr;
+    
+    // Correctly calculate the total memory needed in bytes.
+    size_t total_elements = block_length * num_permutations;
+    size_t total_bytes = total_elements * sizeof(unsigned int);
+
+    // Allocate memory for the output array on the device.
+    cudaMalloc(&d_permutations_inverse, total_bytes);
+
+    // Configure the kernel launch: one block per permutation.
+    dim3 threadsPerBlock(std::min(static_cast<size_t>(512), block_length));
+    dim3 gridOfBlocks(num_permutations);
+
+    invert_permutations_kernel<<<gridOfBlocks, threadsPerBlock>>>(
+        *d_permutations,
+        d_permutations_inverse,
+        block_length,
+        num_permutations);
+    
+    if (cudaGetLastError() != cudaSuccess) {
+            throw std::runtime_error("Invert permutaion error");
+    }
+    cudaFree(*d_permutations);
+
+    *d_permutations= d_permutations_inverse;
 }

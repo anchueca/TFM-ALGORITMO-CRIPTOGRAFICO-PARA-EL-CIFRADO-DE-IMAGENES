@@ -39,14 +39,5 @@ __global__ void permute_rows_kernel(
 
 __global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned short* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length);
 
-/*template <typename T>
-__device__ void convert_to_bitstream(size_t size, unsigned int* d_state, T* bitstream) {
-        // Determina cuántos elementos de tipo 'T' caben en la memoria
-        size_t num_elements = (size + sizeof(T) * 8 - 1) / (sizeof(T) * 8);
-        size_t size_in_bytes = num_elements * sizeof(T);
-        
-        // Copia los datos del tipo genérico (T) a la representación en bytes
-        cudaMemcpy(bitstream, d_state, size_in_bytes, cudaMemcpyDeviceToHost);
-    }*/
 
 # endif // KERNELS_CUH
