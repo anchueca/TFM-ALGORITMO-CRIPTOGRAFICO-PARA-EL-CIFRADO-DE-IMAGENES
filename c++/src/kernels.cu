@@ -15,42 +15,40 @@ __global__ void flow_encrypt_recursive(
     double r,
     int rounds)
 {
+        // Each thread is responsible for one column of the image.
     int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y_start = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (x >= width || y_start >= height)
-        return;
+    if (x >= width) return;
 
-    double xn = seeds[y_start] / static_cast<double>(INT_MAX);
+    // Initialize the chaotic sequence with a unique seed for this column.
+    // The seed (unsigned char) is normalized to a double in the range [0, 1].
+    double xn = seeds[x] / 255.0;
 
-    for (int r_idx = 0; r_idx < rounds; ++r_idx)
-    {
-        int y = (y_start + r_idx) % height;
+    // Iterate down the column, processing one pixel at a time.
+    for (int y = 0; y < height; y++) {
+        // Evolve the chaotic state to get the next pseudo-random value.
+        xn = uno(xn, r);
+
         int idx = y * width + x;
 
-        for (int i = 0; i <= x; ++i)
-        {
-            xn = uno(xn, r);
-        }
-
-        union
-        {
+        // Using `unsigned long long` is necessary as it matches the size of a double.
+        union {
             double f;
-            unsigned int u;
+            unsigned long long u;
         } conv;
         conv.f = xn;
 
-        unsigned int mantisa = conv.u & 0x007FFFFF;
-        unsigned char b1 = (mantisa >> 4) & 0xFF;
-        unsigned char b2 = (mantisa >> 12) & 0xFF;
+        // Extract and mix bits from the mantissa for the XOR key.
+        unsigned char b1 = (conv.u >> 4) & 0xFF;
+        unsigned char b2 = (conv.u >> 12) & 0xFF;
         unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
 
+        // Apply the XOR operation. Reads from image, writes to image_out.
         image_out[idx] = image[idx] ^ mixed;
     }
 }
 
 
-//block_size: length of one side of a block
 __global__ void permute_blocks_kernel(
     unsigned char *image, unsigned char *image_out, unsigned int *permutations,
     size_t block_size, size_t cols, size_t rows)
@@ -89,7 +87,6 @@ __global__ void permute_rows_kernel(
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-
     if (x < cols && y < rows) {
         image_out[y * cols + x] = image[permutation[y] * cols + x];
     }
@@ -127,16 +124,12 @@ __global__ void generate_chaotic(unsigned char* passwords, size_t num_blocks, do
     sort_indices_by_chaotic_values<double>(base_idx,chaotic_vals, indices, block_length);
 }
 
-__global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned int* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length)
+__global__ void generate_automata_chaotic(unsigned int** automata_states, unsigned short* d_chaotic_values, size_t num_blocks, unsigned int *indices, size_t block_length)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    if (idx >= num_blocks) return;
-    int base_idx = idx * block_length;
-    //TODO: Tengo que tomar los punteros en automata_states y copiar su contenido en chaotic_values
-    unsigned int* automata_state = automata_states[idx];
-    for(int i=0;i<block_length;i++ ){
-        d_chaotic_values[base_idx+i] = automata_state[i];
-    }
-
-    sort_indices_by_chaotic_values<unsigned int>(base_idx,d_chaotic_values, indices, block_length);
+    if (idx >= num_blocks*block_length) return;
+    unsigned int* automata_state = automata_states[idx/block_length];
+    if(idx & 1)d_chaotic_values[idx] = automata_state[idx] >> 16;
+    else d_chaotic_values[idx] = automata_state[idx] & 0x0000FFFF;
+    indices[idx] = idx;
 }

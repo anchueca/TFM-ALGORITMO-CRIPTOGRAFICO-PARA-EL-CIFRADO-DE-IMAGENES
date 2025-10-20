@@ -105,7 +105,7 @@ __host__ std::vector<std::vector<unsigned char>> calculate_password(const std::s
     int bytes_for_rows = image_height * precision_level;
     int bytes_for_columns = image_width * precision_level;
     int bytes_for_blocks = num_blocks * precision_level;
-    int bytes_for_flow = image_height * precision_level;
+    int bytes_for_flow = image_width * precision_level;
 
     // Total length
     int length_bytes = 

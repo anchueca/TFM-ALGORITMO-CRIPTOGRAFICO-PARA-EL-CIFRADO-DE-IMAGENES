@@ -15,9 +15,7 @@ __device__ inline void sort_indices_by_chaotic_values(
     int block_length
 ) {
 
-    //indices[base_idx + block_length - 1] = block_length - 1;
     for (int i = 0; i < block_length - 1; i++) {
-        //indices[base_idx + i] = i;
         int min_idx = i;
         for (int j = i + 1; j < block_length; j++) {
             if (chaotic_vals[base_idx + j] < chaotic_vals[base_idx + min_idx]) {
@@ -39,13 +37,34 @@ __device__ inline void sort_indices_by_chaotic_values(
     }
 };
 
+template<typename T>
+__global__ inline void sort_indices_by_chaotic_values_global(
+    T* d_chaotic_values,
+    size_t num_blocks,
+    unsigned int *indices,
+    size_t block_length
+) {
+
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx >= num_blocks) return;
+    int base_idx = idx * block_length;
+
+    sort_indices_by_chaotic_values<T>(base_idx,d_chaotic_values, indices, block_length);
+};
+
 __global__ void merge_and_stack_kernel(
     const unsigned char* src, unsigned char* dst, int dst_width, int dst_height);
 
 __global__ void split_and_concat_kernel(
     const unsigned char* src, unsigned char* dst, int width, int height);
+/**
+ * @brief Kernel to invert a batch of permutations in parallel.
+ * Each CUDA block is responsible for inverting one permutation.
+ * @param permutations Input array of permutations on the GPU.
+ * @param inverses Output array for the inverted permutations on the GPU.
+ * @param block_length The length of a single permutation.
+ * @param num_blocks (Unused) The total number of permutations. The kernel deduces this from the grid size.
+ */
+__global__ void invert_permutations_kernel(unsigned int *d_permutations, unsigned int *inverses, size_t block_length, size_t num_blocks);
 
-__global__ void invert_permutations_kernel(
-    int* permutations, int* inverses, int length);
-    
 # endif // KERNELS_AUX_CUH

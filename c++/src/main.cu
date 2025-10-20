@@ -10,7 +10,7 @@
 using namespace std;
 
 int main(int argc, char** argv) {
-    if (argc != 6){
+    if (argc != 7){
         cerr << "Error"<<endl;
         return -1;
     }
@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
     int rounds = stoi(argv[3]);
     string output_image_path = argv[4];
     int verbose = stoi(argv[5]);
+    bool encrypt = strcmp(argv[6],"1")==0;
 
     cv::Mat image = cv::imread(input_image_path);
     if (image.empty()) {
@@ -31,9 +32,9 @@ int main(int argc, char** argv) {
 
     if(channels !=1) image= unstack_image(image);
 
-    encrypt_image(image, password, rounds, verbose);
+    encrypt_image(image, password, rounds, verbose,encrypt);
 
-    //if(channels !=1) image= stack_image(image);
+    if(channels !=1) image= stack_image(image);
 
     if (image.empty()) {
         cerr << "Encryption failed!" << endl;
@@ -42,7 +43,7 @@ int main(int argc, char** argv) {
 
     //cv::imshow("Encrypted Image", image);
     //cv::waitKey(0);
-    cv::imwrite("bin/salida.jpg",image);
+    cv::imwrite(output_image_path,image);
 
     return 0;
 }

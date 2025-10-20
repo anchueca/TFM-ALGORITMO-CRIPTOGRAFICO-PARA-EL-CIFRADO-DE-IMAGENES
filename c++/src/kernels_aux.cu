@@ -38,16 +38,34 @@ __global__ void merge_and_stack_kernel(const unsigned char* src, unsigned char* 
     }
 }
 
-__global__ void invert_permutations_kernel(int *permutations, int *inverses, int length)
+__global__ void invert_permutations_kernel(
+    unsigned int *permutations, 
+    unsigned int *inverses, 
+    size_t block_length, 
+    size_t num_blocks)
 {
-    int block_id = blockIdx.x;
-    int thread_id = threadIdx.x;
+    // The ID of the CUDA block corresponds to the permutation index.
+    int permutation_id = blockIdx.x;
+    int thread_id_in_block = threadIdx.x;
     int threads_per_block = blockDim.x;
 
-    for (int i = thread_id; i < length; i += threads_per_block)
+    // Use a grid-stride loop to ensure all elements of the permutation are processed
+    // even if block_length > threads_per_block.
+    for (int i = thread_id_in_block; i < block_length; i += threads_per_block)
     {
-        int idx = block_id * length + i;
-        int pos = permutations[idx];
-        inverses[block_id * length + pos] = i;
+        // Calculate the linear index for the element in the input array.
+        // Example: For permutation 2 (permutation_id=2), element 5 (i=5): idx = 2 * length + 5
+        size_t idx_in = permutation_id * block_length + i;
+
+        // Read the value at the original position. This value is the new position.
+        // Example: if permutations[idx_in] is 10, it means 'i' moves to position 10.
+        unsigned int new_pos = permutations[idx_in];
+
+        // Calculate the linear index for the element in the output (inverse) array.
+        size_t idx_out = permutation_id * block_length + new_pos;
+        
+        // Write the original position 'i' to the new position.
+        // The inverse mapping is: the value at 'new_pos' is the original position 'i'.
+        inverses[idx_out] = i;
     }
 }
