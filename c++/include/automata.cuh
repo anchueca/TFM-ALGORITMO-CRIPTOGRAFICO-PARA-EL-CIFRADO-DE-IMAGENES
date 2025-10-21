@@ -43,6 +43,14 @@ public:
      */
     ElementalCelularAutomata(const std::vector<unsigned char>& initial_state, size_t size, int rule);
 
+    /**
+     * @brief Constructor that initializes the automaton from a predefined, pre-packed state in vram.
+     * @param initial_state Pointer to the initial state already in vram.
+     * @param size The total number of cells represented by the packed data.
+     * @param rule The rule number.
+     */
+    ElementalCelularAutomata(unsigned int* cuda_pointer, size_t size, int rule);
+
 
     /**
      * @brief Destructor. Frees the GPU memory.

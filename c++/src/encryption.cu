@@ -23,24 +23,19 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, int roun
     std::cout<< image.rows << "x" << image.cols << std::endl;
 
     //Automatas
+    printf("Generating row and column permutations using Elemental Cellular Automata...");
     ElementalCelularAutomata automata(password_segments[1],image.cols* precision_level * 8, 30);
-    const std::vector<ElementalCelularAutomata*> container1 = {&automata};
-    unsigned int* d_permutation_cols = generate_automata_permutations(container1,automata_steps,image.cols);
+    const std::vector<ElementalCelularAutomata*> cols_automata = {&automata};
+    unsigned int* d_permutation_cols = generate_automata_permutations(cols_automata,automata_steps,image.cols);
 
     ElementalCelularAutomata automata1(password_segments[0],image.rows* precision_level * 8, 30);
-    const std::vector<ElementalCelularAutomata*> container = {&automata1};
-    unsigned int* d_permutation_rows = generate_automata_permutations(container,automata_steps,image.rows);
-
+    const std::vector<ElementalCelularAutomata*> rows_automata = {&automata1};
+    unsigned int* d_permutation_rows = generate_automata_permutations(rows_automata,automata_steps,image.rows);
+    printf("Done.\n");
     //Generate permutations
-    /*const std::vector<ElementalCelularAutomata*> container2 = [&password_segments[2]](){
-        std::vector<ElementalCelularAutomata*> container2(num_blocks);
-        for(int i=0;i<num_blocks;i++){
-            container2[i]= new ElementalCelularAutomata(,block_length * precision_level * 8,,30);
-        }
-    }();*/
+    printf("Generating blocks permutations using Chaotic function...\n");
     unsigned int* d_permutations =
         generate_flow_permutations(password_segments[2],block_data_length, num_blocks);
-
     unsigned char* d_image = nullptr;
     unsigned char* d_image_out = nullptr;
     const size_t img_size = image.total() * image.elemSize();

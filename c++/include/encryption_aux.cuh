@@ -38,4 +38,8 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
  */
 __host__ void inverse_permutations(unsigned int** d_permutations, size_t block_length, size_t num_blocks);
 
+__host__ const std::vector<ElementalCelularAutomata*> createElementalAutomata(
+    const std::vector<std::vector<unsigned char>>& password_segments,
+    size_t num_blocks, size_t block_size, size_t precision_level);
+
 # endif // ENCRYPTION_AUX_CUH
