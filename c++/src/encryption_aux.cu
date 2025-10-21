@@ -19,7 +19,7 @@ __host__ unsigned int* generate_flow_permutations(const std::vector<unsigned cha
     
     cudaError_t err = cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned char));
     if (err != cudaSuccess) {
-        throw std::runtime_error("Failed to allocate device memory for passwords");
+        throw std::runtime_error("Flow: Failed to allocate device memory for passwords");
     }
     
     err = cudaMalloc(&d_indices, total_size * sizeof(unsigned int));
@@ -105,7 +105,7 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
     
     cudaError_t err = cudaMalloc(&d_automatas, num_blocks * sizeof(unsigned int*));
     if (err != cudaSuccess) {
-        throw std::runtime_error("Failed to allocate device memory for passwords");
+        throw std::runtime_error("Failed to allocate device memory for " + std::to_string(num_blocks));
     }
     
     err = cudaMalloc(&d_indices, total_size * sizeof(unsigned int));
@@ -281,4 +281,36 @@ __host__ void inverse_permutations(
     cudaFree(*d_permutations);
 
     *d_permutations= d_permutations_inverse;
+}
+
+__host__ const std::vector<ElementalCelularAutomata*> createElementalAutomata(
+    const std::vector<std::vector<unsigned char>>& password_segments,
+    size_t num_blocks, size_t block_size, size_t precision_level) {
+
+    std::vector<ElementalCelularAutomata*> container(num_blocks);
+    
+    const size_t byte_size = block_size * precision_level; // Tamaño en bytes de cada bloque
+
+    for (size_t i = 0; i < num_blocks; ++i) {
+        unsigned int* cuda_pointer = nullptr;
+        
+        // Reservar memoria en el dispositivo (GPU)
+        cudaError_t err = cudaMalloc(&cuda_pointer, byte_size);
+        if (err != cudaSuccess) {
+            std::cerr << "Error al reservar memoria en CUDA: " << cudaGetErrorString(err) << std::endl;
+            return {}; // Retorna vacío si ocurre un error
+        }
+
+        // Copiar los datos del host a la memoria de la GPU
+        const unsigned char* src_ptr = password_segments[2].data()+i * byte_size; // Usamos el tercer segmento (índice 2)
+        err = cudaMemcpy(cuda_pointer, src_ptr, byte_size, cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            std::cerr << "Error al copiar datos a CUDA: " << cudaGetErrorString(err) << std::endl;
+            return {}; // Retorna vacío si ocurre un error
+        }
+
+        // Crear la instancia de ElementalCelularAutomata
+        container[i] = new ElementalCelularAutomata(cuda_pointer, byte_size * 8, 30); // El tamaño en bits
+    }
+    return container; // Retorna el vector de punteros
 }

@@ -76,6 +76,14 @@ ElementalCelularAutomata::ElementalCelularAutomata(const std::vector<unsigned ch
     cudaDeviceSynchronize();
 }
 
+ElementalCelularAutomata::ElementalCelularAutomata(unsigned int* cuda_pointer, size_t size, int rule)
+    : size(size),
+      rule(rule),
+      size_in_bytes((size + 31) / 32 * sizeof(unsigned int)) {
+
+    this->d_state[0] = cuda_pointer;
+    cudaMalloc(&this->d_state[1], this->size_in_bytes);
+}
 
 // --- Destructor ---
 
