@@ -8,7 +8,7 @@
 #include <type_traits>
 
 template<typename T>
-__device__ inline void sort_indices_by_chaotic_values(
+__device__ void sort_indices_by_chaotic_values(
     int base_idx,
     T* chaotic_vals,
     unsigned int* indices,
@@ -38,7 +38,7 @@ __device__ inline void sort_indices_by_chaotic_values(
 };
 
 template<typename T>
-__global__ inline void sort_indices_by_chaotic_values_global(
+__global__ void sort_indices_by_chaotic_values_global(
     T* d_chaotic_values,
     size_t num_blocks,
     unsigned int *indices,

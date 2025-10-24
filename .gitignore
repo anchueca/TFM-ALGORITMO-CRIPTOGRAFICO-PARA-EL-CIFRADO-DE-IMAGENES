@@ -2,3 +2,5 @@
 /c++/bin/
 *.o
 *.out
+*.bash
+Dockerfile
