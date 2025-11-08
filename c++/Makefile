@@ -31,7 +31,7 @@ else
     NVCCFLAGS = $(NVCCFLAGS_NORMAL)
 endif
 
-NVCCFLAGS += -ccbin g++-13
+NVCCFLAGS += -ccbin g++-12
 
 # Regla principal
 $(TARGET): $(OBJS_CPP) $(OBJS_CU)

@@ -1,7 +1,21 @@
 # ifndef ENCRYPTION_CUH
 # define ENCRYPTION_CUH
 
+// CUDA headers
+#include <cuda_runtime.h>
+
+// Standard headers
 #include <algorithm>
+#include <vector>
+#include <iostream>
+#include <chrono>
+
+// Project headers
+#include "kernels.cuh"
+#include "aux.cuh"
+#include "automata.cuh"
+#include "encryption_aux.cuh"
+
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
