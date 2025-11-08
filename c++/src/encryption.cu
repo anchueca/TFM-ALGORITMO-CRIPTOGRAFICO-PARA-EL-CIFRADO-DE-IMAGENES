@@ -13,6 +13,10 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, const En
     const size_t num_blocks_per_col = image.cols / block_size + (image.cols % block_size != 0);
     const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
     const size_t block_data_length = block_size*block_size;
+    const size_t num_blocks_per_row = image.rows / block_size + (image.rows % block_size != 0);
+    const size_t num_blocks_per_col = image.cols / block_size + (image.cols % block_size != 0);
+    const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
+    const size_t block_data_length = block_size*block_size;
 
     auto start = std::chrono::high_resolution_clock::now();
     const std::vector<std::vector<unsigned char>> password_segments = calculate_password(password, num_blocks, precision_level, rounds, image.rows, image.cols);
@@ -52,6 +56,16 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, const En
     time = end - start;
     if(verbose)std::cout<<"\t\tgenerate_automata_permutations (rows) time: "<< time.count()<< " s"<<std::endl;
 
+    //Automatas
+    printf("Generating row and column permutations using Elemental Cellular Automata...");
+    ElementalCelularAutomata automata(password_segments[1],image.cols* precision_level * 8, 30);
+    const std::vector<ElementalCelularAutomata*> cols_automata = {&automata};
+    unsigned int* d_permutation_cols = generate_automata_permutations(cols_automata,automata_steps,image.cols);
+
+    ElementalCelularAutomata automata1(password_segments[0],image.rows* precision_level * 8, 30);
+    const std::vector<ElementalCelularAutomata*> rows_automata = {&automata1};
+    unsigned int* d_permutation_rows = generate_automata_permutations(rows_automata,automata_steps,image.rows);
+    printf("Done.\n");
     //Generate permutations
     if(verbose)std::cout<<("Generating blocks permutations using Chaotic function...")<<std::endl;
 
@@ -96,7 +110,12 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, const En
         unencryption_process(&d_image, &d_image_out,d_permutation_rows,d_permutation_cols, d_permutations, image.cols, image.rows,password_segments[3],block_size,rounds);
     }
 
+
     cudaMemcpy(image.data, d_image, img_size, cudaMemcpyDeviceToHost);
+
+    cudaFree(d_permutation_cols);
+    cudaFree(d_permutation_rows);
+    cudaFree(d_permutations);
 
     cudaFree(d_permutation_cols);
     cudaFree(d_permutation_rows);

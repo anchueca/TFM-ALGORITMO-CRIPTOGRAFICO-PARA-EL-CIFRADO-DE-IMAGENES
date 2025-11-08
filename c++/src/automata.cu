@@ -1,4 +1,5 @@
 #include "../include/automata.cuh"
+#include "../include/automata.cuh"
 
 // --- Constructors ---
 
@@ -14,7 +15,39 @@ ElementalCelularAutomata::ElementalCelularAutomata(size_t size, int rule)
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<unsigned int> dist(0, std::numeric_limits<unsigned int>::max());
+// --- Constructors ---
 
+ElementalCelularAutomata::ElementalCelularAutomata(size_t size, int rule)
+    : size(size),
+      rule(rule),
+      size_in_bytes((size + 31) / 32 * sizeof(unsigned int)) {
+
+    // Create a random state on the host
+    size_t num_uints = size_in_bytes / sizeof(unsigned int);
+    std::vector<unsigned int> h_state(num_uints);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<unsigned int> dist(0, std::numeric_limits<unsigned int>::max());
+
+    for (size_t i = 0; i < num_uints; i++) {
+        h_state[i] = dist(gen);
+    }
+    
+    // Force the last integer to have zeros in the unused bits to avoid wrap-around issues
+    int remaining_bits = size % 32;
+    if (remaining_bits > 0) {
+        // Create a mask to clear the unused bits at the end of the last integer
+        unsigned int mask = (1U << (32 - remaining_bits)) - 1;
+        h_state.back() &= ~mask;
+    }
+
+    // Allocate memory on the GPU and copy the initial state
+    cudaMalloc(&this->d_state[0], this->size_in_bytes);
+    cudaMalloc(&this->d_state[1], this->size_in_bytes);
+    cudaMemcpy(this->d_state[0], h_state.data(), this->size_in_bytes, cudaMemcpyHostToDevice);
+    cudaDeviceSynchronize();
+}
     for (size_t i = 0; i < num_uints; i++) {
         h_state[i] = dist(gen);
     }
