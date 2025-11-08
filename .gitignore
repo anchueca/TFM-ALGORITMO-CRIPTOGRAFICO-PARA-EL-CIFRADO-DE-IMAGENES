@@ -2,3 +2,12 @@
 /c++/bin/
 *.o
 *.out
+ciphered_output.tif
+deciphered_output.tif
+lena1.png
+salidaC.tif
+salidaDC.tif
+aes_try/aes_image_encrypt
+aes_try/aes.cpp
+aes_try/salida.tif
+*.pyc

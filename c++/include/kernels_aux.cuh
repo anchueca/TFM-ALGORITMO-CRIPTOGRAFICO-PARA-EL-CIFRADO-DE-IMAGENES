@@ -8,37 +8,42 @@
 #include <type_traits>
 
 template<typename T>
-__device__ inline void sort_indices_by_chaotic_values(
+__device__ void sort_indices_by_chaotic_values(
     int base_idx,
     T* chaotic_vals,
     unsigned int* indices,
     int block_length
 ) {
+    // Insertion Sort: empieza desde el segundo elemento (i=1)
+    for (int i = 1; i < block_length; i++) {
+        
+        // Almacena el elemento actual (la "llave") que queremos insertar
+        T key_val = chaotic_vals[base_idx + i];
+        unsigned int key_idx = indices[base_idx + i];
+        
+        // Inicializa j en el elemento *anterior* al actual
+        int j = i - 1;
 
-    for (int i = 0; i < block_length - 1; i++) {
-        int min_idx = i;
-        for (int j = i + 1; j < block_length; j++) {
-            if (chaotic_vals[base_idx + j] < chaotic_vals[base_idx + min_idx]) {
-                min_idx = j;
-            }
+        // Mueve los elementos de chaotic_vals[0...i-1] que sean
+        // mayores que la llave, una posición hacia adelante
+        while (j >= 0 && chaotic_vals[base_idx + j] > key_val) {
+            // Desplaza el valor
+            chaotic_vals[base_idx + j + 1] = chaotic_vals[base_idx + j];
+            // Desplaza el índice correspondiente
+            indices[base_idx + j + 1] = indices[base_idx + j];
+            j = j - 1;
         }
-
-        if (min_idx != i) {
-            // Swap chaotic values
-            T temp_val = chaotic_vals[base_idx + i];
-            chaotic_vals[base_idx + i] = chaotic_vals[base_idx + min_idx];
-            chaotic_vals[base_idx + min_idx] = temp_val;
-
-            // Swap corresponding indices
-            int temp_idx = indices[base_idx + i];
-            indices[base_idx + i] = indices[base_idx + min_idx];
-            indices[base_idx + min_idx] = temp_idx;
-        }
+        
+        // Inserta la llave (y su índice) en la posición correcta
+        // (j+1) es la primera posición "vacía" o que contenía
+        // un elemento menor o igual que la llave.
+        chaotic_vals[base_idx + j + 1] = key_val;
+        indices[base_idx + j + 1] = key_idx;
     }
-};
+}
 
 template<typename T>
-__global__ inline void sort_indices_by_chaotic_values_global(
+__global__ void sort_indices_by_chaotic_values_global(
     T* d_chaotic_values,
     size_t num_blocks,
     unsigned int *indices,

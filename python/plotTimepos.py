@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-# Datos de ejemplo (rellena con tus datos)
+# Datos de ejemplo
 # Número de píxeles por imagen (ancho x alto)
 pixels = [
     256*256,     # camera.tif (ejemplo)

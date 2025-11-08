@@ -1,11 +1,11 @@
 #ifndef AUTOMATA_CUH
 #define AUTOMATA_CUH
 
+#include <cuda_runtime.h>
 #include <vector>
 #include <iostream>
 #include <random>
 #include <limits>
-#include <cuda_runtime.h>
 
 /**
  * @class ElementalCelularAutomata

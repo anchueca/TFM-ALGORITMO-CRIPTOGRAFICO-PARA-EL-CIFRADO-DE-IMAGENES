@@ -4,13 +4,14 @@
 #include <algorithm>
 #include <vector>
 #include <iostream>
+#include <chrono>
 
 #include "kernels.cuh"
 #include "automata.cuh"
 
 __host__ unsigned int* generate_flow_permutations(
     const std::vector<unsigned char> block_passwords, size_t block_length,
-    size_t num_blocks);
+    size_t num_blocks, const size_t transition_length);
 
 __host__ void block_phase_permutation(
     unsigned char* d_image, unsigned char* d_image_out, unsigned int* block_permutations, size_t cols, size_t rows, size_t block_size);

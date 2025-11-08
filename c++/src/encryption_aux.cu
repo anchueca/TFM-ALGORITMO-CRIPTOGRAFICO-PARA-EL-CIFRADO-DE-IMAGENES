@@ -5,7 +5,7 @@
 /// @param block_length La longitud de los bloques.
 /// @param num_blocks El número de bloques.
 /// @return Un vector de vectores de enteros que representa las permutaciones generadas.
-__host__ unsigned int* generate_flow_permutations(const std::vector<unsigned char> block_passwords, size_t block_length, size_t num_blocks)
+__host__ unsigned int* generate_flow_permutations(const std::vector<unsigned char> block_passwords, size_t block_length, size_t num_blocks, const size_t transition_length)
 {
     if (block_passwords.size() < num_blocks) {
         throw std::runtime_error("Insufficient passwords for blocks");
@@ -47,7 +47,6 @@ __host__ unsigned int* generate_flow_permutations(const std::vector<unsigned cha
     const int threadsPerBlock = 256;
     const int numBlocks = (num_blocks + threadsPerBlock - 1) / threadsPerBlock;
     double r = 0.998;
-    int transition_length = 20;
     
     generate_chaotic<<<numBlocks, threadsPerBlock>>>(
         d_passwords, num_blocks, d_chaotic_values, d_indices, r, block_length, transition_length
@@ -61,6 +60,7 @@ __host__ unsigned int* generate_flow_permutations(const std::vector<unsigned cha
     }
     
     err = cudaDeviceSynchronize();
+    
     if (err != cudaSuccess) {
         cudaFree(d_passwords);
         cudaFree(d_chaotic_values);
@@ -94,6 +94,8 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
         );
 
     //iterate
+
+    auto start = std::chrono::high_resolution_clock::now();
     for(int i=0; i< num_blocks;i++){
         automatas[i]->iterate(steps);
     }
@@ -150,11 +152,20 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
         throw std::runtime_error("generate_automata_chaotic execution failed");
     }
     cudaDeviceSynchronize();
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> time = end - start;
+    std::cout<<"\t\t\tAutomata iteratuons time: "<< time.count()<< " s"<<std::endl;
     
     const int numKerBlocksSort = (num_blocks + threadsPerBlock - 1) / threadsPerBlock;
 
+    start = std::chrono::high_resolution_clock::now();
     sort_indices_by_chaotic_values_global<unsigned short><<<numKerBlocksSort, threadsPerBlock>>>(
         d_chaotic_values,num_blocks,d_indices,block_length);
+        cudaDeviceSynchronize();
+    end = std::chrono::high_resolution_clock::now();
+    time = end - start;
+    std::cout<<"\t\t\tsort_indices_by_chaotic_values_global time: "<< time.count()<< " s"<<std::endl;
+
     
     err = cudaGetLastError();
     if (err != cudaSuccess) {
@@ -248,6 +259,7 @@ __host__ void flow_encrypt(
             cudaFree(d_seeds);
             throw std::runtime_error("Flow encryption error");
         }
+    cudaDeviceSynchronize();
     cudaFree(d_seeds);
 }
 
@@ -278,6 +290,7 @@ __host__ void inverse_permutations(
     if (cudaGetLastError() != cudaSuccess) {
             throw std::runtime_error("Invert permutaion error");
     }
+    cudaDeviceSynchronize();
     cudaFree(*d_permutations);
 
     *d_permutations= d_permutations_inverse;
@@ -289,28 +302,25 @@ __host__ const std::vector<ElementalCelularAutomata*> createElementalAutomata(
 
     std::vector<ElementalCelularAutomata*> container(num_blocks);
     
-    const size_t byte_size = block_size * precision_level; // Tamaño en bytes de cada bloque
+    const size_t byte_size = block_size * precision_level;
 
     for (size_t i = 0; i < num_blocks; ++i) {
         unsigned int* cuda_pointer = nullptr;
         
-        // Reservar memoria en el dispositivo (GPU)
         cudaError_t err = cudaMalloc(&cuda_pointer, byte_size);
         if (err != cudaSuccess) {
             std::cerr << "Error al reservar memoria en CUDA: " << cudaGetErrorString(err) << std::endl;
-            return {}; // Retorna vacío si ocurre un error
+            return {};
         }
 
-        // Copiar los datos del host a la memoria de la GPU
-        const unsigned char* src_ptr = password_segments[2].data()+i * byte_size; // Usamos el tercer segmento (índice 2)
+        const unsigned char* src_ptr = password_segments[2].data()+i * byte_size;
         err = cudaMemcpy(cuda_pointer, src_ptr, byte_size, cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
             std::cerr << "Error al copiar datos a CUDA: " << cudaGetErrorString(err) << std::endl;
-            return {}; // Retorna vacío si ocurre un error
+            return {};
         }
 
-        // Crear la instancia de ElementalCelularAutomata
-        container[i] = new ElementalCelularAutomata(cuda_pointer, byte_size * 8, 30); // El tamaño en bits
+        container[i] = new ElementalCelularAutomata(cuda_pointer, byte_size * 8, 30);
     }
-    return container; // Retorna el vector de punteros
+    return container;
 }

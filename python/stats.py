@@ -18,10 +18,10 @@ from proposed_cipher_cuda import (
     show_image,
     stack_image,
 )
-from proposed_cipher import (
-    encrypt_image as lineal_encrypt_image,
-    unencrypt_image as lineal_unencrypt_image,
-)
+#from proposed_cipher import (
+#    encrypt_image as lineal_encrypt_image,
+#    unencrypt_image as lineal_unencrypt_image,
+#)
 
 
 def plot_histograms(original, ciphered):
@@ -382,6 +382,7 @@ def main():
     )
     parser.add_argument("input_image")
     parser.add_argument("password")
+    parser.add_argument("executable_path")
     parser.add_argument(
         "--rounds", type=int, default=3, help="rounds number"
     )
@@ -390,7 +391,35 @@ def main():
     image_path = args.input_image
     password = args.password
     rounds = args.rounds
+    executable_path = args.executable_path
 
+    # Lista de parámetros para el proceso de cifrado
+    parameters = [
+        image_path,
+        './salidaC.tif',  # Ruta de la imagen de salida
+        password,  # Contraseña
+        '3',  # Otros parámetros
+        '0',  # Otros parámetros
+        '1',  # Otros parámetros
+        '8',  # Otros parámetros
+        '2',  # Otros parámetros
+        '20',  # Otros parámetros
+        '10'   # Otros parámetros
+    ]
+
+    # Lista de parámetros para el proceso de descifrado
+    parameters_unencrypt = [
+        './salidaC.tif',
+        './salidaDC.tif',  # Ruta de la imagen de salida
+        password,  # Contraseña
+        '3',  # Otros parámetros
+        '0',  # Otros parámetros
+        '0',  # Otros parámetros (cambiar de 0 a 1 para descifrado)
+        '8',  # Otros parámetros
+        '2',  # Otros parámetros
+        '20',  # Otros parámetros
+        '10'   # Otros parámetros
+    ]
     print(image_path)
     original = cv2.imread(image_path)
     if original is None:
@@ -408,24 +437,30 @@ def main():
 
     print("[+] Starting uncipher...")
     start_dec = time.time()
-    deciphered = unencrypt_image(ciphered, password, rounds)
+    deciphered = unencrypt_image(original, password, rounds)
     end_dec = time.time()
     print(f"[+] Completed in {end_dec - start_dec:.4f} seconds")
 
-    print("[+] Starting lineal cipher...")
+    cv2.imwrite("ciphered_output.tif", ciphered)
+    cv2.imwrite("deciphered_output.tif", deciphered)
+
+    print("[+] Starting c++ cipher...")
     start_enc = time.time()
-    ciphered = lineal_encrypt_image(original,uno, password, rounds)
+    time_used = subprocess.run([executable_path] + parameters,check=True,capture_output=True, text=True, timeout=1000)
     end_enc = time.time()
     print(f"[+] Completed in {end_enc - start_enc:.4f} seconds")
+    print(f"C++: {time_used}")
 
-    print("[+] Starting lineal uncipher...")
+    print("[+] Starting c++ uncipher...")
     start_dec = time.time()
-    deciphered = lineal_unencrypt_image(ciphered,uno, password, rounds)
+    time_used = subprocess.run([executable_path] + parameters_unencrypt,check=True,capture_output=True, text=True, timeout=1000)
     end_dec = time.time()
     print(f"[+] Completed in {end_dec - start_dec:.4f} seconds")
+    print(f"C++: {time_used}")
 
-    cv2.imwrite("ciphered_output.png", ciphered)
-    cv2.imwrite("deciphered_output.png", deciphered)
+    ciphered = cv2.imread('./salidaC.tif ')
+    deciphered = cv2.imread('./salidaDC.tif ')
+
 
     plot_histograms(original, ciphered)
 

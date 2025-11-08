@@ -106,11 +106,10 @@ void ElementalCelularAutomata::iterate(int num_steps) {
     for (int i = 0; i < num_steps; ++i) {
         // Clear the destination buffer before the kernel writes to it
         cudaMemset(this->d_state[1], 0, this->size_in_bytes);
-
         // Launch the kernel with dynamic shared memory
         evolve_shared<<<num_blocks, BLOCK_SIZE, shared_mem_size>>>(
             this->d_state[0], this->d_state[1], this->rule, this->size);
-
+            
         // Swap pointers (ping-pong) for the next iteration
         unsigned int* temp = this->d_state[0];
         this->d_state[0] = this->d_state[1];
