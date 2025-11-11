@@ -12,7 +12,7 @@ __device__ double uno(double x, double r)
     return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
 }
 
-__global__ void flow_encrypt_recursive(
+__global__ void keystream_to_image(
     unsigned char *image,
     unsigned char *image_out,
     const unsigned char *seeds,
@@ -47,6 +47,39 @@ __global__ void flow_encrypt_recursive(
     }
 }
 
+__global__ void keystream_generation(
+    unsigned char *keystream_out,
+    const unsigned char *seeds,
+    int width,
+    int height,
+    double r,
+    int rounds)
+{
+    // Each thread processes one column; uses `uno` to generate XOR mask values.
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (x >= width) return;
+
+    double xn = seeds[x] / 255.0;
+
+    for (int y = 0; y < height; y++) {
+        xn = uno(xn, r);
+
+        int idx = y * width + x;
+
+        union {
+            double f;
+            unsigned long long u;
+        } conv;
+        conv.f = xn;
+
+        unsigned char b1 = (conv.u >> 4) & 0xFF;
+        unsigned char b2 = (conv.u >> 12) & 0xFF;
+        unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
+
+        keystream_out[idx] =  mixed;
+    }
+}
 
 __global__ void permute_blocks_kernel(
     unsigned char *image, unsigned char *image_out, unsigned int *permutations,

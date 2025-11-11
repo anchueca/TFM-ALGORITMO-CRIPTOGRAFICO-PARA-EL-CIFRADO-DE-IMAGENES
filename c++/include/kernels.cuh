@@ -38,9 +38,29 @@ __device__ double uno(double x, double r);
  * @param r Chaotic map parameter.
  * @param rounds Number of rounds to apply.
  */
-__global__ void flow_encrypt_recursive(
+__global__ void keystream_to_image(
     unsigned char *image,
     unsigned char *image_out,
+    const unsigned char *seeds,
+    int width,
+    int height,
+    double r,
+    int rounds);
+    
+/**
+ * @brief Kernel that generate the keystrea
+ *
+ * This kernel evolves a chaotic map driven by seeds to produce a flow.
+ *
+ * @param keystream_out output matrix with the generated keystream.
+ * @param seeds Per-block seeds used to initialize chaotic maps.
+ * @param width Matrix width (columns).
+ * @param height Matrix height (rows).
+ * @param r Chaotic map parameter.
+ * @param rounds Number of rounds to apply.
+ */
+__global__ void keystream_generation(
+    unsigned char *keystream_out,
     const unsigned char *seeds,
     int width,
     int height,

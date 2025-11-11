@@ -251,7 +251,7 @@ __host__ void flow_encrypt(
 
     dim3 threadsPerBlock(256);
     dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x);
-    flow_encrypt_recursive<<<numBlocks, threadsPerBlock>>>(image, image_out, d_seeds, cols, rows, r, rounds);
+    keystream_to_image<<<numBlocks, threadsPerBlock>>>(image, image_out, d_seeds, cols, rows, r, rounds);
     if (cudaGetLastError() != cudaSuccess) {
             cudaFree(d_seeds);
             throw std::runtime_error("Flow encryption error");

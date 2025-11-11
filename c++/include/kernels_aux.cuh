@@ -1,9 +1,6 @@
 # ifndef KERNELS_AUX_CUH
 # define KERNELS_AUX_CUH
 
-# ifndef KERNELS_AUX_CUH
-# define KERNELS_AUX_CUH
-
 // CUDA headers first
 #include <cuda_runtime.h>
 #include <cuda_runtime.h>
@@ -57,7 +54,6 @@ __device__ void sort_indices_by_chaotic_values(
     }
 }
 
-template<typename T>
 /**
  * @brief Kernel that sorts index arrays per block using associated chaotic values.
  *
@@ -134,6 +130,24 @@ __global__ void split_and_concat_kernel(
  */
 __global__ void invert_permutations_kernel(unsigned int *d_permutations, unsigned int *inverses, size_t block_length, size_t num_blocks);
 
-#endif // KERNELS_AUX_CUH
 
-# endif // KERNELS_AUX_CUH
+
+/**
+ * @brief XOR an image buffer with a keystream buffer in-place (per-pixel XOR).
+ *
+ * This CUDA kernel applies a simple XOR operation between a keystream and an
+ * image buffer. The kernel is intended to be launched with a 2D grid matching
+ * the image dimensions (or a flattened 1D grid treating width*height as length).
+ *
+ * @param keystream Device pointer to keystream bytes (one byte per pixel).
+ * @param image Device pointer to image bytes (will be modified in-place).
+ * @param width Image width in pixels (columns).
+ * @param height Image height in pixels (rows).
+ */
+__global__ void image_xor(
+    unsigned char *keystream,
+    unsigned char *image,
+    int width,
+    int height);
+
+#endif // KERNELS_AUX_CUH
