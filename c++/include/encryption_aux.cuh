@@ -1,29 +1,34 @@
-# ifndef ENCRYPTION_AUX_CUH
-# define ENCRYPTION_AUX_CUH
+#ifndef ENCRYPTION_AUX_CUH
+#define ENCRYPTION_AUX_CUH
 
 #include <algorithm>
-#include <vector>
-#include <iostream>
 #include <chrono>
+#include <iostream>
+#include <vector>
 
-#include "kernels.cuh"
 #include "automata.cuh"
+#include "kernels.cuh"
 
 /**
- * @brief Generate block permutations from flow passwords used by the flow stage.
+ * @brief Generate block permutations from flow passwords used by the flow
+ * stage.
  *
  * The function transforms block_passwords into device-side permutation arrays
  * that will be used to permute pixels inside blocks.
  *
- * @param block_passwords Vector containing concatenated password bytes per block.
+ * @param block_passwords Vector containing concatenated password bytes per
+ * block.
  * @param block_length Length of each block/password segment.
  * @param num_blocks Number of blocks (password segments).
- * @param transition_length Number of transition elements used to build the permutation.
- * @return Device pointer to the flattened permutations array (caller must free).
+ * @param transition_length Number of transition elements used to build the
+ * permutation.
+ * @return Device pointer to the flattened permutations array (caller must
+ * free).
  */
-__host__ unsigned int* generate_flow_permutations(
-    const std::vector<unsigned char> block_passwords, size_t block_length,
-    size_t num_blocks, const size_t transition_length);
+__host__ unsigned int *
+generate_flow_permutations(const std::vector<unsigned char> block_passwords,
+                           size_t block_length, size_t num_blocks,
+                           const size_t transition_length);
 
 /**
  * @brief Apply a block-phase permutation to the image on the device.
@@ -35,13 +40,17 @@ __host__ unsigned int* generate_flow_permutations(
  * @param rows Number of block rows.
  * @param block_size Size of each block in pixels (side length).
  */
-__host__ void block_phase_permutation(
-    unsigned char* d_image, unsigned char* d_image_out, unsigned int* block_permutations, size_t cols, size_t rows, size_t block_size);
+__host__ void block_phase_permutation(unsigned char *d_image,
+                                      unsigned char *d_image_out,
+                                      unsigned int *block_permutations,
+                                      size_t cols, size_t rows,
+                                      size_t block_size);
 
 /**
  * @brief Permute rows and columns using provided permutations.
  *
- * If inverse is true, the function applies the inverse permutation (useful for decryption).
+ * If inverse is true, the function applies the inverse permutation (useful for
+ * decryption).
  *
  * @param d_image Input device image buffer.
  * @param d_image_out Output device image buffer.
@@ -51,11 +60,16 @@ __host__ void block_phase_permutation(
  * @param rows Number of rows in the image.
  * @param inverse Whether to apply the inverse permutation.
  */
-__host__ void rows_and_columns_permutation(
-    unsigned char* d_image, unsigned char* d_image_out, unsigned int *d_row_permutations, unsigned int *d_col_permutations, size_t cols, size_t rows, bool inverse);
+__host__ void rows_and_columns_permutation(unsigned char *d_image,
+                                           unsigned char *d_image_out,
+                                           unsigned int *d_row_permutations,
+                                           unsigned int *d_col_permutations,
+                                           size_t cols, size_t rows,
+                                           bool inverse);
 
 /**
- * @brief Applies the flow encryption stage using provided seeds and chaotic parameter.
+ * @brief Applies the flow encryption stage using provided seeds and chaotic
+ * parameter.
  *
  * @param image Device pointer to the input image.
  * @param image_out Device pointer to the output image.
@@ -65,14 +79,9 @@ __host__ void rows_and_columns_permutation(
  * @param r Chaotic map parameter.
  * @param rounds Number of flow rounds to perform.
  */
-__host__ void flow_encrypt(
-    unsigned char *image,
-    unsigned char *image_out,
-    const std::vector<unsigned char> seeds,
-    size_t cols,
-    size_t rows,
-    double r,
-    int rounds);
+__host__ void flow_encrypt(unsigned char *image, unsigned char *image_out,
+                           const std::vector<unsigned char> seeds, size_t cols,
+                           size_t rows, double r, int rounds);
 
 /**
  * @brief Generate permutations from cellular automata instances.
@@ -83,9 +92,12 @@ __host__ void flow_encrypt(
  * @param automatas Vector of pointers to ElementalCelularAutomata instances.
  * @param steps Number of automata evolution steps used to derive permutations.
  * @param block_length Length of each permutation block.
- * @return Device pointer to the flattened permutations array (caller must free).
+ * @return Device pointer to the flattened permutations array (caller must
+ * free).
  */
-__host__ unsigned int* generate_automata_permutations(const std::vector<ElementalCelularAutomata*> automatas, const size_t steps, const size_t block_length);
+__host__ unsigned int *generate_automata_permutations(
+    const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
+    const size_t block_length);
 
 /**
  * @brief Inverts a batch of permutations stored on the GPU.
@@ -94,26 +106,31 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
  * d_permutations device buffer. This function produces the inverse
  * permutations in-place or in a separate buffer as required by the caller.
  *
- * @param d_permutations Pointer to device pointer(s) representing permutations to invert.
+ * @param d_permutations Pointer to device pointer(s) representing permutations
+ * to invert.
  * @param block_length Length of each permutation block.
  * @param num_blocks Number of permutations (blocks) to invert.
  */
-__host__ void inverse_permutations(unsigned int** d_permutations, size_t block_length, size_t num_blocks);
+__host__ void inverse_permutations(unsigned int **d_permutations,
+                                   size_t block_length, size_t num_blocks);
 
 /**
- * @brief Creates a set of ElementalCelularAutomata instances from password segments.
+ * @brief Creates a set of ElementalCelularAutomata instances from password
+ * segments.
  *
  * Each password segment initializes the automaton state. Precision level
  * determines how much of the password is used or how states are interpreted.
  *
- * @param password_segments Vector of password byte segments (one per automaton).
+ * @param password_segments Vector of password byte segments (one per
+ * automaton).
  * @param num_blocks Number of automata to create.
  * @param block_size Block size related to the automata cell count.
- * @param precision_level Precision level used when initializing automata states.
+ * @param precision_level Precision level used when initializing automata
+ * states.
  * @return A vector of pointers to created ElementalCelularAutomata instances.
  */
-__host__ const std::vector<ElementalCelularAutomata*> createElementalAutomata(
-    const std::vector<std::vector<unsigned char>>& password_segments,
+__host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(
+    const std::vector<std::vector<unsigned char>> &password_segments,
     size_t num_blocks, size_t block_size, size_t precision_level);
 
-# endif // ENCRYPTION_AUX_CUH
+#endif // ENCRYPTION_AUX_CUH

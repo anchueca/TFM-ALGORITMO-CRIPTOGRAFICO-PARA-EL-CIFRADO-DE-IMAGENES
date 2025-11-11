@@ -1,25 +1,25 @@
-# ifndef ENCRYPTION_CUH
-# define ENCRYPTION_CUH
+#ifndef ENCRYPTION_CUH
+#define ENCRYPTION_CUH
 
 // CUDA headers
 #include <cuda_runtime.h>
 
 // Standard headers
 #include <algorithm>
-#include <vector>
-#include <iostream>
 #include <chrono>
+#include <iostream>
+#include <vector>
 
 // Project headers
-#include "kernels.cuh"
-#include "aux.cuh"
 #include "automata.cuh"
+#include "aux.cuh"
 #include "encryption_aux.cuh"
+#include "kernels.cuh"
 
 #include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/highgui.hpp>
 using namespace std;
 
 /**
@@ -28,23 +28,25 @@ using namespace std;
  * - rounds: Number of encryption rounds.
  * - block_size: Size of square blocks used for block-phase permutations.
  * - precision_level: Precision parameter for automata/password derivation.
- * - automata_steps: Number of automata evolution steps used to generate permutations.
+ * - automata_steps: Number of automata evolution steps used to generate
+ * permutations.
  * - transition_length: Length of transition sequence used in flow permutations.
  */
 struct EncryptionParams {
-    size_t rounds;
-    size_t block_size;
-    size_t precision_level;
-    size_t automata_steps;
-    size_t transition_length;
+  size_t rounds;
+  size_t block_size;
+  size_t precision_level;
+  size_t automata_steps;
+  size_t transition_length;
 };
 
 /**
- * @brief Top-level helper to encrypt or decrypt an image using the provided password and parameters.
+ * @brief Top-level helper to encrypt or decrypt an image using the provided
+ * password and parameters.
  *
- * If encrypt is true the function encrypts, otherwise it attempts to decrypt using
- * the inverse operations. The function is a convenience wrapper that sets up
- * GPU buffers and coordinates the stages of the pipeline.
+ * If encrypt is true the function encrypts, otherwise it attempts to decrypt
+ * using the inverse operations. The function is a convenience wrapper that sets
+ * up GPU buffers and coordinates the stages of the pipeline.
  *
  * @param image Input image (cv::Mat) to encrypt/decrypt.
  * @param password Password string used for key derivation.
@@ -52,10 +54,12 @@ struct EncryptionParams {
  * @param verbose If true, prints progress and debug information.
  * @param encrypt Whether to run encryption (true) or decryption (false).
  */
-void encrypt_image(cv::Mat image, const std::string& password, const EncryptionParams& params, bool verbose, bool encrypt);
+void encrypt_image(cv::Mat image, const std::string &password,
+                   const EncryptionParams &params, bool verbose, bool encrypt);
 
 /**
- * @brief Internal pipeline function that performs the encryption stages (in-place on device buffers).
+ * @brief Internal pipeline function that performs the encryption stages
+ * (in-place on device buffers).
  *
  * @param d_image Pointer to device pointer of the current image buffer.
  * @param d_image_out Pointer to device pointer for the output image buffer.
@@ -69,10 +73,16 @@ void encrypt_image(cv::Mat image, const std::string& password, const EncryptionP
  * @param rounds Number of rounds for this stage.
  * @param verbose Print verbose info if true.
  */
-void encryption_process(unsigned char** d_image, unsigned char** d_image_out, unsigned int* d_permutation_rows, unsigned int* d_permutation_cols, unsigned int* d_permutation_blocks, size_t cols, size_t rows, std::vector<unsigned char> flow_seeds, size_t block_size, size_t rounds,bool verbose);
+void encryption_process(unsigned char **d_image, unsigned char **d_image_out,
+                        unsigned int *d_permutation_rows,
+                        unsigned int *d_permutation_cols,
+                        unsigned int *d_permutation_blocks, size_t cols,
+                        size_t rows, std::vector<unsigned char> flow_seeds,
+                        size_t block_size, size_t rounds, bool verbose);
 
 /**
- * @brief Internal pipeline function that performs the decryption (inverse of encryption_process).
+ * @brief Internal pipeline function that performs the decryption (inverse of
+ * encryption_process).
  *
  * @param d_image Pointer to device pointer of the current image buffer.
  * @param d_image_out Pointer to device pointer for the output image buffer.
@@ -85,7 +95,11 @@ void encryption_process(unsigned char** d_image, unsigned char** d_image_out, un
  * @param block_size Block size used for block permutations.
  * @param rounds Number of rounds for this stage.
  */
-void unencryption_process(unsigned char** d_image, unsigned char** d_image_out, unsigned int* d_permutation_rows, unsigned int* d_permutation_cols, unsigned int* d_permutation_blocks, size_t cols, size_t rows, std::vector<unsigned char> flow_seeds, size_t block_size, size_t rounds);
+void unencryption_process(unsigned char **d_image, unsigned char **d_image_out,
+                          unsigned int *d_permutation_rows,
+                          unsigned int *d_permutation_cols,
+                          unsigned int *d_permutation_blocks, size_t cols,
+                          size_t rows, std::vector<unsigned char> flow_seeds,
+                          size_t block_size, size_t rounds);
 
-
-# endif // ENCRYPTION_CUH
+#endif // ENCRYPTION_CUH
