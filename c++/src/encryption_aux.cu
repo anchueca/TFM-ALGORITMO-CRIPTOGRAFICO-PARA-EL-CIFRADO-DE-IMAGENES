@@ -1,10 +1,11 @@
+/**
+ * @file encryption_aux.cu
+ * @brief Helper functions for encryption: permutation generation, permutation stages and automata helpers.
+ */
+
 #include "../include/encryption_aux.cuh"
 
-/// @brief Generate a set of permutations based on chaotic sequences derived from block passwords.
-/// @param block_passwords Vector de contraseñas de los bloques.
-/// @param block_length La longitud de los bloques.
-/// @param num_blocks El número de bloques.
-/// @return Un vector de vectores de enteros que representa las permutaciones generadas.
+// Implementation of permutation and automata helper functions.
 __host__ unsigned int* generate_flow_permutations(const std::vector<unsigned char> block_passwords, size_t block_length, size_t num_blocks, const size_t transition_length)
 {
     if (block_passwords.size() < num_blocks) {
@@ -73,11 +74,7 @@ __host__ unsigned int* generate_flow_permutations(const std::vector<unsigned cha
     return d_indices;
 }
 
-/// @brief Generate a set of permutations based on elemental automata sequences
-/// @param automatas 
-/// @param block_length La longitud de los bloques.
-/// @param num_blocks El número de bloques.
-/// @return Un puntero 
+// Generate permutations from elemental automata (implementation)
 __host__ unsigned int* generate_automata_permutations(const std::vector<ElementalCelularAutomata*> automatas, const size_t steps, const size_t block_length)
 {
 
@@ -154,7 +151,7 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
     cudaDeviceSynchronize();
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time = end - start;
-    std::cout<<"\t\t\tAutomata iteratuons time: "<< time.count()<< " s"<<std::endl;
+    std::cout<<"\t\t\tAutomata iterations time: "<< time.count()<< " s"<<std::endl;
     
     const int numKerBlocksSort = (num_blocks + threadsPerBlock - 1) / threadsPerBlock;
 
@@ -183,7 +180,7 @@ __host__ unsigned int* generate_automata_permutations(const std::vector<Elementa
 __host__ void block_phase_permutation(
     unsigned char* d_image, unsigned char* d_image_out, unsigned int *block_permutations, size_t cols, size_t rows, size_t block_size)
 {
-    
+    // Launch block permutation kernel (implementation)
     dim3 threadsPerBlock(16, 16);
     dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x, (rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
@@ -191,13 +188,12 @@ __host__ void block_phase_permutation(
         d_image, d_image_out, block_permutations, block_size, cols, rows);
 
     cudaDeviceSynchronize();
-
-
 }
 
 __host__ void rows_and_columns_permutation(
     unsigned char* d_image, unsigned char* d_image_out, unsigned int *d_row_permutations, unsigned int *d_col_permutations, size_t cols, size_t rows,bool inverse)
 {
+    // Launch row/column permutation kernels (implementation)
     dim3 threadsPerBlock(16, 16);
     dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x, (rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
@@ -243,6 +239,7 @@ __host__ void flow_encrypt(
     double r,
     int rounds){
 
+    // Launch flow encryption kernel (implementation)
     unsigned char* d_seeds = nullptr;
 
     cudaMalloc(&d_seeds,seeds.size() * sizeof(unsigned char));
@@ -268,6 +265,7 @@ __host__ void inverse_permutations(
     size_t block_length, 
     size_t num_permutations)
 {
+    // Invert a batch of permutations (implementation)
     unsigned int* d_permutations_inverse = nullptr;
     
     // Correctly calculate the total memory needed in bytes.
@@ -288,7 +286,7 @@ __host__ void inverse_permutations(
         num_permutations);
     
     if (cudaGetLastError() != cudaSuccess) {
-            throw std::runtime_error("Invert permutaion error");
+        throw std::runtime_error("Invert permutation error");
     }
     cudaDeviceSynchronize();
     cudaFree(*d_permutations);
@@ -300,6 +298,7 @@ __host__ const std::vector<ElementalCelularAutomata*> createElementalAutomata(
     const std::vector<std::vector<unsigned char>>& password_segments,
     size_t num_blocks, size_t block_size, size_t precision_level) {
 
+    // Create automata instances from password segments (implementation)
     std::vector<ElementalCelularAutomata*> container(num_blocks);
     
     const size_t byte_size = block_size * precision_level;
@@ -309,14 +308,14 @@ __host__ const std::vector<ElementalCelularAutomata*> createElementalAutomata(
         
         cudaError_t err = cudaMalloc(&cuda_pointer, byte_size);
         if (err != cudaSuccess) {
-            std::cerr << "Error al reservar memoria en CUDA: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << "CUDA memory allocation error: " << cudaGetErrorString(err) << std::endl;
             return {};
         }
 
         const unsigned char* src_ptr = password_segments[2].data()+i * byte_size;
         err = cudaMemcpy(cuda_pointer, src_ptr, byte_size, cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
-            std::cerr << "Error al copiar datos a CUDA: " << cudaGetErrorString(err) << std::endl;
+            std::cerr << "CUDA memcpy error when copying initial automata state: " << cudaGetErrorString(err) << std::endl;
             return {};
         }
 

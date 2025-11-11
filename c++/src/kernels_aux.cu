@@ -1,5 +1,11 @@
+/**
+ * @file kernels_aux.cu
+ * @brief Implementations of small CUDA kernels used for image tiling and permutation helpers.
+ */
+
 #include "../include/kernels_aux.cuh"
 
+// Small kernels for image tiling and permutation helpers.
 __global__ void split_and_concat_kernel(const unsigned char* src, unsigned char* dst, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -32,9 +38,9 @@ __global__ void merge_and_stack_kernel(const unsigned char* src, unsigned char* 
 
         int dst_idx = (y * dst_width + x) * 3;
 
-        dst[dst_idx]     = src[src_idx_b]; // Escribir B
-        dst[dst_idx + 1] = src[src_idx_g]; // Escribir G
-        dst[dst_idx + 2] = src[src_idx_r]; // Escribir R
+        dst[dst_idx]     = src[src_idx_b]; // Write B channel
+        dst[dst_idx + 1] = src[src_idx_g]; // Write G channel
+        dst[dst_idx + 2] = src[src_idx_r]; // Write R channel
     }
 }
 
@@ -44,28 +50,16 @@ __global__ void invert_permutations_kernel(
     size_t block_length, 
     size_t num_blocks)
 {
-    // The ID of the CUDA block corresponds to the permutation index.
+    // Each block handles a single permutation inversion. Grid-stride loop covers all elements.
     int permutation_id = blockIdx.x;
     int thread_id_in_block = threadIdx.x;
     int threads_per_block = blockDim.x;
 
-    // Use a grid-stride loop to ensure all elements of the permutation are processed
-    // even if block_length > threads_per_block.
     for (int i = thread_id_in_block; i < block_length; i += threads_per_block)
     {
-        // Calculate the linear index for the element in the input array.
-        // Example: For permutation 2 (permutation_id=2), element 5 (i=5): idx = 2 * length + 5
         size_t idx_in = permutation_id * block_length + i;
-
-        // Read the value at the original position. This value is the new position.
-        // Example: if permutations[idx_in] is 10, it means 'i' moves to position 10.
         unsigned int new_pos = permutations[idx_in];
-
-        // Calculate the linear index for the element in the output (inverse) array.
         size_t idx_out = permutation_id * block_length + new_pos;
-        
-        // Write the original position 'i' to the new position.
-        // The inverse mapping is: the value at 'new_pos' is the original position 'i'.
         inverses[idx_out] = i;
     }
 }

@@ -1,7 +1,16 @@
+/**
+ * @file automata.cu
+ * @brief Implementation of the ElementalCelularAutomata class and its CUDA kernel.
+ *
+ * This file provides constructors that initialize the automata state on the
+ * GPU, methods to iterate the automata, debug print helpers and the CUDA
+ * kernel that performs one evolution step using shared memory for neighbor
+ * access.
+ */
+
 #include "../include/automata.cuh"
 
-// --- Constructors ---
-
+// --- Constructors (brief implementation notes) ---
 ElementalCelularAutomata::ElementalCelularAutomata(size_t size, int rule)
     : size(size),
       rule(rule),
@@ -34,6 +43,7 @@ ElementalCelularAutomata::ElementalCelularAutomata(size_t size, int rule)
     cudaDeviceSynchronize();
 }
 
+// Construct from a pre-packed vector (see header for API details)
 ElementalCelularAutomata::ElementalCelularAutomata(const std::vector<unsigned int>& initial_state, size_t size, int rule)
     : size(size),
       rule(rule),
@@ -55,7 +65,7 @@ ElementalCelularAutomata::ElementalCelularAutomata(const std::vector<unsigned in
     cudaDeviceSynchronize();
 }
 
-// Constructor that initializes from a pre-packed vector of bytes.
+// Construct from a pre-packed byte vector (see header for API details)
 ElementalCelularAutomata::ElementalCelularAutomata(const std::vector<unsigned char>& initial_state, size_t size, int rule)
     : size(size),
       rule(rule),
@@ -76,6 +86,7 @@ ElementalCelularAutomata::ElementalCelularAutomata(const std::vector<unsigned ch
     cudaDeviceSynchronize();
 }
 
+// Construct using an existing device pointer (see header for API details)
 ElementalCelularAutomata::ElementalCelularAutomata(unsigned int* cuda_pointer, size_t size, int rule)
     : size(size),
       rule(rule),
@@ -85,16 +96,16 @@ ElementalCelularAutomata::ElementalCelularAutomata(unsigned int* cuda_pointer, s
     cudaMalloc(&this->d_state[1], this->size_in_bytes);
 }
 
-// --- Destructor ---
-
+// --- Destructor (implementation) ---
+// See header for documentation of lifecycle behavior.
 ElementalCelularAutomata::~ElementalCelularAutomata() {
     // Check for nullptrs in case a constructor failed after the size check
     if(d_state[0]) cudaFree(this->d_state[0]);
     if(d_state[1]) cudaFree(this->d_state[1]);
 }
 
-// --- Methods ---
-
+// --- Methods (implementations) ---
+// The detailed API docs for these methods live in the header file.
 void ElementalCelularAutomata::iterate(int num_steps) {
     if (size == 0) return;
 
@@ -118,6 +129,7 @@ void ElementalCelularAutomata::iterate(int num_steps) {
     cudaDeviceSynchronize();
 }
 
+// Print the automaton state (implementation; see header for docs)
 void ElementalCelularAutomata::print_state() const {
     if (size == 0) return;
 
@@ -139,6 +151,7 @@ void ElementalCelularAutomata::print_state() const {
     std::cout << std::endl;
 }
 
+// Iterate and print states (implementation)
 void ElementalCelularAutomata::print_states(size_t times) {
     for (size_t i = 0; i < times; i++) {
         this->print_state();
@@ -146,6 +159,7 @@ void ElementalCelularAutomata::print_states(size_t times) {
     }
 }
 
+// Print internal packed integer state (implementation)
 void ElementalCelularAutomata::print_state_int() const {
     if (size == 0) return;
     
@@ -159,8 +173,7 @@ void ElementalCelularAutomata::print_state_int() const {
     }
 }
 
-// --- Getters ---
-
+// --- Getters (implementations) ---
 const unsigned int* ElementalCelularAutomata::get_cuda_state() const {
     return this->d_state[0];
 }
@@ -169,12 +182,26 @@ size_t ElementalCelularAutomata::get_size() const {
     return this->size;
 }
 
+// Return size in bytes of the packed state (implementation)
 size_t ElementalCelularAutomata::get_size_in_bytes() const {
     return this->size_in_bytes;
 }
 
 // --- CUDA Kernel ---
 
+/**
+ * @brief Kernel that evolves the automaton using shared memory for neighbor access.
+ *
+ * The kernel reads packed unsigned ints containing 32 cells each into shared
+ * memory with left/right halo words to allow reading neighbor cells without
+ * additional global loads. Each thread operates on a single cell (bit) and
+ * writes the resulting alive bit into the next_state using atomic operations.
+ *
+ * @param current_state Device pointer to the packed current state.
+ * @param next_state Device pointer to the packed next state (must be zeroed prior to launch).
+ * @param rule Rule number (0-255) defining the elementary automaton.
+ * @param size Total number of cells in the automaton.
+ */
 __global__ void evolve_shared(const unsigned int* current_state, unsigned int* next_state, int rule, int size) {
     // Shared memory is declared externally; its size is passed at launch
     extern __shared__ unsigned int s_data[];
@@ -225,7 +252,7 @@ __global__ void evolve_shared(const unsigned int* current_state, unsigned int* n
     // Handle the left neighbor
     if (idx == 0) {
         // The left neighbor of cell 0 is cell (size-1).
-        // Its bit position *within its own uint* is (size-1) % 32.
+        // Its bit position within its own uint is (size-1) % 32.
         // The uint containing cell (size-1) was loaded into the left halo, s_data[0].
         int bit_pos = (size - 1) % 32;
         left_val = (s_data[0] >> (31 - bit_pos)) & 1;
@@ -238,7 +265,7 @@ __global__ void evolve_shared(const unsigned int* current_state, unsigned int* n
     // Handle the right neighbor
     if (idx == size - 1) {
         // The right neighbor of cell (size-1) is cell 0.
-        // Its bit position *within its own uint* is 0.
+        // Its bit position within its own uint is 0.
         // The uint containing cell 0 was loaded into the right halo for the block containing the last cell.
         int right_halo_s_idx = uints_per_block + 1;
         right_val = (s_data[right_halo_s_idx] >> 31) & 1;

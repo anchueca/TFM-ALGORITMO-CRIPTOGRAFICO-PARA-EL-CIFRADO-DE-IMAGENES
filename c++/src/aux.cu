@@ -1,5 +1,11 @@
+/**
+ * @file aux.cu
+ * @brief Helper implementations for image stacking, unstacking and password derivation.
+ */
+
 #include "../include/aux.cuh"
 
+// Implementation of helpers for stacking/unstacking and password derivation.
 __host__ cv::Mat unstack_image(cv::Mat image){
     int width = image.cols;
     int height = image.rows;
@@ -26,6 +32,7 @@ __host__ cv::Mat unstack_image(cv::Mat image){
     return unstacked_image;
 }
 
+// Stack/tile an image for GPU processing (implementation).
 __host__ cv::Mat stack_image(cv::Mat image) {
     int dst_width = image.cols / 3;
     int dst_height = image.rows;
@@ -52,6 +59,7 @@ __host__ cv::Mat stack_image(cv::Mat image) {
     return stacked_image;
 }
 
+// Generate SHA3-512-derived bytes (implementation; see header for API)
 __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input, size_t length) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     const EVP_MD *sha3 = EVP_sha3_512();  // SHA3-512 (64 bytes)
@@ -91,14 +99,8 @@ __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
     return result;
 }
 
-/// @brief Generate a password bitstream 
-/// @param input password
-/// @param num_blocks 
-/// @param precision_level 
-/// @param rounds 
-/// @param image_height 
-/// @param image_width 
-/// @return a vector of bitsream. Rows, cols, blocks and flow
+
+// Calculate password segments from a master password (implementation)
 __host__ std::vector<std::vector<unsigned char>> calculate_password(const std::string &input, int num_blocks, int precision_level, int rounds, int image_height, int image_width){
 
     // Required lengths

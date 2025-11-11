@@ -1,5 +1,7 @@
 #include "../include/encryption.cuh"
 
+// Top-level encryption orchestration (implementation).
+// See `include/encryption.cuh` for the API and parameter descriptions.
 __host__ void encrypt_image(cv::Mat image, const std::string& password, const EncryptionParams& params, bool verbose, bool encrypt) {
     
     // Setting parameters
@@ -53,7 +55,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, const En
     if(verbose)std::cout<<"\t\tgenerate_automata_permutations (rows) time: "<< time.count()<< " s"<<std::endl;
 
     //Generate permutations
-    if(verbose)std::cout<<("Generating blocks permutations using Chaotic function...")<<std::endl;
+    if(verbose)std::cout<<("Generating block permutations using chaotic function...")<<std::endl;
 
     start = std::chrono::high_resolution_clock::now();
     unsigned int* d_permutations =
@@ -79,13 +81,13 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, const En
         inverse_permutations(&d_permutation_cols, image.cols,1);
         end = std::chrono::high_resolution_clock::now();
         time = end - start;
-        if(verbose)std::cout<<"\tinverse rows time: "<< time.count()<< " s"<<std::endl;
+    if(verbose)std::cout<<"\tinverse cols time: "<< time.count()<< " s"<<std::endl;
 
         start = std::chrono::high_resolution_clock::now();
         inverse_permutations(&d_permutation_rows, image.rows,1);
         end = std::chrono::high_resolution_clock::now();
         time = end - start;
-        if(verbose)std::cout<<"\tinverse rows time: "<< time.count()<< " s"<<std::endl;
+    if(verbose)std::cout<<"\tinverse rows time: "<< time.count()<< " s"<<std::endl;
 
         start = std::chrono::high_resolution_clock::now();
         inverse_permutations(&d_permutations,block_data_length, num_blocks);
@@ -106,6 +108,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string& password, const En
     cudaFree(d_image_out);
 }
 
+// Core encryption pipeline (implementation). Documentation in header.
 void encryption_process(unsigned char** d_image, unsigned char** d_image_out, unsigned int* d_permutation_rows, unsigned int* d_permutation_cols, unsigned int* d_permutation_blocks, size_t cols, size_t rows, std::vector<unsigned char> flow_seeds, size_t block_size, size_t rounds, bool verbose){
     unsigned char* temp = nullptr;
 
@@ -113,14 +116,14 @@ void encryption_process(unsigned char** d_image, unsigned char** d_image_out, un
     for (size_t i=0;i<rounds;i++){
         auto start = std::chrono::high_resolution_clock::now();
         
-        for(size_t j=0; j<2;j++){//Each round two permtations
-            //Rows an columns
+        for(size_t j=0; j<2;j++){//Each round two permutations
+            // Rows and columns
             auto start1 = std::chrono::high_resolution_clock::now();
             rows_and_columns_permutation(*d_image,*d_image_out,d_permutation_rows,d_permutation_cols, cols, rows, false);
             auto end1 = std::chrono::high_resolution_clock::now();
             std::chrono::duration<double> time1 = end1 - start1;
             std::cout<<"\t\t\t\trows_and_columns_permutation("<< i << ")"<< " time: "<< time1.count()<< " s"<<std::endl;
-            //Block
+            // Block
             start = std::chrono::high_resolution_clock::now();
             block_phase_permutation(*d_image,*d_image_out, d_permutation_blocks, cols, rows, block_size);
             end1 = std::chrono::high_resolution_clock::now();
@@ -147,10 +150,11 @@ void encryption_process(unsigned char** d_image, unsigned char** d_image_out, un
     }
 }
 
+// Decryption pipeline (implementation). See header for inverse ordering.
 void unencryption_process(unsigned char** d_image, unsigned char** d_image_out, unsigned int* d_permutation_rows, unsigned int* d_permutation_cols, unsigned int* d_permutation_blocks, size_t cols, size_t rows, std::vector<unsigned char> flow_seeds, size_t block_size, size_t rounds){
     unsigned char* temp = nullptr;
 
-    std::cout << "Starting unencryption with " << rounds << " rounds." << std::endl;
+    std::cout << "Starting decryption with " << rounds << " rounds." << std::endl;
     for (size_t i=0;i<rounds;i++){
         flow_encrypt(*d_image, *d_image_out, flow_seeds, cols, rows, 3.999,1);
     
@@ -158,15 +162,15 @@ void unencryption_process(unsigned char** d_image, unsigned char** d_image_out, 
         *d_image = *d_image_out;
         *d_image_out = temp;
         
-        for(size_t j=0; j<2;j++){//Each round two permtations
-            //Block
+        for(size_t j=0; j<2;j++){//Each round two permutations
+            // Block
             block_phase_permutation(*d_image,*d_image_out, d_permutation_blocks, cols, rows, block_size);
             
             temp = *d_image;
             *d_image = *d_image_out;
             *d_image_out = temp;
 
-            //Rows an columns
+            // Rows and columns
             rows_and_columns_permutation(*d_image,*d_image_out,d_permutation_rows,d_permutation_cols, cols, rows, true);
             
         }

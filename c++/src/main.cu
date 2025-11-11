@@ -1,3 +1,8 @@
+/**
+ * @file main.cu
+ * @brief Command-line entry point for image encryption/decryption using the CUDA pipeline.
+ */
+
 #include "../include/encryption.cuh"
 
 #include<iostream>
@@ -10,6 +15,7 @@
 
 using namespace std;
 
+// Main CLI program (implementation).
 int main(int argc, char** argv) {
     const size_t required_args = 11;
     if (argc != required_args){

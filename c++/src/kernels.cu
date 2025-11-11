@@ -1,5 +1,11 @@
+/**
+ * @file kernels.cu
+ * @brief CUDA kernels used by the encryption pipeline: flow generator and permutation kernels.
+ */
+
 #include "../include/kernels.cuh"
 
+// Device helpers and kernels for the flow generator and permutations.
 __device__ double uno(double x, double r)
 {
     double t = r + 3.0 * x * x;
@@ -15,35 +21,28 @@ __global__ void flow_encrypt_recursive(
     double r,
     int rounds)
 {
-        // Each thread is responsible for one column of the image.
+    // Each thread processes one column; uses `uno` to generate XOR mask values.
     int x = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (x >= width) return;
 
-    // Initialize the chaotic sequence with a unique seed for this column.
-    // The seed (unsigned char) is normalized to a double in the range [0, 1].
     double xn = seeds[x] / 255.0;
 
-    // Iterate down the column, processing one pixel at a time.
     for (int y = 0; y < height; y++) {
-        // Evolve the chaotic state to get the next pseudo-random value.
         xn = uno(xn, r);
 
         int idx = y * width + x;
 
-        // Using `unsigned long long` is necessary as it matches the size of a double.
         union {
             double f;
             unsigned long long u;
         } conv;
         conv.f = xn;
 
-        // Extract and mix bits from the mantissa for the XOR key.
         unsigned char b1 = (conv.u >> 4) & 0xFF;
         unsigned char b2 = (conv.u >> 12) & 0xFF;
         unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
 
-        // Apply the XOR operation. Reads from image, writes to image_out.
         image_out[idx] = image[idx] ^ mixed;
     }
 }
@@ -60,17 +59,17 @@ __global__ void permute_blocks_kernel(
 
     if (x < cols && y < rows) {
 
-        // The block number is
+    // Compute block number
         int block = y / block_size * (cols / block_size) + x / block_size;
 
-        // Position inside the block
+    // Position inside the block
         int block_y = y % block_size;
         int block_x = x % block_size;
 
-        // Index to permutate
+    // Index inside the flattened permutation for this block
         int src_permuted_index = permutations[block * block_size * block_size + block_y * block_size + block_x];
 
-        // Now are the coordinates inside the block of the source pixel
+    // Now compute the coordinates inside the block of the source pixel
         block_x= src_permuted_index % block_size;
         block_y= src_permuted_index / block_size;
 
@@ -129,7 +128,7 @@ __global__ void generate_automata_chaotic(unsigned int** automata_states, unsign
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx >= num_blocks*block_length) return;
     unsigned int* automata_state = automata_states[idx/block_length];
-    if(idx & 1)d_chaotic_values[idx] = automata_state[idx] >> 16;
+    if(idx & 1) d_chaotic_values[idx] = automata_state[idx] >> 16;
     else d_chaotic_values[idx] = automata_state[idx] & 0x0000FFFF;
     indices[idx] = idx;
 }
