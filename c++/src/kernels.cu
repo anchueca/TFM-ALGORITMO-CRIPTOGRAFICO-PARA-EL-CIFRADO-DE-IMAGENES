@@ -14,20 +14,21 @@ __device__ double uno(double x, double r) {
 
 __global__ void keystream_to_image(unsigned char *image,
                                    unsigned char *image_out,
-                                   const unsigned char *seeds, int width,
-                                   int height, double r, int rounds) {
+                                   const unsigned char *seeds,
+                                   Image_dimnesions img_dimensions, double r,
+                                   int rounds) {
   // Each thread processes one column; uses `uno` to generate XOR mask values.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (x >= width)
+  if (x >= img_dimensions.cols)
     return;
 
   double xn = seeds[x] / 255.0;
 
-  for (int y = 0; y < height; y++) {
+  for (int y = 0; y < img_dimensions.rows; y++) {
     xn = uno(xn, r);
 
-    int idx = y * width + x;
+    int idx = y * img_dimensions.cols + x;
 
     union {
       double f;
@@ -44,20 +45,21 @@ __global__ void keystream_to_image(unsigned char *image,
 }
 
 __global__ void keystream_generation(unsigned char *keystream_out,
-                                     const unsigned char *seeds, int width,
-                                     int height, double r, int rounds) {
+                                     const unsigned char *seeds,
+                                     Image_dimnesions img_dimensions, double r,
+                                     int rounds) {
   // Each thread processes one column; uses `uno` to generate XOR mask values.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (x >= width)
+  if (x >= img_dimensions.cols)
     return;
 
   double xn = seeds[x] / 255.0;
 
-  for (int y = 0; y < height; y++) {
+  for (int y = 0; y < img_dimensions.rows; y++) {
     xn = uno(xn, r);
 
-    int idx = y * width + x;
+    int idx = y * img_dimensions.cols + x;
 
     union {
       double f;
@@ -76,17 +78,18 @@ __global__ void keystream_generation(unsigned char *keystream_out,
 __global__ void permute_blocks_kernel(unsigned char *image,
                                       unsigned char *image_out,
                                       unsigned int *permutations,
-                                      size_t block_size, size_t cols,
-                                      size_t rows) {
+                                      size_t block_size,
+                                      Image_dimnesions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  int number_block_per_row = cols / block_size;
+  int number_block_per_row = img_dimensions.cols / block_size;
 
-  if (x < cols && y < rows) {
+  if (x < img_dimensions.cols && y < img_dimensions.rows) {
 
     // Compute block number
-    int block = y / block_size * (cols / block_size) + x / block_size;
+    int block =
+        y / block_size * (img_dimensions.cols / block_size) + x / block_size;
 
     // Position inside the block
     int block_y = y % block_size;
@@ -103,30 +106,33 @@ __global__ void permute_blocks_kernel(unsigned char *image,
     int pixel_y = block / number_block_per_row * block_size + block_y;
     int pixel_x = block % number_block_per_row * block_size + block_x;
 
-    image_out[y * cols + x] = image[pixel_y * cols + pixel_x];
+    image_out[y * img_dimensions.cols + x] =
+        image[pixel_y * img_dimensions.cols + pixel_x];
   }
 }
 
 __global__ void permute_rows_kernel(unsigned char *image,
                                     unsigned char *image_out,
-                                    unsigned int *permutation, size_t cols,
-                                    size_t rows) {
+                                    unsigned int *permutation,
+                                    Image_dimnesions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < cols && y < rows) {
-    image_out[y * cols + x] = image[permutation[y] * cols + x];
+  if (x < img_dimensions.cols && y < img_dimensions.rows) {
+    image_out[y * img_dimensions.cols + x] =
+        image[permutation[y] * img_dimensions.cols + x];
   }
 }
 
 __global__ void permute_columns_kernel(unsigned char *image,
                                        unsigned char *image_out,
-                                       unsigned int *permutation, size_t cols,
-                                       size_t rows) {
+                                       unsigned int *permutation,
+                                       Image_dimnesions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  if (x < cols && y < rows) {
-    image_out[y * cols + x] = image[y * cols + permutation[x]];
+  if (x < img_dimensions.cols && y < img_dimensions.rows) {
+    image_out[y * img_dimensions.cols + x] =
+        image[y * img_dimensions.cols + permutation[x]];
   }
 }
 

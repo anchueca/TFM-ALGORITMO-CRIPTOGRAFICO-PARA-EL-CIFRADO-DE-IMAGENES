@@ -15,44 +15,13 @@
 #include "aux.cuh"
 #include "encryption_aux.cuh"
 #include "kernels.cuh"
+#include "structs.cuh"
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 using namespace std;
-
-/**
- * @brief Parameters used to control the encryption pipeline.
- *
- * - rounds: Number of encryption rounds.
- * - block_size: Size of square blocks used for block-phase permutations.
- * - precision_level: Precision parameter for automata/password derivation.
- * - automata_steps: Number of automata evolution steps used to generate
- * permutations.
- * - transition_length: Length of transition sequence used in flow permutations.
- */
-struct EncryptionParams {
-  size_t rounds;
-  size_t block_size;
-  size_t precision_level;
-  size_t automata_steps;
-  size_t transition_length;
-};
-
-struct Image_dimnesions{
-  size_t cols;
-  size_t rows;
-};
-
-struct D_pointers{
-  unsigned char *d_image;
-  unsigned char *d_image_out;
-  unsigned char *d_flow;
-  unsigned int *d_permutation_rows;
-  unsigned int *d_permutation_cols;
-  unsigned int *d_permutation_blocks;
-};
 
 /**
  * @brief Top-level helper to encrypt or decrypt an image using the provided
@@ -80,13 +49,15 @@ void encrypt_image(cv::Mat image, const std::string &password,
  * @param d_permutation_rows Device pointer to row permutations.
  * @param d_permutation_cols Device pointer to column permutations.
  * @param d_permutation_blocks Device pointer to block permutations.
- * @param img_dimensions Strcut with the number of columns and rows (image width and image height) in pixels or blocks.
+ * @param img_dimensions Strcut with the number of columns and rows (image width
+ * and image height) in pixels or blocks.
  * @param flow_seeds Seeds used by the flow generator.
  * @param block_size Block size used for block permutations.
  * @param rounds Number of rounds for this stage.
  * @param verbose Print verbose info if true.
  */
-void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions, std::vector<unsigned char> flow_seeds,
+void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
+                        std::vector<unsigned char> flow_seeds,
                         size_t block_size, size_t rounds, bool verbose);
 
 /**
@@ -98,12 +69,23 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
  * @param d_permutation_rows Device pointer to row permutations.
  * @param d_permutation_cols Device pointer to column permutations.
  * @param d_permutation_blocks Device pointer to block permutations.
- * @param img_dimensions Strcut with the number of columns and rows (image width and image height) in pixels or blocks.
+ * @param img_dimensions Strcut with the number of columns and rows (image width
+ * and image height) in pixels or blocks.
  * @param flow_seeds Seeds used by the flow generator.
  * @param block_size Block size used for block permutations.
  * @param rounds Number of rounds for this stage.
  */
-void unencryption_process(D_pointers &d_pointers,Image_dimnesions img_dimensions, std::vector<unsigned char> flow_seeds,
+void unencryption_process(D_pointers &d_pointers,
+                          Image_dimnesions img_dimensions,
+                          std::vector<unsigned char> flow_seeds,
                           size_t block_size, size_t rounds);
+
+void permutation_unencryption_process(D_pointers &d_pointers,
+                                      Image_dimnesions img_dimensions,
+                                      size_t block_size);
+
+void permutation_encryption_process(D_pointers &d_pointers,
+                                    Image_dimnesions img_dimensions,
+                                    size_t block_size);
 
 #endif // ENCRYPTION_CUH

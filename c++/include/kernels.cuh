@@ -11,6 +11,7 @@
 // Project headers
 #include "automata.cuh"
 #include "kernels_aux.cuh"
+#include "structs.cuh"
 
 /**
  * @brief Logistic-map-like chaotic function used by the flow generator.
@@ -40,8 +41,9 @@ __device__ double uno(double x, double r);
  */
 __global__ void keystream_to_image(unsigned char *image,
                                    unsigned char *image_out,
-                                   const unsigned char *seeds, int width,
-                                   int height, double r, int rounds);
+                                   const unsigned char *seeds,
+                                   Image_dimnesions img_dimensions, double r,
+                                   int rounds);
 
 /**
  * @brief Kernel that generate the keystrea
@@ -56,8 +58,9 @@ __global__ void keystream_to_image(unsigned char *image,
  * @param rounds Number of rounds to apply.
  */
 __global__ void keystream_generation(unsigned char *keystream_out,
-                                     const unsigned char *seeds, int width,
-                                     int height, double r, int rounds);
+                                     const unsigned char *seeds,
+                                     Image_dimnesions img_dimensions, double r,
+                                     int rounds);
 
 /**
  * @brief Kernel that permutes image blocks according to provided permutations.
@@ -72,8 +75,8 @@ __global__ void keystream_generation(unsigned char *keystream_out,
 __global__ void permute_blocks_kernel(unsigned char *image,
                                       unsigned char *image_out,
                                       unsigned int *permutations,
-                                      size_t block_size, size_t cols,
-                                      size_t rows);
+                                      size_t block_size,
+                                      Image_dimnesions img_dimensions);
 
 /**
  * @brief Kernel to generate chaotic values used for ordering/permutations.
@@ -106,8 +109,8 @@ __global__ void generate_chaotic(unsigned char *passwords, size_t num_blocks,
  */
 __global__ void permute_columns_kernel(unsigned char *image,
                                        unsigned char *image_out,
-                                       unsigned int *permutation, size_t cols,
-                                       size_t rows);
+                                       unsigned int *permutation,
+                                       Image_dimnesions img_dimensions);
 
 /**
  * @brief Kernel that permutes rows of the image according to a permutation.
@@ -120,8 +123,8 @@ __global__ void permute_columns_kernel(unsigned char *image,
  */
 __global__ void permute_rows_kernel(unsigned char *image,
                                     unsigned char *image_out,
-                                    unsigned int *permutation, size_t cols,
-                                    size_t rows);
+                                    unsigned int *permutation,
+                                    Image_dimnesions img_dimensions);
 
 /**
  * @brief Kernel to generate chaotic values from cellular automata states.

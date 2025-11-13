@@ -8,24 +8,25 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
 
   // For now we assume the image dimensions are multiples of block_size
 
-  const Image_dimnesions img_dimensions = {
-    static_cast<size_t>(image.cols),
-    static_cast<size_t>(image.rows) 
-  };
+  const Image_dimnesions img_dimensions = {static_cast<size_t>(image.cols),
+                                           static_cast<size_t>(image.rows)};
 
   D_pointers d_pointers;
 
   const size_t num_blocks_per_row =
-      img_dimensions.rows / params.block_size + (img_dimensions.rows % params.block_size != 0);
+      img_dimensions.rows / params.block_size +
+      (img_dimensions.rows % params.block_size != 0);
   const size_t num_blocks_per_col =
-      img_dimensions.cols / params.block_size + (img_dimensions.cols % params.block_size != 0);
+      img_dimensions.cols / params.block_size +
+      (img_dimensions.cols % params.block_size != 0);
   const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
   const size_t block_data_length = params.block_size * params.block_size;
 
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(password, num_blocks, params.precision_level, params.rounds,
-                         img_dimensions.rows, img_dimensions.cols);
+      calculate_password(password, num_blocks, params.precision_level,
+                         params.rounds, img_dimensions.rows,
+                         img_dimensions.cols);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
@@ -36,7 +37,8 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
     std::cout << "=== Encryption parameters ===" << std::endl;
     std::cout << "\tPrecision level: " << params.precision_level << std::endl;
     std::cout << "\tAutomata steps: " << params.automata_steps << std::endl;
-    std::cout << "\tTransition length: " << params.transition_length << std::endl;
+    std::cout << "\tTransition length: " << params.transition_length
+              << std::endl;
     std::cout << "\tBlock size: " << params.block_size << std::endl;
     std::cout << "\tNum blocks per row: " << num_blocks_per_row << std::endl;
     std::cout << "\tNum blocks per col: " << num_blocks_per_col << std::endl;
@@ -49,26 +51,28 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
     std::cout << "Generating row and column permutations using Elemental "
                  "Cellular Automata..."
               << std::endl;
-  ElementalCelularAutomata automata(password_segments[1],
-                                    img_dimensions.cols * params.precision_level * 8, 30);
+  ElementalCelularAutomata automata(
+      password_segments[1], img_dimensions.cols * params.precision_level * 8,
+      30);
   const std::vector<ElementalCelularAutomata *> cols_automata = {&automata};
 
   start = std::chrono::high_resolution_clock::now();
-  d_pointers.d_permutation_cols =
-      generate_automata_permutations(cols_automata, params.automata_steps, img_dimensions.cols);
+  d_pointers.d_permutation_cols = generate_automata_permutations(
+      cols_automata, params.automata_steps, img_dimensions.cols);
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
     std::cout << "\t\tgenerate_automata_permutations (cols) time: "
               << time.count() << " s" << std::endl;
 
-  ElementalCelularAutomata automata1(password_segments[0],
-                                     img_dimensions.rows * params.precision_level * 8, 30);
+  ElementalCelularAutomata automata1(
+      password_segments[0], img_dimensions.rows * params.precision_level * 8,
+      30);
   const std::vector<ElementalCelularAutomata *> rows_automata = {&automata1};
 
   start = std::chrono::high_resolution_clock::now();
-  d_pointers.d_permutation_rows =
-      generate_automata_permutations(rows_automata, params.automata_steps, img_dimensions.rows);
+  d_pointers.d_permutation_rows = generate_automata_permutations(
+      rows_automata, params.automata_steps, img_dimensions.rows);
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
@@ -81,8 +85,9 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
               << std::endl;
 
   start = std::chrono::high_resolution_clock::now();
-  d_pointers.d_permutation_blocks = generate_flow_permutations(
-      password_segments[2], block_data_length, num_blocks, params.transition_length);
+  d_pointers.d_permutation_blocks =
+      generate_flow_permutations(password_segments[2], block_data_length,
+                                 num_blocks, params.transition_length);
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
@@ -98,33 +103,36 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   cudaMemcpy(d_pointers.d_image, image.data, img_size, cudaMemcpyHostToDevice);
 
   if (encrypt) {
-    encryption_process(d_pointers, img_dimensions,
-                      password_segments[3], params.block_size, params.rounds,
-                       verbose);
+    encryption_process(d_pointers, img_dimensions, password_segments[3],
+                       params.block_size, params.rounds, verbose);
   } else {
     start = std::chrono::high_resolution_clock::now();
-    inverse_permutations(&d_pointers.d_permutation_cols, img_dimensions.cols, 1);
+    inverse_permutations(&d_pointers.d_permutation_cols, img_dimensions.cols,
+                         1);
     end = std::chrono::high_resolution_clock::now();
     time = end - start;
     if (verbose)
       std::cout << "\tinverse cols time: " << time.count() << " s" << std::endl;
 
     start = std::chrono::high_resolution_clock::now();
-    inverse_permutations(&d_pointers.d_permutation_rows, img_dimensions.rows, 1);
+    inverse_permutations(&d_pointers.d_permutation_rows, img_dimensions.rows,
+                         1);
     end = std::chrono::high_resolution_clock::now();
     time = end - start;
     if (verbose)
       std::cout << "\tinverse rows time: " << time.count() << " s" << std::endl;
 
     start = std::chrono::high_resolution_clock::now();
-    inverse_permutations(&d_pointers.d_permutation_blocks, block_data_length, num_blocks);
+    inverse_permutations(&d_pointers.d_permutation_blocks, block_data_length,
+                         num_blocks);
     end = std::chrono::high_resolution_clock::now();
     time = end - start;
     if (verbose)
       std::cout << "\tinverse blocks time: " << time.count() << " s"
                 << std::endl;
 
-    unencryption_process(d_pointers, img_dimensions, password_segments[3], params.block_size, params.rounds);
+    unencryption_process(d_pointers, img_dimensions, password_segments[3],
+                         params.block_size, params.rounds);
   }
 
   cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
@@ -138,8 +146,8 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   cudaFree(d_pointers.d_image_out);
 }
 
-// Core encryption pipeline (implementation). Documentation in header.
-void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions, std::vector<unsigned char> flow_seeds,
+void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
+                        std::vector<unsigned char> flow_seeds,
                         size_t block_size, size_t rounds, bool verbose) {
   unsigned char *temp = nullptr;
 
@@ -150,28 +158,11 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
     auto start = std::chrono::high_resolution_clock::now();
 
     for (size_t j = 0; j < 2; j++) { // Each round two permutations
-      // Rows and columns
-      auto start1 = std::chrono::high_resolution_clock::now();
-      rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
-                                   d_pointers.d_permutation_cols, img_dimensions.cols, img_dimensions.rows, false);
-      auto end1 = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> time1 = end1 - start1;
-      std::cout << "\t\t\t\trows_and_columns_permutation(" << i << ")"
-                << " time: " << time1.count() << " s" << std::endl;
-      // Block
-      start = std::chrono::high_resolution_clock::now();
-      block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_blocks,
-                              img_dimensions.cols, img_dimensions.rows, block_size);
-      end1 = std::chrono::high_resolution_clock::now();
-      time1 = end1 - start1;
-      std::cout << "\t\t\t\tblock_phase_permutation(" << i << ")"
-                << " time: " << time1.count() << " s" << std::endl;
-      temp = d_pointers.d_image;
-      d_pointers.d_image = d_pointers.d_image_out;
-      d_pointers.d_image_out = temp;
+      permutation_encryption_process(d_pointers, img_dimensions, block_size);
     }
     auto start1 = std::chrono::high_resolution_clock::now();
-    flow_encrypt(d_pointers.d_image, d_pointers.d_image_out, flow_seeds, img_dimensions.cols, img_dimensions.rows, 3.999, 1);
+    flow_encrypt(d_pointers.d_image, d_pointers.d_image_out, flow_seeds,
+                 img_dimensions, 3.999, 1);
     auto end1 = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time1 = end1 - start1;
     std::cout << "\t\t\t\tflow_encrypt(" << i << ")"
@@ -188,32 +179,70 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
   }
 }
 
-// Decryption pipeline (implementation). See header for inverse ordering.
-void unencryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions, std::vector<unsigned char> flow_seeds,
+void unencryption_process(D_pointers &d_pointers,
+                          Image_dimnesions img_dimensions,
+                          std::vector<unsigned char> flow_seeds,
                           size_t block_size, size_t rounds) {
   unsigned char *temp = nullptr;
 
   std::cout << "Starting decryption with " << rounds << " rounds." << std::endl;
   for (size_t i = 0; i < rounds; i++) {
-    flow_encrypt(d_pointers.d_image, d_pointers.d_image_out, flow_seeds, img_dimensions.cols, img_dimensions.rows, 3.999, 1);
+    flow_encrypt(d_pointers.d_image, d_pointers.d_image_out, flow_seeds,
+                 img_dimensions, 3.999, 1);
 
     temp = d_pointers.d_image;
     d_pointers.d_image = d_pointers.d_image_out;
     d_pointers.d_image_out = temp;
 
     for (size_t j = 0; j < 2; j++) { // Each round two permutations
-      // Block
-      block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_blocks,
-                              img_dimensions.cols, img_dimensions.rows, block_size);
-
-      temp = d_pointers.d_image;
-      d_pointers.d_image = d_pointers.d_image_out;
-      d_pointers.d_image_out = temp;
-
-      // Rows and columns
-      rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
-                                   d_pointers.d_permutation_cols, img_dimensions.cols, img_dimensions.rows, true);
+      permutation_unencryption_process(d_pointers, img_dimensions, block_size);
     }
   }
 }
 
+void permutation_encryption_process(D_pointers &d_pointers,
+                                    Image_dimnesions img_dimensions,
+                                    size_t block_size) {
+  unsigned char *temp = nullptr;
+  auto start = std::chrono::high_resolution_clock::now();
+  // Rows and columns
+  auto start1 = std::chrono::high_resolution_clock::now();
+  rows_and_columns_permutation(
+      d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
+      d_pointers.d_permutation_cols, img_dimensions, false);
+  auto end1 = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time1 = end1 - start1;
+  std::cout << "\t\t\t\trows_and_columns_permutation"
+            << " time: " << time1.count() << " s" << std::endl;
+  // Block
+  start = std::chrono::high_resolution_clock::now();
+  block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
+                          d_pointers.d_permutation_blocks, img_dimensions,
+                          block_size);
+  end1 = std::chrono::high_resolution_clock::now();
+  time1 = end1 - start1;
+  std::cout << "\t\t\t\tblock_phase_permutation"
+            << " time: " << time1.count() << " s" << std::endl;
+  temp = d_pointers.d_image;
+  d_pointers.d_image = d_pointers.d_image_out;
+  d_pointers.d_image_out = temp;
+}
+
+void permutation_unencryption_process(D_pointers &d_pointers,
+                                      Image_dimnesions img_dimensions,
+                                      size_t block_size) {
+  unsigned char *temp = nullptr;
+  // Block
+  block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
+                          d_pointers.d_permutation_blocks, img_dimensions,
+                          block_size);
+
+  temp = d_pointers.d_image;
+  d_pointers.d_image = d_pointers.d_image_out;
+  d_pointers.d_image_out = temp;
+
+  // Rows and columns
+  rows_and_columns_permutation(
+      d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
+      d_pointers.d_permutation_cols, img_dimensions, true);
+}

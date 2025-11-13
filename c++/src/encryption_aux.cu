@@ -198,15 +198,16 @@ __host__ unsigned int *generate_automata_permutations(
 __host__ void block_phase_permutation(unsigned char *d_image,
                                       unsigned char *d_image_out,
                                       unsigned int *block_permutations,
-                                      size_t cols, size_t rows,
+                                      Image_dimnesions img_dimensions,
                                       size_t block_size) {
   // Launch block permutation kernel (implementation)
   dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-                 (rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+  dim3 numBlocks(
+      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
   permute_blocks_kernel<<<numBlocks, threadsPerBlock>>>(
-      d_image, d_image_out, block_permutations, block_size, cols, rows);
+      d_image, d_image_out, block_permutations, block_size, img_dimensions);
 
   cudaDeviceSynchronize();
 }
@@ -215,16 +216,17 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
                                            unsigned int *d_row_permutations,
                                            unsigned int *d_col_permutations,
-                                           size_t cols, size_t rows,
+                                           Image_dimnesions img_dimensions,
                                            bool inverse) {
   // Launch row/column permutation kernels (implementation)
   dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-                 (rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+  dim3 numBlocks(
+      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
   if (!inverse) {
     permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, d_row_permutations, cols, rows);
+        d_image, d_image_out, d_row_permutations, img_dimensions);
 
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Row permutation error");
@@ -233,20 +235,20 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
     cudaDeviceSynchronize();
 
     permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image_out, d_image, d_col_permutations, cols, rows);
+        d_image_out, d_image, d_col_permutations, img_dimensions);
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Col permutation error");
     }
   } else {
     permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, d_col_permutations, cols, rows);
+        d_image, d_image_out, d_col_permutations, img_dimensions);
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Col permutation error");
     }
     cudaDeviceSynchronize();
 
     permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image_out, d_image, d_row_permutations, cols, rows);
+        d_image_out, d_image, d_row_permutations, img_dimensions);
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Row permutation error");
     }
@@ -256,8 +258,9 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 }
 
 __host__ void flow_encrypt(unsigned char *image, unsigned char *image_out,
-                           const std::vector<unsigned char> seeds, size_t cols,
-                           size_t rows, double r, int rounds) {
+                           const std::vector<unsigned char> seeds,
+                           Image_dimnesions img_dimensions, double r,
+                           int rounds) {
 
   // Launch flow encryption kernel (implementation)
   unsigned char *d_seeds = nullptr;
@@ -271,9 +274,10 @@ __host__ void flow_encrypt(unsigned char *image, unsigned char *image_out,
   }
 
   dim3 threadsPerBlock(256);
-  dim3 numBlocks((cols + threadsPerBlock.x - 1) / threadsPerBlock.x);
+  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
+                 threadsPerBlock.x);
   keystream_to_image<<<numBlocks, threadsPerBlock>>>(image, image_out, d_seeds,
-                                                     cols, rows, r, rounds);
+                                                     img_dimensions, r, rounds);
   if (cudaGetLastError() != cudaSuccess) {
     cudaFree(d_seeds);
     throw std::runtime_error("Flow encryption error");

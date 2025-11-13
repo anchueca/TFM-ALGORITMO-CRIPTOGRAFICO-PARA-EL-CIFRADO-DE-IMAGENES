@@ -8,6 +8,7 @@
 
 #include "automata.cuh"
 #include "kernels.cuh"
+#include "structs.cuh"
 
 /**
  * @brief Generate block permutations from flow passwords used by the flow
@@ -43,7 +44,7 @@ generate_flow_permutations(const std::vector<unsigned char> block_passwords,
 __host__ void block_phase_permutation(unsigned char *d_image,
                                       unsigned char *d_image_out,
                                       unsigned int *block_permutations,
-                                      size_t cols, size_t rows,
+                                      Image_dimnesions img_dimensions,
                                       size_t block_size);
 
 /**
@@ -64,7 +65,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
                                            unsigned int *d_row_permutations,
                                            unsigned int *d_col_permutations,
-                                           size_t cols, size_t rows,
+                                           Image_dimnesions img_dimensions,
                                            bool inverse);
 
 /**
@@ -80,8 +81,9 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
  * @param rounds Number of flow rounds to perform.
  */
 __host__ void flow_encrypt(unsigned char *image, unsigned char *image_out,
-                           const std::vector<unsigned char> seeds, size_t cols,
-                           size_t rows, double r, int rounds);
+                           const std::vector<unsigned char> seeds,
+                           Image_dimnesions img_dimensions, double r,
+                           int rounds);
 
 /**
  * @brief Generate permutations from cellular automata instances.
