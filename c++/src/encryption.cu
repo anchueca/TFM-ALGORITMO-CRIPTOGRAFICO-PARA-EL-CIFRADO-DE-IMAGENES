@@ -154,12 +154,22 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
   if (verbose)
     std::cout << "Starting encryption with " << rounds << " rounds."
               << std::endl;
-  for (size_t i = 0; i < rounds; i++) {
-    auto start = std::chrono::high_resolution_clock::now();
+  
+  auto start = std::chrono::high_resolution_clock::now();
 
-    for (size_t j = 0; j < 2; j++) { // Each round two permutations
-      permutation_encryption_process(d_pointers, img_dimensions, block_size);
-    }
+  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time = end - start;
+  std::cout << "\tInitial image_permutation_encryption_proces time: " << time.count() << " s"
+            << std::endl;
+  
+  // Rounds
+  for (size_t i = 0; i < rounds; i++) {
+    start = std::chrono::high_resolution_clock::now();
+
+    permutation_encryption_process(d_pointers, img_dimensions, block_size);
+
     auto start1 = std::chrono::high_resolution_clock::now();
     flow_encrypt(d_pointers.d_image, d_pointers.d_image_out, flow_seeds,
                  img_dimensions, 3.999, 1);
@@ -168,8 +178,8 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
     std::cout << "\t\t\t\tflow_encrypt(" << i << ")"
               << " time: " << time1.count() << " s" << std::endl;
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> time = end - start;
+    end = std::chrono::high_resolution_clock::now();
+    time = end - start;
     std::cout << "\t\t\tround(" << i << ")" << " time: " << time.count() << " s"
               << std::endl;
 
@@ -177,6 +187,16 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
     d_pointers.d_image = d_pointers.d_image_out;
     d_pointers.d_image_out = temp;
   }
+
+  start = std::chrono::high_resolution_clock::now();
+
+  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+
+  end = std::chrono::high_resolution_clock::now();
+  time = end - start;
+  std::cout << "\tFinal image_permutation_encryption_process time: " << time.count() << " s"
+            << std::endl;
+
 }
 
 void unencryption_process(D_pointers &d_pointers,
@@ -186,6 +206,10 @@ void unencryption_process(D_pointers &d_pointers,
   unsigned char *temp = nullptr;
 
   std::cout << "Starting decryption with " << rounds << " rounds." << std::endl;
+
+  image_permutation_unencryption_process(d_pointers, img_dimensions, block_size);
+
+  //Rounds
   for (size_t i = 0; i < rounds; i++) {
     flow_encrypt(d_pointers.d_image, d_pointers.d_image_out, flow_seeds,
                  img_dimensions, 3.999, 1);
@@ -194,9 +218,28 @@ void unencryption_process(D_pointers &d_pointers,
     d_pointers.d_image = d_pointers.d_image_out;
     d_pointers.d_image_out = temp;
 
-    for (size_t j = 0; j < 2; j++) { // Each round two permutations
-      permutation_unencryption_process(d_pointers, img_dimensions, block_size);
-    }
+    permutation_unencryption_process(d_pointers, img_dimensions, block_size);
+  }
+
+  image_permutation_unencryption_process(d_pointers, img_dimensions, block_size);
+}
+
+void image_permutation_encryption_process(D_pointers &d_pointers,
+                                    Image_dimnesions img_dimensions,
+                                    size_t block_size) {
+  unsigned char *temp = nullptr;
+  for (size_t j = 0; j < 2; j++) {
+    // Rows and columns
+    rows_and_columns_permutation(
+        d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
+        d_pointers.d_permutation_cols, img_dimensions, false);
+    // Block
+    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks, img_dimensions,
+                            block_size);
+    temp = d_pointers.d_image;
+    d_pointers.d_image = d_pointers.d_image_out;
+    d_pointers.d_image_out = temp;
   }
 }
 
@@ -204,45 +247,59 @@ void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,
                                     size_t block_size) {
   unsigned char *temp = nullptr;
-  auto start = std::chrono::high_resolution_clock::now();
-  // Rows and columns
-  auto start1 = std::chrono::high_resolution_clock::now();
-  rows_and_columns_permutation(
-      d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
-      d_pointers.d_permutation_cols, img_dimensions, false);
-  auto end1 = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> time1 = end1 - start1;
-  std::cout << "\t\t\t\trows_and_columns_permutation"
-            << " time: " << time1.count() << " s" << std::endl;
-  // Block
-  start = std::chrono::high_resolution_clock::now();
-  block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                          d_pointers.d_permutation_blocks, img_dimensions,
-                          block_size);
-  end1 = std::chrono::high_resolution_clock::now();
-  time1 = end1 - start1;
-  std::cout << "\t\t\t\tblock_phase_permutation"
-            << " time: " << time1.count() << " s" << std::endl;
-  temp = d_pointers.d_image;
-  d_pointers.d_image = d_pointers.d_image_out;
-  d_pointers.d_image_out = temp;
+  for (size_t j = 0; j < 2; j++) {
+    // Rows and columns
+    rows_and_columns_permutation(
+        d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
+        d_pointers.d_permutation_cols, img_dimensions, false);
+    // Block
+    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks, img_dimensions,
+                            block_size);
+    temp = d_pointers.d_image;
+    d_pointers.d_image = d_pointers.d_image_out;
+    d_pointers.d_image_out = temp;
+  }
 }
 
 void permutation_unencryption_process(D_pointers &d_pointers,
                                       Image_dimnesions img_dimensions,
                                       size_t block_size) {
-  unsigned char *temp = nullptr;
-  // Block
-  block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                          d_pointers.d_permutation_blocks, img_dimensions,
-                          block_size);
+  for (size_t j = 0; j < 2; j++) {
+    unsigned char *temp = nullptr;
+    // Block
+    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks, img_dimensions,
+                            block_size);
 
-  temp = d_pointers.d_image;
-  d_pointers.d_image = d_pointers.d_image_out;
-  d_pointers.d_image_out = temp;
+    temp = d_pointers.d_image;
+    d_pointers.d_image = d_pointers.d_image_out;
+    d_pointers.d_image_out = temp;
 
-  // Rows and columns
-  rows_and_columns_permutation(
-      d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
-      d_pointers.d_permutation_cols, img_dimensions, true);
+    // Rows and columns
+    rows_and_columns_permutation(
+        d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
+        d_pointers.d_permutation_cols, img_dimensions, true);
+  }
+}
+
+void image_permutation_unencryption_process(D_pointers &d_pointers,
+                                      Image_dimnesions img_dimensions,
+                                      size_t block_size) {
+  for (size_t j = 0; j < 2; j++) {
+    unsigned char *temp = nullptr;
+    // Block
+    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks, img_dimensions,
+                            block_size);
+
+    temp = d_pointers.d_image;
+    d_pointers.d_image = d_pointers.d_image_out;
+    d_pointers.d_image_out = temp;
+
+    // Rows and columns
+    rows_and_columns_permutation(
+        d_pointers.d_image, d_pointers.d_image_out, d_pointers.d_permutation_rows,
+        d_pointers.d_permutation_cols, img_dimensions, true);
+  }
 }

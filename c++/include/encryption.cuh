@@ -88,4 +88,12 @@ void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,
                                     size_t block_size);
 
+void image_permutation_unencryption_process(D_pointers &d_pointers,
+                                      Image_dimnesions img_dimensions,
+                                      size_t block_size);
+
+void image_permutation_encryption_process(D_pointers &d_pointers,
+                                    Image_dimnesions img_dimensions,
+                                    size_t block_size);
+
 #endif // ENCRYPTION_CUH
