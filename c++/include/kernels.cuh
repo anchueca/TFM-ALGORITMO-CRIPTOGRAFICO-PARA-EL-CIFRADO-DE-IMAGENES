@@ -51,16 +51,13 @@ __global__ void keystream_to_image(unsigned char *image,
  * This kernel evolves a chaotic map driven by seeds to produce a flow.
  *
  * @param keystream_out output matrix with the generated keystream.
- * @param seeds Per-block seeds used to initialize chaotic maps.
  * @param width Matrix width (columns).
  * @param height Matrix height (rows).
  * @param r Chaotic map parameter.
  * @param rounds Number of rounds to apply.
  */
-__global__ void keystream_generation(unsigned char *keystream_out,
-                                     const unsigned char *seeds,
-                                     Image_dimnesions img_dimensions, double r,
-                                     int rounds);
+__global__ void keystream_generation(D_pointers d_pointers,
+                           Image_dimnesions img_dimensions, double r);
 
 /**
  * @brief Kernel that permutes image blocks according to provided permutations.

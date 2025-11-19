@@ -68,16 +68,16 @@ __global__ void invert_permutations_kernel(unsigned int *permutations,
 }
 
 __global__ void image_xor(unsigned char *keystream, unsigned char *image,
-                          int width, int height) {
+                          Image_dimnesions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (x >= width)
+  if (x >= img_dimensions.cols)
     return;
 
   int idx;
 
-  for (int y = 0; y < height; y++) {
-    idx = y * width + x;
+  for (int y = 0; y < img_dimensions.rows; y++) {
+    idx = y * img_dimensions.cols + x;
     image[idx] ^= keystream[idx];
   }
 }

@@ -44,35 +44,32 @@ __global__ void keystream_to_image(unsigned char *image,
   }
 }
 
-__global__ void keystream_generation(unsigned char *keystream_out,
-                                     const unsigned char *seeds,
-                                     Image_dimnesions img_dimensions, double r,
-                                     int rounds) {
+__global__ void keystream_generation(D_pointers d_pointers,
+                           Image_dimnesions img_dimensions, double r) {
   // Each thread processes one column; uses `uno` to generate XOR mask values.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (x >= img_dimensions.cols)
     return;
 
-  double xn = seeds[x] / 255.0;
+  double xn = d_pointers.d_seeds[x] / 255.0;
+  unsigned char mixed=0;
 
   for (int y = 0; y < img_dimensions.rows; y++) {
     xn = uno(xn, r);
 
     int idx = y * img_dimensions.cols + x;
 
-    union {
-      double f;
-      unsigned long long u;
-    } conv;
-    conv.f = xn;
+    unsigned long long u = __double_as_longlong(xn);
 
-    unsigned char b1 = (conv.u >> 4) & 0xFF;
-    unsigned char b2 = (conv.u >> 12) & 0xFF;
-    unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
+    unsigned char b1 = (u >> 4) & 0xFF;
+    unsigned char b2 = (u >> 12) & 0xFF;
+    
+    mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
 
-    keystream_out[idx] = mixed;
+    d_pointers.d_flow[idx] = mixed;
   }
+  d_pointers.d_seeds[x] =mixed;
 }
 
 __global__ void permute_blocks_kernel(unsigned char *image,

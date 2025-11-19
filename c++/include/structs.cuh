@@ -28,9 +28,13 @@ struct D_pointers {
   unsigned char *d_image;
   unsigned char *d_image_out;
   unsigned char *d_flow;
+  unsigned char *d_seeds;
   unsigned int *d_permutation_rows;
   unsigned int *d_permutation_cols;
   unsigned int *d_permutation_blocks;
+  unsigned int *d_permutation_rows_inverse;
+  unsigned int *d_permutation_cols_inverse;
+  unsigned int *d_permutation_blocks_inverse;
 };
 
 #endif // STRUCT_CUH

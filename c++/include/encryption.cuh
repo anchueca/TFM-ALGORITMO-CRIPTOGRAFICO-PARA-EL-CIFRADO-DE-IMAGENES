@@ -57,7 +57,6 @@ void encrypt_image(cv::Mat image, const std::string &password,
  * @param verbose Print verbose info if true.
  */
 void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
-                        std::vector<unsigned char> flow_seeds,
                         size_t block_size, size_t rounds, bool verbose);
 
 /**
@@ -77,23 +76,18 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
  */
 void unencryption_process(D_pointers &d_pointers,
                           Image_dimnesions img_dimensions,
-                          std::vector<unsigned char> flow_seeds,
                           size_t block_size, size_t rounds);
-
-void permutation_unencryption_process(D_pointers &d_pointers,
-                                      Image_dimnesions img_dimensions,
-                                      size_t block_size);
 
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,
                                     size_t block_size);
 
 void image_permutation_unencryption_process(D_pointers &d_pointers,
-                                      Image_dimnesions img_dimensions,
-                                      size_t block_size);
+                                            Image_dimnesions img_dimensions,
+                                            size_t block_size);
 
 void image_permutation_encryption_process(D_pointers &d_pointers,
-                                    Image_dimnesions img_dimensions,
-                                    size_t block_size);
+                                          Image_dimnesions img_dimensions,
+                                          size_t block_size);
 
 #endif // ENCRYPTION_CUH

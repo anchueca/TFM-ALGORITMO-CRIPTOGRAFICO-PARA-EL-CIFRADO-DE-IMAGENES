@@ -80,10 +80,21 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
  * @param r Chaotic map parameter.
  * @param rounds Number of flow rounds to perform.
  */
-__host__ void flow_encrypt(unsigned char *image, unsigned char *image_out,
-                           const std::vector<unsigned char> seeds,
-                           Image_dimnesions img_dimensions, double r,
-                           int rounds);
+__host__ void flow_encrypt(D_pointers &d_pointers, Image_dimnesions img_dimensions);
+
+/**
+ * @brief Generate the flow stream stage using provided seeds and chaotic
+ * parameter.
+ *
+ * @param d_flow Device pointer to the output flow.
+ * @param d_flow Device pointer to the seeds.
+ * @param seeds Flow seeds per block.
+ * @param cols Image width in blocks or pixels depending on the pipeline.
+ * @param rows Image height in blocks or pixels depending on the pipeline.
+ * @param r Chaotic map parameter.
+ */
+__host__ void generate_flow_stream(D_pointers &d_pointers,
+                           Image_dimnesions img_dimensions, double r);
 
 /**
  * @brief Generate permutations from cellular automata instances.
@@ -113,7 +124,7 @@ __host__ unsigned int *generate_automata_permutations(
  * @param block_length Length of each permutation block.
  * @param num_blocks Number of permutations (blocks) to invert.
  */
-__host__ void inverse_permutations(unsigned int **d_permutations,
+__host__ void inverse_permutations(unsigned int *d_permutations, unsigned int **d_permutations_inverse,
                                    size_t block_length, size_t num_blocks);
 
 /**

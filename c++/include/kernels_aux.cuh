@@ -7,6 +7,8 @@
 // Standard headers
 #include <type_traits>
 
+#include "structs.cuh"
+
 template <typename T>
 /**
  * @brief Device-side insertion sort that sorts a slice of chaotic values and
@@ -149,6 +151,6 @@ __global__ void invert_permutations_kernel(unsigned int *d_permutations,
  * @param height Image height in pixels (rows).
  */
 __global__ void image_xor(unsigned char *keystream, unsigned char *image,
-                          int width, int height);
+                          Image_dimnesions img_dimensions);
 
 #endif // KERNELS_AUX_CUH

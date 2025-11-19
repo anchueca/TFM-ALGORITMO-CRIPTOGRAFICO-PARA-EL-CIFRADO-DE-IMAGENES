@@ -200,7 +200,6 @@ __host__ void block_phase_permutation(unsigned char *d_image,
                                       unsigned int *block_permutations,
                                       Image_dimnesions img_dimensions,
                                       size_t block_size) {
-  // Launch block permutation kernel (implementation)
   dim3 threadsPerBlock(16, 16);
   dim3 numBlocks(
       (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
@@ -257,62 +256,57 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
   cudaDeviceSynchronize();
 }
 
-__host__ void flow_encrypt(unsigned char *image, unsigned char *image_out,
-                           const std::vector<unsigned char> seeds,
-                           Image_dimnesions img_dimensions, double r,
-                           int rounds) {
+__host__ void flow_encrypt(D_pointers &d_pointers, Image_dimnesions img_dimensions) {
 
-  // Launch flow encryption kernel (implementation)
-  unsigned char *d_seeds = nullptr;
-
-  cudaMalloc(&d_seeds, seeds.size() * sizeof(unsigned char));
-  cudaMemcpy(d_seeds, seeds.data(), seeds.size() * sizeof(unsigned char),
-             cudaMemcpyHostToDevice);
-  if (cudaGetLastError() != cudaSuccess) {
-    cudaFree(d_seeds);
-    throw std::runtime_error("Seeds copy error.");
-  }
 
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
-  keystream_to_image<<<numBlocks, threadsPerBlock>>>(image, image_out, d_seeds,
-                                                     img_dimensions, r, rounds);
+  image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,d_pointers.d_image,img_dimensions);
   if (cudaGetLastError() != cudaSuccess) {
-    cudaFree(d_seeds);
     throw std::runtime_error("Flow encryption error");
   }
   cudaDeviceSynchronize();
-  cudaFree(d_seeds);
 }
 
-__host__ void inverse_permutations(unsigned int **d_permutations,
+__host__ void generate_flow_stream(D_pointers &d_pointers,
+                           Image_dimnesions img_dimensions, double r){
+
+  // Launch flow stream kernel
+  dim3 threadsPerBlock(256);
+  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
+                 threadsPerBlock.x);
+  keystream_generation<<<numBlocks, threadsPerBlock>>>(d_pointers,
+                                                     img_dimensions, r);
+  if (cudaGetLastError() != cudaSuccess) {
+    throw std::runtime_error("generate_flow_stream: Flow generation error");
+  }
+  cudaDeviceSynchronize();
+}
+
+__host__ void inverse_permutations(unsigned int *d_permutations,
+                                   unsigned int **d_permutations_inverse,
                                    size_t block_length,
                                    size_t num_permutations) {
-  // Invert a batch of permutations (implementation)
-  unsigned int *d_permutations_inverse = nullptr;
 
   // Correctly calculate the total memory needed in bytes.
   size_t total_elements = block_length * num_permutations;
   size_t total_bytes = total_elements * sizeof(unsigned int);
 
   // Allocate memory for the output array on the device.
-  cudaMalloc(&d_permutations_inverse, total_bytes);
+  cudaMalloc(d_permutations_inverse, total_bytes);
 
   // Configure the kernel launch: one block per permutation.
   dim3 threadsPerBlock(std::min(static_cast<size_t>(512), block_length));
   dim3 gridOfBlocks(num_permutations);
 
   invert_permutations_kernel<<<gridOfBlocks, threadsPerBlock>>>(
-      *d_permutations, d_permutations_inverse, block_length, num_permutations);
+      d_permutations, *d_permutations_inverse, block_length, num_permutations);
 
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("Invert permutation error");
   }
   cudaDeviceSynchronize();
-  cudaFree(*d_permutations);
-
-  *d_permutations = d_permutations_inverse;
 }
 
 __host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(

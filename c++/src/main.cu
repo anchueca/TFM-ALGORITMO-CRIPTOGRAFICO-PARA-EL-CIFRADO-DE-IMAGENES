@@ -53,7 +53,8 @@ int main(int argc, char **argv) {
     std::cout << "input_image_path: " << input_image_path << std::endl;
     std::cout << "output_image_path: " << output_image_path << std::endl;
     std::cout << "Channels: " << channels << std::endl;
-    std::cout << image.rows << "x" << image.cols << std::endl << std::endl;
+    std::cout << image.rows << "x" << image.cols << std::endl;
+    std::cout << "===========================" << std::endl << std::endl;
   }
 
   if (channels != 1)
