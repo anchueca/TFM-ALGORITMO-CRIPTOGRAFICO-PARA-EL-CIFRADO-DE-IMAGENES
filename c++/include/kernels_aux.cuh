@@ -9,47 +9,42 @@
 
 #include "structs.cuh"
 
+#define MAX_BLOCK_SIZE 64
+
 template <typename T>
-/**
- * @brief Device-side insertion sort that sorts a slice of chaotic values and
- * their corresponding indices.
- *
- * This function performs insertion sort on a contiguous segment of the
- * chaotic_vals array starting at base_idx for block_length elements. The
- * indices array is kept in sync so it can be used as a permutation map.
- *
- * @tparam T Numeric type of the chaotic values (e.g., float or double).
- * @param base_idx The starting index of the segment to sort.
- * @param chaotic_vals Pointer to the array of chaotic values on device memory.
- * @param indices Pointer to the array of indices associated with chaotic_vals.
- * @param block_length Number of elements to sort in the segment.
- */
 __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
                                                unsigned int *indices,
-                                               int block_length) {
-  // Insertion Sort: start from the second element (i=1)
-  for (int i = 1; i < block_length; i++) {
-    // Store current element (the "key") to insert
-    T key_val = chaotic_vals[base_idx + i];
-    unsigned int key_idx = indices[base_idx + i];
+                                               size_t block_length) {
+  
+  T local_vals[MAX_BLOCK_SIZE];
+  unsigned int local_indices[MAX_BLOCK_SIZE];
 
-    // Initialize j to the previous element
-    int j = i - 1;
+  if (block_length > MAX_BLOCK_SIZE) return; 
 
-    // Shift elements of chaotic_vals[0...i-1] that are greater than the
-    // key one position ahead to make space for insertion
-    while (j >= 0 && chaotic_vals[base_idx + j] > key_val) {
-      // Shift value
-      chaotic_vals[base_idx + j + 1] = chaotic_vals[base_idx + j];
-      // Shift corresponding index
-      indices[base_idx + j + 1] = indices[base_idx + j];
+  for (size_t i = 0; i < block_length; i++) {
+      local_vals[i] = chaotic_vals[base_idx + i];
+      local_indices[i] = indices[base_idx + i];
+  }
+
+  for (size_t i = 1; i < block_length; i++) {
+    T key_val = local_vals[i];
+    unsigned int key_idx = local_indices[i];
+
+    int j = (int)i - 1;
+
+    while (j >= 0 && local_vals[j] > key_val) {
+      local_vals[j + 1] = local_vals[j];
+      local_indices[j + 1] = local_indices[j];
       j = j - 1;
     }
 
-    // Insert key (and its index) in the correct position. (j+1) is the
-    // first position that is either empty or contains an element <= key.
-    chaotic_vals[base_idx + j + 1] = key_val;
-    indices[base_idx + j + 1] = key_idx;
+    local_vals[j + 1] = key_val;
+    local_indices[j + 1] = key_idx;
+  }
+
+  for (size_t i = 0; i < block_length; i++) {
+      indices[base_idx + i] = local_indices[i];
+      chaotic_vals[base_idx + i] = local_vals[i]; 
   }
 }
 
@@ -79,7 +74,7 @@ __global__ void sort_indices_by_chaotic_values_global(T *d_chaotic_values,
   int base_idx = idx * (int)block_length;
 
   sort_indices_by_chaotic_values<T>(base_idx, d_chaotic_values, indices,
-                                    (int)block_length);
+                                    block_length);
 }
 
 /**

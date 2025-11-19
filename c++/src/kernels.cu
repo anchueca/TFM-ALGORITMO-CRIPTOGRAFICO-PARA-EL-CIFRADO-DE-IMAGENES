@@ -46,7 +46,6 @@ __global__ void keystream_to_image(unsigned char *image,
 
 __global__ void keystream_generation(D_pointers d_pointers,
                            Image_dimnesions img_dimensions, double r) {
-  // Each thread processes one column; uses `uno` to generate XOR mask values.
   int x = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (x >= img_dimensions.cols)
@@ -55,10 +54,16 @@ __global__ void keystream_generation(D_pointers d_pointers,
   double xn = d_pointers.d_seeds[x] / 255.0;
   unsigned char mixed=0;
 
+  int idx = x;
+
+  int stride = img_dimensions.cols;
+
+  for(int k=0; k<200; k++) {
+        xn = uno(xn, r); 
+  }
+
   for (int y = 0; y < img_dimensions.rows; y++) {
     xn = uno(xn, r);
-
-    int idx = y * img_dimensions.cols + x;
 
     unsigned long long u = __double_as_longlong(xn);
 
@@ -68,6 +73,8 @@ __global__ void keystream_generation(D_pointers d_pointers,
     mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
 
     d_pointers.d_flow[idx] = mixed;
+
+    idx += stride;
   }
   d_pointers.d_seeds[x] =mixed;
 }

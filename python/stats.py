@@ -6,22 +6,7 @@ from tabulate import tabulate
 import matplotlib.pyplot as plt
 import subprocess
 import os
-import sys
 import time
-
-from modeloCaos import uno
-from proposed_cipher_cuda import (
-    encrypt_image,
-    unencrypt_image,
-    unstack_image,
-    generate_password,
-    show_image,
-    stack_image,
-)
-#from proposed_cipher import (
-#    encrypt_image as lineal_encrypt_image,
-#    unencrypt_image as lineal_unencrypt_image,
-#)
 
 
 def plot_histograms(original, ciphered):
@@ -235,23 +220,6 @@ def message_sensitivity_test_external(image_path, password, cipher_program_path,
     uaci = calculate_uaci(cipher1, cipher2)
     return npcr, uaci
 
-
-def message_sensitivity_test(image, model, password, rounds, *args):
-    if image is None:
-        print(f"Error: Could not load image from {image}.")
-        return None, None
-    altered = image.copy()
-    altered[0, 0, 0] ^= 1
-    cipher1 = encrypt_image(image, model, password, rounds, *args)
-    cipher2 = encrypt_image(altered, model, password, rounds, *args)
-    if cipher1 is None or cipher2 is None:
-        print("Error in encryption process.")
-        return None, None
-    npcr = calculate_npc(cipher1, cipher2)
-    uaci = calculate_uaci(cipher1, cipher2)
-    return npcr, uaci
-
-
 def flip_one_bit_in_key(key):  # ad hoc
     if isinstance(key, list):
         if isinstance(key[0], float):
@@ -263,73 +231,6 @@ def flip_one_bit_in_key(key):  # ad hoc
         key = key ^ 1
 
     return key
-
-
-def test_key_sensitivity(image, ciphered, key_original):
-    """
-    Tests encryption sensitivity to small modifications in the key.
-    """
-
-    num_blocks = 256
-    precision_level = 2
-    image_rows, image_columns = image.shape[:2]
-    rounds = 3
-
-    labels = ["row_password", "column_password", "block_password", "flow_password"]
-
-    for i in range(2):
-        password = list(
-            generate_password(
-                key_original,
-                num_blocks,
-                image_rows,
-                image_columns,
-                precision_level,
-                rounds,
-            )
-        )
-        # print(password[-1])
-        password[i] = flip_one_bit_in_key(password[i])
-        cipher_modified = unencrypt_image(ciphered, password)
-
-        print("[Key Sensitivity Test", labels[i], "]")
-        compute_comparison_statistics(image, cipher_modified)
-        show_image(stack_image(cipher_modified), labels[i])
-
-    for i in range(2, len(labels)):
-        password = list(
-            generate_password(
-                key_original,
-                num_blocks,
-                image_rows,
-                image_columns,
-                precision_level,
-                rounds,
-            )
-        )
-        password2 = list(
-            generate_password(
-                key_original * 2,
-                num_blocks,
-                image_rows,
-                image_columns,
-                precision_level,
-                rounds,
-            )
-        )
-        if i == 2:
-            password[i][: len(password[i]) // 10] = password2[i][
-                : len(password[i]) // 10
-            ]
-        else:
-            password[i][0][: len(password[i][0]) // 10] = password2[i][0][
-                : len(password[i][0]) // 10
-            ]
-        cipher_modified = unencrypt_image(ciphered, password)
-
-        print("[Key Sensitivity Test", labels[i], "]")
-        compute_comparison_statistics(image, cipher_modified)
-        show_image(stack_image(cipher_modified), labels[i])
 
 
 def compute_single_image_statistics(image):
@@ -393,12 +294,13 @@ def main():
     rounds = args.rounds
     executable_path = args.executable_path
 
+
     # Lista de parámetros para el proceso de cifrado
     parameters = [
         image_path,
         './salidaC.tif',  # Ruta de la imagen de salida
         password,  # Contraseña
-        '3',  # Otros parámetros
+        str(rounds),  # Otros parámetros
         '0',  # Otros parámetros
         '1',  # Otros parámetros
         '8',  # Otros parámetros
@@ -412,7 +314,7 @@ def main():
         './salidaC.tif',
         './salidaDC.tif',  # Ruta de la imagen de salida
         password,  # Contraseña
-        '3',  # Otros parámetros
+        str(rounds),  # Otros parámetros
         '0',  # Otros parámetros
         '0',  # Otros parámetros (cambiar de 0 a 1 para descifrado)
         '8',  # Otros parámetros
@@ -425,24 +327,6 @@ def main():
     if original is None:
         print(f"Error: Cannot load image {args.input}")
         return
-
-    if len(original.shape) > 2:
-        original = unstack_image(original)
-
-    print("[+] Starting cipher...")
-    start_enc = time.time()
-    ciphered = encrypt_image(original, password, rounds)
-    end_enc = time.time()
-    print(f"[+] Completed in {end_enc - start_enc:.4f} seconds")
-
-    print("[+] Starting uncipher...")
-    start_dec = time.time()
-    deciphered = unencrypt_image(original, password, rounds)
-    end_dec = time.time()
-    print(f"[+] Completed in {end_dec - start_dec:.4f} seconds")
-
-    cv2.imwrite("ciphered_output.tif", ciphered)
-    cv2.imwrite("deciphered_output.tif", deciphered)
 
     print("[+] Starting c++ cipher...")
     start_enc = time.time()
@@ -458,17 +342,12 @@ def main():
     print(f"[+] Completed in {end_dec - start_dec:.4f} seconds")
     print(f"C++: {time_used}")
 
-    ciphered = cv2.imread('./salidaC.tif ')
-    deciphered = cv2.imread('./salidaDC.tif ')
-
+    ciphered = cv2.imread(parameters_unencrypt[0])
 
     plot_histograms(original, ciphered)
 
     compute_single_image_statistics(original)
     compute_single_image_statistics(ciphered)
-    ciphered2 = encrypt_image(original, 2*password, rounds)
-    compute_comparison_statistics(ciphered, ciphered2)
-    test_key_sensitivity(original, ciphered, password)
 
 if __name__ == "__main__":
     main()

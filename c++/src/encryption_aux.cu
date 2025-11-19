@@ -164,7 +164,7 @@ __host__ unsigned int *generate_automata_permutations(
   cudaDeviceSynchronize();
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
-  std::cout << "\t\t\tAutomata iterations time: " << time.count() << " s"
+  std::cout << "\t\tAutomata iterations time: " << time.count() << " s"
             << std::endl;
 
   const int numKerBlocksSort =
@@ -177,7 +177,7 @@ __host__ unsigned int *generate_automata_permutations(
   cudaDeviceSynchronize();
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
-  std::cout << "\t\t\tsort_indices_by_chaotic_values_global time: "
+  std::cout << "\t\tsort_indices_by_chaotic_values_global time: "
             << time.count() << " s" << std::endl;
 
   err = cudaGetLastError();
@@ -233,7 +233,6 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned int *d_col_permutations,
                                            Image_dimnesions img_dimensions,
                                            bool inverse) {
-  // Launch row/column permutation kernels (implementation)
   dim3 threadsPerBlock(16, 16);
   dim3 numBlocks(
       (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,

@@ -19,7 +19,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
       img_dimensions.cols / params.block_size +
       (img_dimensions.cols % params.block_size != 0);
   const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
-  const size_t num_blocks_permutations = 1; //num_blocks // Case multiple permutation blocks
+  const size_t num_blocks_permutations = 1; //num_blocks; // Case multiple permutation blocks
   const size_t block_data_length = params.block_size * params.block_size;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -49,7 +49,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   if (verbose)
     std::cout << "Generating row and column permutations using Elemental "
                  "Cellular Automata..."
-              << std::endl;
+              << std::endl << std::endl;
   ElementalCelularAutomata automata(
       password_segments[1], img_dimensions.cols * params.precision_level * 8,
       30);
@@ -61,7 +61,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
-    std::cout << "\t\tgenerate_automata_permutations (cols) time: "
+    std::cout << "\tgenerate_automata_permutations (cols) time: "
               << time.count() << " s" << std::endl;
 
   ElementalCelularAutomata automata1(
@@ -75,7 +75,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
-    std::cout << "\t\tgenerate_automata_permutations (rows) time: "
+    std::cout << "\tgenerate_automata_permutations (rows) time: "
               << time.count() << " s" << std::endl;
 
   // Generate permutations
@@ -90,7 +90,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
-    std::cout << "\t\tgenerate_flow_permutations (blocks) time: "
+    std::cout << "\tgenerate_flow_permutations (blocks) time: "
               << time.count() << " s" << std::endl;
 
   const size_t img_size = image.total() * image.elemSize();
@@ -175,17 +175,28 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
     start = std::chrono::high_resolution_clock::now();
     auto start1 = std::chrono::high_resolution_clock::now();
     generate_flow_stream(d_pointers, img_dimensions,3.999);
-    permutation_encryption_process(d_pointers, img_dimensions, block_size);// For flow
-    flow_encrypt(d_pointers,img_dimensions);
     auto end1 = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time1 = end1 - start1;
-    std::cout << "\t\t\t\tflow_encrypt(" << i << ")"
+    if (verbose)
+      std::cout << "\t\t\tgenerate_flow_stream(" << i << ")"
+              << " time: " << time1.count() << " s" << std::endl;
+    permutation_encryption_process(d_pointers, img_dimensions, block_size);// For flow
+    end1 = std::chrono::high_resolution_clock::now();
+    time1 = end1 - start1;
+    if (verbose)
+      std::cout << "\t\t\tpermutation_encryption_process(" << i << ")"
+              << " time: " << time1.count() << " s" << std::endl;
+    flow_encrypt(d_pointers,img_dimensions);
+    end1 = std::chrono::high_resolution_clock::now();
+    time1 = end1 - start1;
+    if (verbose)
+      std::cout << "\t\t\tflow_encrypt(" << i << ")"
               << " time: " << time1.count() << " s" << std::endl;
 
     end = std::chrono::high_resolution_clock::now();
     time = end - start;
     if (verbose)
-      std::cout << "\t\t\tround(" << i << ")" << " time: " << time.count() << " s"
+      std::cout << "\t\tround(" << i << ")" << " time: " << time.count() << " s"
               << std::endl;
   }
 
