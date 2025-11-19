@@ -6,7 +6,6 @@
 
 #include "../include/encryption_aux.cuh"
 
-// Implementation of permutation and automata helper functions.
 __host__ unsigned int *
 generate_flow_permutations(const std::vector<unsigned char> block_passwords,
                            size_t block_length, size_t num_blocks,
@@ -207,6 +206,23 @@ __host__ void block_phase_permutation(unsigned char *d_image,
 
   permute_blocks_kernel<<<numBlocks, threadsPerBlock>>>(
       d_image, d_image_out, block_permutations, block_size, img_dimensions);
+
+  cudaDeviceSynchronize();
+}
+
+__host__ void block_phase_permutation_simple(unsigned char *d_image,
+                                      unsigned char *d_image_out,
+                                      unsigned int *permutation,
+                                      unsigned int *permutation_inverse,
+                                      Image_dimnesions img_dimensions,
+                                      size_t block_size) {
+  dim3 threadsPerBlock(16, 16);
+  dim3 numBlocks(
+      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+  permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
+      d_image, d_image_out, permutation,permutation_inverse, block_size, img_dimensions);
 
   cudaDeviceSynchronize();
 }

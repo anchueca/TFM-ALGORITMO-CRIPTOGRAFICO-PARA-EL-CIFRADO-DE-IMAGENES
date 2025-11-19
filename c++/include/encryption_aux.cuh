@@ -47,6 +47,14 @@ __host__ void block_phase_permutation(unsigned char *d_image,
                                       Image_dimnesions img_dimensions,
                                       size_t block_size);
 
+
+__host__ void block_phase_permutation_simple(unsigned char *d_image,
+                                      unsigned char *d_image_out,
+                                      unsigned int *permutation,
+                                      unsigned int *permutation_inverse,
+                                      Image_dimnesions img_dimensions,
+                                      size_t block_size);
+
 /**
  * @brief Permute rows and columns using provided permutations.
  *

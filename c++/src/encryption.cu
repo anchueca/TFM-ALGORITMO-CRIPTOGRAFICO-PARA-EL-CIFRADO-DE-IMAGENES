@@ -7,7 +7,6 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
                             bool encrypt) {
 
   // For now we assume the image dimensions are multiples of block_size
-
   const Image_dimnesions img_dimensions = {static_cast<size_t>(image.cols),
                                            static_cast<size_t>(image.rows)};
 
@@ -20,13 +19,12 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
       img_dimensions.cols / params.block_size +
       (img_dimensions.cols % params.block_size != 0);
   const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
+  const size_t num_blocks_permutations = 1; //num_blocks // Case multiple permutation blocks
   const size_t block_data_length = params.block_size * params.block_size;
 
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(password, num_blocks, params.precision_level,
-                         params.rounds, img_dimensions.rows,
-                         img_dimensions.cols);
+      calculate_password(password, num_blocks_permutations, params.precision_level, img_dimensions);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
@@ -88,7 +86,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   start = std::chrono::high_resolution_clock::now();
   d_pointers.d_permutation_blocks =
       generate_flow_permutations(password_segments[2], block_data_length,
-                                 num_blocks, params.transition_length);
+                                 num_blocks_permutations, params.transition_length);
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
@@ -119,7 +117,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
 
     start = std::chrono::high_resolution_clock::now();
     inverse_permutations(d_pointers.d_permutation_blocks,&d_pointers.d_permutation_blocks_inverse, block_data_length,
-                          num_blocks);
+                          num_blocks_permutations);
     end = std::chrono::high_resolution_clock::now();
     time = end - start;
     if (verbose)
@@ -142,7 +140,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
                          params.block_size, params.rounds);
   }
   if (verbose)
-  std::cout << "Completed" << std::endl;
+    std::cout << "Completed" << std::endl;
 
   cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
 
@@ -172,11 +170,11 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
   std::cout << "\tInitial image_permutation_encryption_proces time: "
             << time.count() << " s" << std::endl;
 
-  generate_flow_stream(d_pointers, img_dimensions,3.999);
   // Rounds
   for (size_t i = 0; i < rounds; i++) {
     start = std::chrono::high_resolution_clock::now();
     auto start1 = std::chrono::high_resolution_clock::now();
+    generate_flow_stream(d_pointers, img_dimensions,3.999);
     permutation_encryption_process(d_pointers, img_dimensions, block_size);// For flow
     flow_encrypt(d_pointers,img_dimensions);
     auto end1 = std::chrono::high_resolution_clock::now();
@@ -186,7 +184,8 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
 
     end = std::chrono::high_resolution_clock::now();
     time = end - start;
-    std::cout << "\t\t\tround(" << i << ")" << " time: " << time.count() << " s"
+    if (verbose)
+      std::cout << "\t\t\tround(" << i << ")" << " time: " << time.count() << " s"
               << std::endl;
   }
 
@@ -196,7 +195,8 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
 
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
-  std::cout << "\tFinal image_permutation_encryption_process time: "
+  if (verbose)
+    std::cout << "\tFinal image_permutation_encryption_process time: "
             << time.count() << " s" << std::endl;
 }
 
@@ -208,9 +208,9 @@ void unencryption_process(D_pointers &d_pointers,
 
   image_permutation_unencryption_process(d_pointers, img_dimensions,block_size);
 
-  generate_flow_stream(d_pointers, img_dimensions,3.999);
   // Rounds
   for (size_t i = 0; i < rounds; i++) {
+    generate_flow_stream(d_pointers, img_dimensions,3.999);
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
     flow_encrypt(d_pointers,img_dimensions);
   }
@@ -229,8 +229,8 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
                                  d_pointers.d_permutation_cols, img_dimensions,
                                  false);
     // Block
-    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks, img_dimensions,
+    block_phase_permutation_simple(d_pointers.d_image, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks,d_pointers.d_permutation_blocks_inverse, img_dimensions,
                             block_size);
     temp = d_pointers.d_image;
     d_pointers.d_image = d_pointers.d_image_out;
@@ -249,8 +249,8 @@ void permutation_encryption_process(D_pointers &d_pointers,
                                  d_pointers.d_permutation_cols, img_dimensions,
                                  false);
     // Block
-    block_phase_permutation(d_pointers.d_flow, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks, img_dimensions,
+    block_phase_permutation_simple(d_pointers.d_flow, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks,d_pointers.d_permutation_blocks_inverse, img_dimensions,
                             block_size);
     temp = d_pointers.d_flow;
     d_pointers.d_flow = d_pointers.d_image_out;
@@ -264,8 +264,8 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
   for (size_t j = 0; j < 2; j++) {
     unsigned char *temp = nullptr;
     // Block
-    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks_inverse, img_dimensions,
+    block_phase_permutation_simple(d_pointers.d_image, d_pointers.d_image_out,
+                            d_pointers.d_permutation_blocks_inverse,d_pointers.d_permutation_blocks, img_dimensions,
                             block_size);
 
     temp = d_pointers.d_image;

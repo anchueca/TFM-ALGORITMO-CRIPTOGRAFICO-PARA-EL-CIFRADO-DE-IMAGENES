@@ -6,6 +6,7 @@
 #include <openssl/evp.h>
 
 #include "kernels_aux.cuh"
+#include "structs.cuh"
 
 /**
  * @brief Unstacks an image that was previously stacked/tiled into a single
@@ -60,8 +61,7 @@ __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
  * @return Vector of password byte vectors, one per block.
  */
 __host__ std::vector<std::vector<unsigned char>>
-calculate_password(const std::string &input, int num_blocks,
-                   int precision_level, int rounds, int image_height,
-                   int image_width);
+calculate_password(const std::string &input, size_t num_blocks,
+                   size_t precision_level, Image_dimnesions img_dimensions);
 
 #endif // AUX_CUH

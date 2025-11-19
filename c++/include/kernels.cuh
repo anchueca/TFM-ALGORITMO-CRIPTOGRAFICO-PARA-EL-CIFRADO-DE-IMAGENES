@@ -75,6 +75,13 @@ __global__ void permute_blocks_kernel(unsigned char *image,
                                       size_t block_size,
                                       Image_dimnesions img_dimensions);
 
+__global__ void permute_blocks_kernel_simple(unsigned char *image,
+                                      unsigned char *image_out,
+                                      unsigned int *permutation,
+                                      unsigned int *permutation_inverse,
+                                      size_t block_size,
+                                      Image_dimnesions img_dimensions);
+
 /**
  * @brief Kernel to generate chaotic values used for ordering/permutations.
  *

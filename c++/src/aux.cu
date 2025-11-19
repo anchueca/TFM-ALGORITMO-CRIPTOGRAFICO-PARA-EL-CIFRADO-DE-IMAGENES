@@ -114,19 +114,18 @@ __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
 
 // Calculate password segments from a master password (implementation)
 __host__ std::vector<std::vector<unsigned char>>
-calculate_password(const std::string &input, int num_blocks,
-                   int precision_level, int rounds, int image_height,
-                   int image_width) {
+calculate_password(const std::string &input, size_t num_blocks,
+                   size_t precision_level, Image_dimnesions img_dimensions) {
 
   // Required lengths
-  int bytes_for_rows = image_height * precision_level;
-  int bytes_for_columns = image_width * precision_level;
+  int bytes_for_rows = img_dimensions.rows * precision_level;
+  int bytes_for_columns = img_dimensions.cols * precision_level;
   int bytes_for_blocks = num_blocks * precision_level;
-  int bytes_for_flow = image_width * precision_level;
+  int bytes_for_flow = img_dimensions.cols * precision_level;
 
   // Total length
   int length_bytes = bytes_for_rows + bytes_for_columns + bytes_for_blocks +
-                     bytes_for_flow * rounds;
+                     bytes_for_flow;
 
   std::vector<unsigned char> password = generate_sha3_hash(input, length_bytes);
 

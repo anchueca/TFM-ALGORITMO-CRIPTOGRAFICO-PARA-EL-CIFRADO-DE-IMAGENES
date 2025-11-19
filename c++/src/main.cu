@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
   std::chrono::duration<double> time = end - start;
 
   if (verbose)
-    std::cout << "Encryption time: " << time.count() << " s" << std::endl;
+    std::cout << "Total time: " << time.count() << " s" << std::endl;
 
   if (channels != 1)
     image = stack_image(image);
