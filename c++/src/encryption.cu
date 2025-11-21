@@ -1,7 +1,13 @@
 #include "../include/encryption.cuh"
 
-// Top-level encryption orchestration (implementation).
-// See `include/encryption.cuh` for the API and parameter descriptions.
+/**
+ * @brief Orchestrates the high-level image encryption process.
+ * * @param image The input OpenCV matrix (image).
+ * @param password The user-provided password for key generation.
+ * @param params Struct containing configuration for encryption (block size, rounds, etc.).
+ * @param verbose Flag to enable console logging for performance metrics.
+ * @param encrypt True to encrypt, False to decrypt.
+ */
 __host__ void encrypt_image(cv::Mat image, const std::string &password,
                             const EncryptionParams &params, bool verbose,
                             bool encrypt) {
@@ -12,6 +18,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
 
   D_pointers d_pointers;
 
+  // Calculate grid block distribution
   const size_t num_blocks_per_row =
       img_dimensions.rows / params.block_size +
       (img_dimensions.rows % params.block_size != 0);
@@ -22,6 +29,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   const size_t num_blocks_permutations = 1; //num_blocks; // Case multiple permutation blocks
   const size_t block_data_length = params.block_size * params.block_size;
 
+  // --- Key Generation Phase ---
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
       calculate_password(password, num_blocks_permutations, params.precision_level, img_dimensions);
@@ -29,7 +37,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   std::chrono::duration<double> time = end - start;
   if (verbose)
     std::cout << "Password generation time: " << time.count() << " s"
-              << std::endl;
+              << std::endl << std::endl;
 
   if (verbose) {
     std::cout << "=== Encryption parameters ===" << std::endl;
@@ -45,11 +53,12 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
     std::cout << "===========================" << std::endl << std::endl;
   }
 
-  // Automatas
+  // --- Automata Permutation Generation ---
   if (verbose)
     std::cout << "Generating row and column permutations using Elemental "
                  "Cellular Automata..."
               << std::endl << std::endl;
+  // 1. Column Permutations
   ElementalCelularAutomata automata(
       password_segments[1], img_dimensions.cols * params.precision_level * 8,
       30);
@@ -64,6 +73,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
     std::cout << "\tgenerate_automata_permutations (cols) time: "
               << time.count() << " s" << std::endl;
 
+  // 2. Row Permutations
   ElementalCelularAutomata automata1(
       password_segments[0], img_dimensions.rows * params.precision_level * 8,
       30);
@@ -78,9 +88,9 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
     std::cout << "\tgenerate_automata_permutations (rows) time: "
               << time.count() << " s" << std::endl;
 
-  // Generate permutations
+  // 3. Block Permutations (Chaotic Map)
   if (verbose)
-    std::cout << ("Generating block permutations using chaotic function...")
+    std::cout << ("\tGenerating block permutations using chaotic function...")
               << std::endl;
 
   start = std::chrono::high_resolution_clock::now();
@@ -95,7 +105,7 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
 
   const size_t img_size = image.total() * image.elemSize();
 
-  // Calulate inverse permutations
+  // --- Inverse Permutations Calculation ---
   if (verbose)
     std::cout << "Calculating inverse permutations..." << std::endl;
 
@@ -124,14 +134,17 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
       std::cout << "\tinverse blocks time: " << time.count() << " s"
                 << std::endl;
 
+  // --- Device Memory Allocation ---
   cudaMalloc(&d_pointers.d_image, img_size);
   cudaMalloc(&d_pointers.d_image_out, img_size);
   cudaMalloc(&d_pointers.d_flow, img_size);
   cudaMalloc(&d_pointers.d_seeds, password_segments[3].size() * sizeof(unsigned char));
 
+  // Copy initial data to device
   cudaMemcpy(d_pointers.d_image, image.data, img_size, cudaMemcpyHostToDevice);
   cudaMemcpy(d_pointers.d_seeds, password_segments[3].data(), password_segments[3].size() * sizeof(unsigned char), cudaMemcpyHostToDevice);
 
+  // --- Execution ---
   if (encrypt) {
     encryption_process(d_pointers, img_dimensions,
                        params.block_size, params.rounds, verbose);
@@ -142,8 +155,10 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
   if (verbose)
     std::cout << "Completed" << std::endl;
 
+  // Copy result back to host
   cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
 
+  // --- Cleanup ---
   cudaFree(d_pointers.d_permutation_cols);
   cudaFree(d_pointers.d_permutation_rows);
   cudaFree(d_pointers.d_permutation_blocks);
@@ -163,6 +178,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
 
   auto start = std::chrono::high_resolution_clock::now();
 
+  // Initial Confusion Phase
   image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
   auto end = std::chrono::high_resolution_clock::now();
@@ -170,7 +186,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
   std::cout << "\tInitial image_permutation_encryption_proces time: "
             << time.count() << " s" << std::endl;
 
-  // Rounds
+  // Diffusion Rounds
   for (size_t i = 0; i < rounds; i++) {
     start = std::chrono::high_resolution_clock::now();
     auto start1 = std::chrono::high_resolution_clock::now();
@@ -180,12 +196,14 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
     if (verbose)
       std::cout << "\t\t\tgenerate_flow_stream(" << i << ")"
               << " time: " << time1.count() << " s" << std::endl;
-    permutation_encryption_process(d_pointers, img_dimensions, block_size);// For flow
+    // Permutation on the flow/stream itself
+    permutation_encryption_process(d_pointers, img_dimensions, block_size);
     end1 = std::chrono::high_resolution_clock::now();
     time1 = end1 - start1;
     if (verbose)
       std::cout << "\t\t\tpermutation_encryption_process(" << i << ")"
               << " time: " << time1.count() << " s" << std::endl;
+    // XOR/Diffusion with flow
     flow_encrypt(d_pointers,img_dimensions);
     end1 = std::chrono::high_resolution_clock::now();
     time1 = end1 - start1;
@@ -200,6 +218,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
               << std::endl;
   }
 
+  // Final Confusion Phase
   start = std::chrono::high_resolution_clock::now();
 
   image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
@@ -217,22 +236,23 @@ void unencryption_process(D_pointers &d_pointers,
 
   std::cout << "Starting decryption with " << rounds << " rounds." << std::endl;
 
+  // 1. Reverse Final Confusion
   image_permutation_unencryption_process(d_pointers, img_dimensions,block_size);
 
-  // Rounds
+  // 2. Reverse Rounds
   for (size_t i = 0; i < rounds; i++) {
     generate_flow_stream(d_pointers, img_dimensions,3.999);
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
     flow_encrypt(d_pointers,img_dimensions);
   }
 
+  // 3. Reverse Initial Confusion
   image_permutation_unencryption_process(d_pointers, img_dimensions,block_size);
 }
 
 void image_permutation_encryption_process(D_pointers &d_pointers,
                                           Image_dimnesions img_dimensions,
                                           size_t block_size) {
-  unsigned char *temp = nullptr;
   for (size_t j = 0; j < 2; j++) {
     // Rows and columns
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
@@ -243,16 +263,14 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
     block_phase_permutation_simple(d_pointers.d_image, d_pointers.d_image_out,
                             d_pointers.d_permutation_blocks,d_pointers.d_permutation_blocks_inverse, img_dimensions,
                             block_size);
-    temp = d_pointers.d_image;
-    d_pointers.d_image = d_pointers.d_image_out;
-    d_pointers.d_image_out = temp;
+
+    std::swap(d_pointers.d_image, d_pointers.d_image_out);
   }
 }
 
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,
                                     size_t block_size) {
-  unsigned char *temp = nullptr;
   for (size_t j = 0; j < 2; j++) {
     // Rows and columns
     rows_and_columns_permutation(d_pointers.d_flow, d_pointers.d_image_out,
@@ -263,9 +281,7 @@ void permutation_encryption_process(D_pointers &d_pointers,
     block_phase_permutation_simple(d_pointers.d_flow, d_pointers.d_image_out,
                             d_pointers.d_permutation_blocks,d_pointers.d_permutation_blocks_inverse, img_dimensions,
                             block_size);
-    temp = d_pointers.d_flow;
-    d_pointers.d_flow = d_pointers.d_image_out;
-    d_pointers.d_image_out = temp;
+    std::swap(d_pointers.d_flow, d_pointers.d_image_out);
   }
 }
 
@@ -273,15 +289,12 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
                                             Image_dimnesions img_dimensions,
                                             size_t block_size) {
   for (size_t j = 0; j < 2; j++) {
-    unsigned char *temp = nullptr;
     // Block
     block_phase_permutation_simple(d_pointers.d_image, d_pointers.d_image_out,
                             d_pointers.d_permutation_blocks_inverse,d_pointers.d_permutation_blocks, img_dimensions,
                             block_size);
 
-    temp = d_pointers.d_image;
-    d_pointers.d_image = d_pointers.d_image_out;
-    d_pointers.d_image_out = temp;
+    std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
     // Rows and columns
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,

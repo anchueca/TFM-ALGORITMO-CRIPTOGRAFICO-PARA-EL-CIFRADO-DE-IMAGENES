@@ -125,32 +125,34 @@ __global__ void permute_blocks_kernel_simple(unsigned char *image,
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  unsigned int ** permutation_to_apply = nullptr;
 
-  if ( (x + y) & 0 ) permutation_to_apply = &permutation;
-  else permutation_to_apply = &permutation_inverse;
+  if (x >= img_dimensions.cols || y >= img_dimensions.rows) return;
+
+  int current_block_x = x / block_size;
+  int current_block_y = y / block_size;
+
+  bool use_permutation = (current_block_x + current_block_y) & 1;
+  unsigned int *current_permutation = use_permutation ? permutation : permutation_inverse;
 
   int number_block_per_row = img_dimensions.cols / block_size;
 
-  if (x < img_dimensions.cols && y < img_dimensions.rows) {
 
-    int block =
-        y / block_size * (img_dimensions.cols / block_size) + x / block_size;
+  int block =
+      y / block_size * (img_dimensions.cols / block_size) + x / block_size;
 
-    int block_y = y % block_size;
-    int block_x = x % block_size;
+  int block_y = y % block_size;
+  int block_x = x % block_size;
 
-    int src_permuted_index = (*permutation_to_apply)[block_y * block_size + block_x];
+  int src_permuted_index = current_permutation[block_y * block_size + block_x];
 
-    block_x = src_permuted_index % block_size;
-    block_y = src_permuted_index / block_size;
+  block_x = src_permuted_index % block_size;
+  block_y = src_permuted_index / block_size;
 
-    int pixel_y = block / number_block_per_row * block_size + block_y;
-    int pixel_x = block % number_block_per_row * block_size + block_x;
+  int pixel_y = block / number_block_per_row * block_size + block_y;
+  int pixel_x = block % number_block_per_row * block_size + block_x;
 
-    image_out[y * img_dimensions.cols + x] =
-        image[pixel_y * img_dimensions.cols + pixel_x];
-  }
+  image_out[y * img_dimensions.cols + x] =
+      image[pixel_y * img_dimensions.cols + pixel_x];
 }
 
 

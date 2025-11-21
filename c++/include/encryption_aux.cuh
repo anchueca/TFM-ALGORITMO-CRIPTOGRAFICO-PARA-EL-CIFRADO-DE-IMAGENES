@@ -9,6 +9,7 @@
 #include "automata.cuh"
 #include "kernels.cuh"
 #include "structs.cuh"
+#include "CudaPermutation.cuh"
 
 /**
  * @brief Generate block permutations from flow passwords used by the flow
@@ -56,18 +57,19 @@ __host__ void block_phase_permutation_simple(unsigned char *d_image,
                                       size_t block_size);
 
 /**
- * @brief Permute rows and columns using provided permutations.
- *
- * If inverse is true, the function applies the inverse permutation (useful for
- * decryption).
- *
- * @param d_image Input device image buffer.
- * @param d_image_out Output device image buffer.
- * @param d_row_permutations Device pointer to row permutations.
- * @param d_col_permutations Device pointer to column permutations.
- * @param cols Number of columns in the image.
- * @param rows Number of rows in the image.
- * @param inverse Whether to apply the inverse permutation.
+ * @brief Executes row and column permutations on the GPU.
+ * * @note MEMORY FLOW WARNING: 
+ * This function performs a "ping-pong" operation.
+ * 1. Row Permutation: Input -> Output (buffer)
+ * 2. Col Permutation: Output (buffer) -> Input
+ * * RESULT: The final permutated image resides in 'd_image' (the input pointer),
+ * NOT in 'd_image_out'. 'd_image_out' is used only as a temporary scratchpad.
+ * * @param d_image Input image data (and final destination).
+ * @param d_image_out Temporary buffer for intermediate step.
+ * @param d_row_permutations Device pointer to row permutation vector.
+ * @param d_col_permutations Device pointer to col permutation vector.
+ * @param img_dimensions Struct containing width and height.
+ * @param inverse If true, applies inverse permutations in reverse order (Cols then Rows).
  */
 __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,

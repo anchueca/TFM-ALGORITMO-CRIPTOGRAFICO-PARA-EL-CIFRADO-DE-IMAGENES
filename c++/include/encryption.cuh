@@ -9,6 +9,7 @@
 #include <chrono>
 #include <iostream>
 #include <vector>
+#include <algorithm> // For std::swap
 
 // Project headers
 #include "automata.cuh"
