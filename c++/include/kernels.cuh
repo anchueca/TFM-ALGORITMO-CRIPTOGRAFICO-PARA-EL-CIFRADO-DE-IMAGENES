@@ -75,6 +75,26 @@ __global__ void permute_blocks_kernel(unsigned char *image,
                                       size_t block_size,
                                       Image_dimnesions img_dimensions);
 
+                                      /**
+ * @brief Performs intra-block pixel permutation using a checkerboard pattern selection.
+ *
+ * This kernel divides the image into square blocks of size `block_size`. For each pixel,
+ * it calculates its target position within the block based on a pre-computed permutation table.
+ * To increase cryptographic confusion/diffusion, the specific permutation table used alternates
+ * between a forward `permutation` and an `permutation_inverse` based on the block's grid coordinates 
+ * (a checkerboard/parity pattern).
+ *
+ * @note This kernel implements a "Gather" approach: threads map to the *destination* (x,y) 
+ * and calculate where to read the *source* pixel from. This ensures the write operation to 
+ * global memory is coalesced.
+ *
+ * @param image             Pointer to the source image data (device memory).
+ * @param image_out         Pointer to the destination image data (device memory).
+ * @param permutation       Pointer to the primary permutation array (flat array of size block_size^2).
+ * @param permutation_inverse Pointer to the secondary/inverse permutation array (flat array of size block_size^2).
+ * @param block_size        The width/height of the square blocks (e.g., 16, 32).
+ * @param img_dimensions    Struct containing the image dimensions (.rows and .cols).
+ */
 __global__ void permute_blocks_kernel_simple(unsigned char *image,
                                       unsigned char *image_out,
                                       unsigned int *permutation,
