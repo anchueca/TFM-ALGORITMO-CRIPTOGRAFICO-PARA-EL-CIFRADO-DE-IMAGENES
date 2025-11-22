@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Instalar dependencias de Python
- #COPY ./python/requirements.txt /tmp/pip-tmp/
- #RUN pip3 install --no-cache-dir -r /tmp/pip-tmp/requirements.txt
+ COPY python/requirements.txt /tmp/pip-tmp/
+ RUN pip3 install --no-cache-dir -r /tmp/pip-tmp/requirements.txt
 
 # 3. Configurar GCC 12 como el compilador por defecto
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100 \

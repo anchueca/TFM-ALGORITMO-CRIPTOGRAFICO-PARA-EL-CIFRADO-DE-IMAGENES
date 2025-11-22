@@ -1,6 +1,7 @@
 {
     "name": "Proyecto Cripto CUDA",
     "build": {
+        "context": "..",
         "dockerfile": "Dockerfile"
     },
     "runArgs": [

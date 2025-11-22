@@ -122,7 +122,7 @@ __host__ void generate_flow_stream(D_pointers &d_pointers,
  */
 __host__ unsigned int *generate_automata_permutations(
     const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
-    const size_t block_length);
+    const size_t block_length,bool verbose);
 
 /**
  * @brief Inverts a batch of permutations stored on the GPU.

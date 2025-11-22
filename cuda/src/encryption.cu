@@ -109,7 +109,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
       30);
   const std::vector<ElementalCelularAutomata *> cols_automata = {&automata};
   d_pointers.d_permutation_cols = generate_automata_permutations(
-      cols_automata, params.automata_steps, img_dimensions.cols);
+      cols_automata, params.automata_steps, img_dimensions.cols,verbose);
 
   // B. Rows
   ElementalCelularAutomata automata1(
@@ -117,7 +117,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
       30);
   const std::vector<ElementalCelularAutomata *> rows_automata = {&automata1};
   d_pointers.d_permutation_rows = generate_automata_permutations(
-      rows_automata, params.automata_steps, img_dimensions.rows);
+      rows_automata, params.automata_steps, img_dimensions.rows,verbose);
 
   // C. Blocks (Chaotic Map)
   d_pointers.d_permutation_blocks = generate_flow_permutations(
@@ -158,7 +158,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
                        params.rounds, verbose);
   } else {
     unencryption_process(d_pointers, img_dimensions, params.block_size,
-                         params.rounds);
+                         params.rounds,verbose);
   }
 
   if (verbose)
@@ -245,9 +245,9 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
 
 void unencryption_process(D_pointers &d_pointers,
                           Image_dimnesions img_dimensions, size_t block_size,
-                          size_t rounds) {
-
-  std::cout << " > Starting Decryption Loop..." << std::endl;
+                          size_t rounds, bool verbose) {
+  if (verbose)
+    std::cout << " > Starting Decryption Loop..." << std::endl;
 
   // 1. Reverse Final Confusion
   image_permutation_unencryption_process(d_pointers, img_dimensions,

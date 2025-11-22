@@ -82,7 +82,7 @@ generate_flow_permutations(const std::vector<unsigned char> block_passwords,
 
 __host__ unsigned int *generate_automata_permutations(
     const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
-    const size_t block_length) {
+    const size_t block_length,bool verbose) {
 
   size_t num_blocks = automatas.size();
   size_t total_size = num_blocks * block_length;
@@ -148,7 +148,8 @@ __host__ unsigned int *generate_automata_permutations(
   cudaDeviceSynchronize();
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
-  std::cout << "\t\tAutomata & Gen time: " << time.count() << " s" << std::endl;
+  if (verbose)
+    std::cout << "\t\tAutomata & Gen time: " << time.count() << " s" << std::endl;
 
   // Short
   start = std::chrono::high_resolution_clock::now();
@@ -162,7 +163,8 @@ __host__ unsigned int *generate_automata_permutations(
   cudaDeviceSynchronize();
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
-  std::cout << "\t\tBatched Sort time: " << time.count() << " s" << std::endl;
+  if (verbose)
+    std::cout << "\t\tBatched Sort time: " << time.count() << " s" << std::endl;
 
   cudaFree(d_automatas);
   cudaFree(d_chaotic_values);

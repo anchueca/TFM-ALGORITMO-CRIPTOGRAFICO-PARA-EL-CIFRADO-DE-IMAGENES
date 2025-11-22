@@ -81,7 +81,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
  */
 void unencryption_process(D_pointers &d_pointers,
                           Image_dimnesions img_dimensions, size_t block_size,
-                          size_t rounds);
+                          size_t rounds, bool verbose);
 
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,

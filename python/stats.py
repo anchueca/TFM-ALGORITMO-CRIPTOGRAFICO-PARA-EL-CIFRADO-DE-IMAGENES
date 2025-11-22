@@ -7,13 +7,19 @@ from scipy.stats import entropy, chisquare
 from tabulate import tabulate
 import subprocess
 import os
+import sys
 
-matplotlib.use('TkAgg')
+# Use TkAgg for interactive windows, fallback to Agg if headless
+try:
+    matplotlib.use('TkAgg')
+except:
+    matplotlib.use('Agg')
 
 # --- 1. MATHEMATICAL METRICS CLASS ---
 class CryptoMetrics:
     @staticmethod
     def calculate_global_entropy(image):
+        """Calculates Shannon entropy of the image."""
         if len(image.shape) > 2:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
@@ -47,7 +53,7 @@ class CryptoMetrics:
         else:
             raise ValueError("Invalid direction")
 
-        # Subsample for plotting performance if needed
+        # Subsample to avoid performance issues on huge images
         if len(x) > max_samples:
             idx = np.random.choice(len(x), max_samples, replace=False)
             return x[idx], y[idx]
@@ -55,23 +61,18 @@ class CryptoMetrics:
 
     @staticmethod
     def calculate_correlations_full(image):
-        # We use the full dataset for calculation (not subsampled)
-        # Horizontal
+        """Calculates correlation coefficients in all 3 directions."""
         x, y = CryptoMetrics.get_pixel_pairs(image, 'horizontal', max_samples=10**8)
         cc_h = np.corrcoef(x, y)[0, 1]
-
-        # Vertical
         x, y = CryptoMetrics.get_pixel_pairs(image, 'vertical', max_samples=10**8)
         cc_v = np.corrcoef(x, y)[0, 1]
-
-        # Diagonal
         x, y = CryptoMetrics.get_pixel_pairs(image, 'diagonal', max_samples=10**8)
         cc_d = np.corrcoef(x, y)[0, 1]
-        
         return np.nan_to_num([cc_h, cc_v, cc_d])
 
     @staticmethod
     def calculate_npcr_uaci(img1, img2):
+        """Calculates NPCR and UACI between two images."""
         if img1.shape != img2.shape:
              img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
         
@@ -85,6 +86,7 @@ class CryptoMetrics:
 
     @staticmethod
     def calculate_chi_square(image):
+        """Calculates Chi-Square histogram uniformity test."""
         if len(image.shape) > 2:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
@@ -98,68 +100,123 @@ class CryptoMetrics:
 class ExternalCipherTester:
     def __init__(self, exe_path, input_path, password, rounds):
         self.exe = exe_path
-        self.input = input_path
+        self.input_path = input_path
         self.password = password
         self.rounds = str(rounds)
-        self.original_img = cv2.imread(input_path)
+        # Load the original image once into memory
+        self.original_img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
+        
         if self.original_img is None:
             raise ValueError(f"Could not load input image: {input_path}")
 
-    def run_cmd(self, args):
+    def run_cipher_ram_to_ram(self, image_matrix, mode_enc=True):
+        """
+        Full RAM Pipeline:
+        Python (Matrix) -> Encode -> Stdin -> C++ -> Stdout -> Python (Matrix)
+        """
+        if not isinstance(image_matrix, np.ndarray):
+             raise ValueError("Input to cipher must be a numpy array (image matrix), not a path.")
+
+        mode_flag = '1' if mode_enc else '0'
+        
+        # 1. Encode the RAM image to bytes (TIFF format for lossless transfer)
+        success, encoded_buffer = cv2.imencode(".tif", image_matrix)
+        if not success:
+            raise ValueError("Error encoding image in Python before sending to C++")
+            
+        bytes_to_send = encoded_buffer.tobytes()
+
+        # 2. Configure command
+        # Note: First arg is "STDIN", second is "STDOUT"
+        cmd = [
+            self.exe,
+            "STDIN",        # <--- C++ reads from cin
+            "STDOUT",       # <--- C++ writes to cout
+            self.password,
+            self.rounds,
+            "0",            # Verbose OFF
+            mode_flag,
+            "8", "2", "20", "10" # Fixed params
+        ]
+
         try:
-            subprocess.run([self.exe] + args, check=True, capture_output=True, timeout=60)
-        except Exception as e:
-            print(f"[!] Error executing C++ binary: {e}")
-            raise 
+            # 3. Execute passing bytes to subprocess input
+            res = subprocess.run(
+                cmd,
+                input=bytes_to_send,  # <--- Inject image bytes here
+                capture_output=True,
+                check=True
+            )
+            
+            if not res.stdout:
+                raise ValueError("C++ returned empty output.")
 
-    def encrypt(self, in_file, out_file):
-        self.run_cmd([in_file, out_file, self.password, self.rounds, '0', '1', '8', '2', '20', '10'])
-        return cv2.imread(out_file)
+            # 4. Decode the response
+            nparr = np.frombuffer(res.stdout, np.uint8)
+            img_decoded = cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+            
+            return img_decoded
 
-    def decrypt(self, in_file, out_file):
-        self.run_cmd([in_file, out_file, self.password, self.rounds, '0', '0', '8', '2', '20', '10'])
-        return cv2.imread(out_file)
+        except subprocess.CalledProcessError as e:
+            print(f"[!] C++ Binary Failed.")
+            print("Stderr:", e.stderr.decode('utf-8', errors='ignore'))
+            raise
+
+    def encrypt_flow(self):
+        """Encrypts the original image loaded in memory."""
+        return self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
+
+    def decrypt_flow(self, ciphered_img_ram):
+        """Decrypts an image provided in RAM."""
+        return self.run_cipher_ram_to_ram(ciphered_img_ram, mode_enc=False)
 
     def diff_attack(self):
+        """
+        Performs Differential Attack by flipping 1 bit and comparing results.
+        Entirely in memory, no temp files needed.
+        """
+        # Create a copy to modify
         alt_img = self.original_img.copy()
-        # Flip LSB safely
-        if len(alt_img.shape) > 2: alt_img[0,0,0] ^= 1
-        else: alt_img[0,0] ^= 1
         
-        f_orig, f_alt = "temp_atk_orig.tif", "temp_atk_alt.tif"
-        f_c1, f_c2 = "temp_atk_c1.tif", "temp_atk_c2.tif"
-        files = [f_orig, f_alt, f_c1, f_c2]
+        # Flip LSB safely (works for Gray or Color)
+        if len(alt_img.shape) > 2: 
+            alt_img[0,0,0] ^= 1
+        else: 
+            alt_img[0,0] ^= 1
         
-        try:
-            cv2.imwrite(f_orig, self.original_img)
-            cv2.imwrite(f_alt, alt_img)
-            c1 = self.encrypt(f_orig, f_c1)
-            c2 = self.encrypt(f_alt, f_c2)
-            if c1 is not None and c2 is not None:
-                return CryptoMetrics.calculate_npcr_uaci(c1, c2)
-            return (0,0)
-        finally:
-            for f in files:
-                if os.path.exists(f): os.remove(f)
+        # Encrypt Original (C1)
+        # FIX: We pass self.original_img (Matrix), NOT self.input_path (String)
+        c1 = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
+        
+        # Encrypt Modified (C2)
+        # FIX: We pass alt_img (Matrix)
+        c2 = self.run_cipher_ram_to_ram(alt_img, mode_enc=True)
+        
+        if c1 is not None and c2 is not None:
+            return CryptoMetrics.calculate_npcr_uaci(c1, c2)
+        
+        return (0,0)
 
 # --- 3. COMPLETE VISUALIZATION ---
 def plot_results_complete(original, ciphered, decrypted, diff_map):
-    # Create a 3x4 Grid
     fig, axs = plt.subplots(3, 4, figsize=(16, 12))
     fig.suptitle("Comprehensive Encryption Analysis", fontsize=16, fontweight='bold')
 
-    # --- ROW 1: IMAGES ---
+    # ROW 1: IMAGES
     imgs = [original, ciphered, decrypted, diff_map]
     titles = ["Original", "Encrypted", "Decrypted", "Error Map (Black=Perfect)"]
     for i, (img, title) in enumerate(zip(imgs, titles)):
         if i == 3: axs[0, i].imshow(img, cmap='hot', vmin=0, vmax=255)
-        else: axs[0, i].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        else: 
+            # Convert BGR to RGB for matplotlib
+            if len(img.shape) > 2:
+                axs[0, i].imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            else:
+                axs[0, i].imshow(img, cmap='gray')
         axs[0, i].set_title(title)
         axs[0, i].axis('off')
 
-    # --- ROW 2: HISTOGRAMS & HORIZONTAL CORRELATION ---
-    
-    # Histograms (Cols 0 & 1)
+    # ROW 2: HISTOGRAMS & HORIZONTAL
     for i, (img, col) in enumerate(zip([original, ciphered], ['black', 'red'])):
         if len(img.shape) > 2: gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         else: gray = img
@@ -168,49 +225,27 @@ def plot_results_complete(original, ciphered, decrypted, diff_map):
         axs[1, i].set_title(f"Histogram ({'Original' if i==0 else 'Encrypted'})")
         axs[1, i].set_xlim([0, 255])
 
-    # Horizontal Scatter (Cols 2 & 3)
-    x_o, y_o = CryptoMetrics.get_pixel_pairs(original, 'horizontal')
-    axs[1, 2].scatter(x_o, y_o, s=0.5, c='black', alpha=0.5)
-    axs[1, 2].set_title("Horizontal Corr. (Original)")
-    axs[1, 2].set_xlabel("Pixel(i, j)"); axs[1, 2].set_ylabel("Pixel(i, j+1)")
-
-    x_c, y_c = CryptoMetrics.get_pixel_pairs(ciphered, 'horizontal')
-    axs[1, 3].scatter(x_c, y_c, s=0.5, c='red', alpha=0.5)
-    axs[1, 3].set_title("Horizontal Corr. (Encrypted)")
-    axs[1, 3].set_xlabel("Pixel(i, j)"); axs[1, 3].set_ylabel("Pixel(i, j+1)")
-
-    # --- ROW 3: VERTICAL & DIAGONAL CORRELATION ---
-
-    # Vertical (Cols 0 & 1)
-    x_ov, y_ov = CryptoMetrics.get_pixel_pairs(original, 'vertical')
-    axs[2, 0].scatter(x_ov, y_ov, s=0.5, c='black', alpha=0.5)
-    axs[2, 0].set_title("Vertical Corr. (Original)")
-    axs[2, 0].set_xlabel("Pixel(i, j)"); axs[2, 0].set_ylabel("Pixel(i+1, j)")
-
-    x_cv, y_cv = CryptoMetrics.get_pixel_pairs(ciphered, 'vertical')
-    axs[2, 1].scatter(x_cv, y_cv, s=0.5, c='red', alpha=0.5)
-    axs[2, 1].set_title("Vertical Corr. (Encrypted)")
-    axs[2, 1].set_xlabel("Pixel(i, j)"); axs[2, 1].set_ylabel("Pixel(i+1, j)")
-
-    # Diagonal (Cols 2 & 3)
-    x_od, y_od = CryptoMetrics.get_pixel_pairs(original, 'diagonal')
-    axs[2, 2].scatter(x_od, y_od, s=0.5, c='black', alpha=0.5)
-    axs[2, 2].set_title("Diagonal Corr. (Original)")
-    axs[2, 2].set_xlabel("Pixel(i, j)"); axs[2, 2].set_ylabel("Pixel(i+1, j+1)")
-
-    x_cd, y_cd = CryptoMetrics.get_pixel_pairs(ciphered, 'diagonal')
-    axs[2, 3].scatter(x_cd, y_cd, s=0.5, c='red', alpha=0.5)
-    axs[2, 3].set_title("Diagonal Corr. (Encrypted)")
-    axs[2, 3].set_xlabel("Pixel(i, j)"); axs[2, 3].set_ylabel("Pixel(i+1, j+1)")
-
-    # Formatting axis for correlations
-    for ax in axs.flatten()[6:]: # Apply to all scatter plots
-        ax.set_xlim(0, 255); ax.set_ylim(0, 255)
-        ax.set_aspect('equal', adjustable='box')
+    # Scatter plots
+    directions = ['horizontal', 'horizontal', 'vertical', 'vertical', 'diagonal', 'diagonal']
+    sources = [original, ciphered, original, ciphered, original, ciphered]
+    colors = ['black', 'red', 'black', 'red', 'black', 'red']
+    axes_pos = [(1,2), (1,3), (2,0), (2,1), (2,2), (2,3)]
+    
+    for (img, direct, col, (r, c)) in zip(sources, directions, colors, axes_pos):
+        x, y = CryptoMetrics.get_pixel_pairs(img, direct)
+        axs[r, c].scatter(x, y, s=0.5, c=col, alpha=0.5)
+        axs[r, c].set_title(f"{direct.capitalize()} ({'Orig' if col=='black' else 'Enc'})")
+        axs[r, c].set_xlim(0, 255); axs[r, c].set_ylim(0, 255)
+        axs[r, c].set_aspect('equal', adjustable='box')
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.92, hspace=0.4)
-    plt.show()
+
+    #plt.show()
+
+    output_filename = "reporte_estadistico.png"
+    print(f"\n[+] Saving plot to {output_filename} (Headless Mode)...")
+    plt.savefig(output_filename, dpi=150)
 
 # --- 4. MAIN ---
 def main():
@@ -221,43 +256,51 @@ def main():
     parser.add_argument("--rounds", type=int, default=3)
     args = parser.parse_args()
 
-    f_cipher = "temp_main_cipher.tif"
-    f_decipher = "temp_main_decipher.tif"
+    if not os.path.exists(args.input):
+        print(f"[!] Error: Input file not found: {args.input}")
+        return
 
     try:
-        print("[+] Initializing...")
+        print("[+] Initializing Python Wrapper...")
         tester = ExternalCipherTester(args.exe, args.input, args.password, args.rounds)
         
-        print("[+] Encrypting...")
-        ciphered = tester.encrypt(args.input, f_cipher)
+        # 1. Encrypt (RAM -> RAM)
+        print("[+] Encrypting (Full RAM Pipe)...")
+        ciphered = tester.encrypt_flow()
         
-        print("[+] Decrypting...")
-        decrypted = tester.decrypt(f_cipher, f_decipher)
+        # 2. Decrypt (RAM -> RAM)
+        print("[+] Decrypting (Full RAM Pipe)...")
+        decrypted = tester.decrypt_flow(ciphered)
 
         if ciphered is None or decrypted is None:
-            print("[!] Error: Failed to generate images.")
+            print("[!] Error: Pipeline failed.")
             return
 
         # --- STATISTICS ---
-        print("[+] Calculating all statistics...")
+        print("[+] Calculating statistics...")
         
-        # 1. Integrity
+        # Integrity
+        if tester.original_img.shape != decrypted.shape:
+            print("[!] Warning: Shape mismatch. Resizing decrypted for comparison.")
+            decrypted = cv2.resize(decrypted, (tester.original_img.shape[1], tester.original_img.shape[0]))
+
         is_perfect = np.array_equal(tester.original_img, decrypted)
         diff_map = cv2.absdiff(tester.original_img, decrypted)
         diff_pixels = np.count_nonzero(diff_map)
         
-        # 2. Entropy
+        # Entropy
         ent_orig = CryptoMetrics.calculate_global_entropy(tester.original_img)
         ent_ciph = CryptoMetrics.calculate_global_entropy(ciphered)
         
-        # 3. Correlation (All 3 directions)
+        # Correlation
         corr_orig = CryptoMetrics.calculate_correlations_full(tester.original_img)
         corr_ciph = CryptoMetrics.calculate_correlations_full(ciphered)
         
-        # 4. Chi-Square
+        # Chi-Square
         chi2, p_val = CryptoMetrics.calculate_chi_square(ciphered)
         
-        # 5. Differential Attack
+        # Differential Attack
+        print("[+] Running Differential Attack...")
         npcr, uaci = tester.diff_attack()
 
         # --- TABLES ---
@@ -265,55 +308,41 @@ def main():
         print(" FULL STATISTICAL REPORT ")
         print("="*60)
 
-        # Table 1: General Metrics
-        headers_gen = ["Metric", "Original Image", "Encrypted Image", "Ideal (Ref)"]
+        headers_gen = ["Metric", "Original", "Encrypted", "Ideal"]
         table_gen = [
             ["Global Entropy", f"{ent_orig:.4f}", f"{ent_ciph:.4f}", "~7.9990"],
-            ["Correlation (Horiz)", f"{corr_orig[0]:.4f}", f"{corr_ciph[0]:.4f}", "~0.0000"],
-            ["Correlation (Vert)",  f"{corr_orig[1]:.4f}", f"{corr_ciph[1]:.4f}", "~0.0000"],
-            ["Correlation (Diag)",  f"{corr_orig[2]:.4f}", f"{corr_ciph[2]:.4f}", "~0.0000"],
+            ["Corr (Horiz)", f"{corr_orig[0]:.4f}", f"{corr_ciph[0]:.4f}", "~0.0000"],
+            ["Corr (Vert)",  f"{corr_orig[1]:.4f}", f"{corr_ciph[1]:.4f}", "~0.0000"],
+            ["Corr (Diag)",  f"{corr_orig[2]:.4f}", f"{corr_ciph[2]:.4f}", "~0.0000"],
         ]
         print(tabulate(table_gen, headers=headers_gen, tablefmt="fancy_grid"))
         print("")
 
-        # Table 2: Randomness & Distribution
-        headers_dist = ["Test", "Value", "P-Value", "Result Interpretation"]
-        chi_res = "Passed (Uniform)" if p_val > 0.05 else "Suspect (Not Uniform)" # Simplified interpretation
-        if chi2 > 300: chi_res = "High Deviation"
-        
+        chi_res = "Pass (Uniform)" if p_val > 0.05 else "Fail/Suspect"
         table_dist = [
-            ["Chi-Square Statistic", f"{chi2:.2f}", f"{p_val:.4f}", chi_res]
+            ["Chi-Square", f"{chi2:.2f}", f"{p_val:.4f}", chi_res]
         ]
-        print(tabulate(table_dist, headers=headers_dist, tablefmt="fancy_grid"))
+        print(tabulate(table_dist, headers=["Test", "Value", "P-Value", "Result"], tablefmt="fancy_grid"))
         print("")
 
-        # Table 3: Resistance to Attacks
-        headers_sec = ["Differential Attack", "Obtained", "Ideal Threshold"]
         table_sec = [
-            ["NPCR (Pixel Change Rate)", f"{npcr:.4f} %", "> 99.60 %"],
-            ["UACI (Avg Intensity Change)", f"{uaci:.4f} %", "~ 33.46 %"]
+            ["NPCR", f"{npcr:.4f} %", "> 99.60 %"],
+            ["UACI", f"{uaci:.4f} %", "~ 33.46 %"]
         ]
-        print(tabulate(table_sec, headers=headers_sec, tablefmt="fancy_grid"))
+        print(tabulate(table_sec, headers=["Metric", "Value", "Threshold"], tablefmt="fancy_grid"))
         print("")
 
-        # Table 4: Integrity
         print(f"Integrity Check: {'SUCCESS' if is_perfect else 'FAIL'}")
         if not is_perfect:
-            print(f" -> Errors found: {diff_pixels} pixels differ.")
+            print(f" -> Errors: {diff_pixels} pixels differ.")
 
-        print("\n[+] Displaying comprehensive plots...")
+        print("\n[+] Launching Plot...")
         plot_results_complete(tester.original_img, ciphered, decrypted, diff_map)
 
     except Exception as e:
-        print(f"\n[!] Runtime Error: {e}")
+        print(f"\n[!] Python Runtime Error: {e}")
         import traceback
         traceback.print_exc()
-
-    finally:
-        for f in [f_cipher, f_decipher]:
-            if os.path.exists(f): 
-                try: os.remove(f) 
-                except: pass
 
 if __name__ == "__main__":
     main()
