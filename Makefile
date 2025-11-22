@@ -12,9 +12,9 @@ LDFLAGS = $(shell pkg-config --libs opencv4) -lssl -lcrypto -lcudart
 CXXINCLUDES = $(shell pkg-config --cflags opencv4) -I./include -I/usr/local/cuda/include
 
 # Directorios
-SRC_DIR = ./src
-BIN_DIR = ./bin
-INCLUDE_DIR = ./include
+SRC_DIR = ./cuda/src
+BIN_DIR = ./cuda/bin
+INCLUDE_DIR = ./cuda/include
 
 # Archivos
 SRCS_CU = $(wildcard $(SRC_DIR)/*.cu)
@@ -34,9 +34,9 @@ endif
 NVCCFLAGS += -ccbin g++-12
 
 # Regla principal
-$(TARGET): $(OBJS_CPP) $(OBJS_CU)
+$(TARGET):  $(OBJS_CU)
 	@mkdir -p $(BIN_DIR)
-	$(NVCC) $(NVCCFLAGS) $(OBJS_CPP) $(OBJS_CU) -o $@ $(LDFLAGS)
+	$(NVCC) $(NVCCFLAGS) $(OBJS_CU) -o $@ $(LDFLAGS)
 
 # Compilación de .cu
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu

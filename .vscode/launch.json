@@ -2,44 +2,38 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Program",
+            "name": "1. Debug: Cifrar (Imagen -> Tif)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/c++/bin/cipher.out",
-            "args": [],
+            "program": "${workspaceFolder}/cuda/bin/cipher.out",
+            "args": [
+                "./repositorio/set3/lena3.jpg",
+                "./cuda/bin/salida.tif",
+                "password",
+                "3", "1", "1", "8", "2", "20", "10"
+            ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/c++",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "/usr/bin/gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ]
+            "preLaunchTask": "Build (Make Debug)"
         },
         {
-            "name": "Debug CUDA",
+            "name": "2. Debug: Descifrar (Tif -> Tif)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/c++/bin/cipher.out",
-            "args": [],
+            "program": "${workspaceFolder}/cuda/bin/cipher.out",
+            "args": [
+                "./cuda/bin/salida.tif",
+                "./cuda/bin/salidaC.tif",
+                "password",
+                "3", "0", "0", "8", "2", "20", "10"
+            ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/c++",
-            "environment": [],
-            "externalConsole": false,
+            "cwd": "${workspaceFolder}",
             "MIMode": "gdb",
-            "miDebuggerPath": "/usr/local/cuda/bin/cuda-gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ]
+            "preLaunchTask": "Build (Make Debug)" 
         }
     ]
 }

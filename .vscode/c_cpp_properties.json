@@ -4,13 +4,19 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${workspaceFolder}/include",
+                "/usr/local/cuda/include",
                 "/usr/include/opencv4"
             ],
-            "defines": [],
+            "defines": [
+                "__GNUC__",
+                "__CUDACC__"
+            ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c17",
-            "cppStandard": "gnu++17",
-            "intelliSenseMode": "linux-gcc-x64"
+            "cppStandard": "c++17",
+            "intelliSenseMode": "linux-gcc-x64",
+            "configurationProvider": "ms-vscode.makefile-tools"
         }
     ],
     "version": 4

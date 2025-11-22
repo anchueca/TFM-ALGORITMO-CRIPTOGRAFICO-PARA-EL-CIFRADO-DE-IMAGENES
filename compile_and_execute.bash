@@ -1,0 +1,2 @@
+#!/bin/bash
+make -j 8 && ./cuda/bin/cipher.out ./repositorio/set3/lena3.jpg ./cuda/bin/salida.tif password 3 1 1 8 2 20 10 && ./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password 3 0 0 8 2 20 10

@@ -1,0 +1,22 @@
+{
+    "name": "Proyecto Cripto CUDA",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        "--gpus", "all",
+        "--privileged",
+        "--net=host"      // Ayuda a evitar problemas de red/DNS también
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.makefile-tools",
+                "NVIDIA.nsight-vscode-edition",
+                "ms-python.python"
+            ]
+        }
+    },
+    "remoteUser": "root"
+}
