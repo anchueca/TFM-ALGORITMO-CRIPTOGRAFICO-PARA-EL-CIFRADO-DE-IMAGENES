@@ -1,5 +1,5 @@
 # Archivos y directorios de compilación
-/c++/bin/
+/cuda/bin/
 *.o
 *.out
 ciphered_output.tif
@@ -11,5 +11,5 @@ aes_try/aes_image_encrypt
 aes_try/aes.cpp
 aes_try/salida.tif
 *.pyc
-c++/doc/
+cuda/doc/
 template
