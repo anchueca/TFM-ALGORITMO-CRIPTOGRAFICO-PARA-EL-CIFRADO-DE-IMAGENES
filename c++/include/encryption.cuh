@@ -6,10 +6,11 @@
 
 // Standard headers
 #include <algorithm>
+#include <algorithm> // For std::swap
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <vector>
-#include <algorithm> // For std::swap
 
 // Project headers
 #include "automata.cuh"
@@ -25,21 +26,24 @@
 using namespace std;
 
 /**
- * @brief Top-level helper to encrypt or decrypt an image using the provided
- * password and parameters.
- *
- * If encrypt is true the function encrypts, otherwise it attempts to decrypt
- * using the inverse operations. The function is a convenience wrapper that sets
- * up GPU buffers and coordinates the stages of the pipeline.
- *
- * @param image Input image (cv::Mat) to encrypt/decrypt.
- * @param password Password string used for key derivation.
- * @param params EncryptionParams struct controlling algorithm behavior.
- * @param verbose If true, prints progress and debug information.
- * @param encrypt Whether to run encryption (true) or decryption (false).
+ * @brief Orchestrates the high-level image encryption process.
+ * * Logic for Color Images:
+ * - Pre-processing: Unstacks RGB into a wide single-channel matrix ([R][G][B])
+ * for GPU processing.
+ * - Post-processing: Stacks the wide matrix back into RGB ([R,G,B]).
+ * * This ensures that both the Encrypted result and the Decrypted result
+ * maintain the original format (e.g., 3 channels).
+ * * @param image Reference to the input/output OpenCV matrix. Modified in
+ * place.
+ * @param password The user-provided password for key generation.
+ * @param params Struct containing configuration for encryption (block size,
+ * rounds, etc.).
+ * @param verbose Flag to enable console logging for performance metrics.
+ * @param encrypt True to encrypt, False to decrypt.
  */
-void encrypt_image(cv::Mat image, const std::string &password,
-                   const EncryptionParams &params, bool verbose, bool encrypt);
+__host__ void encrypt_image(cv::Mat &image, const std::string &password,
+                            const EncryptionParams &params, bool verbose,
+                            bool encrypt);
 
 /**
  * @brief Internal pipeline function that performs the encryption stages
@@ -76,8 +80,8 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
  * @param rounds Number of rounds for this stage.
  */
 void unencryption_process(D_pointers &d_pointers,
-                          Image_dimnesions img_dimensions,
-                          size_t block_size, size_t rounds);
+                          Image_dimnesions img_dimensions, size_t block_size,
+                          size_t rounds);
 
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,

@@ -1,12 +1,14 @@
 import cv2
 import numpy as np
 import argparse
+import matplotlib
 import matplotlib.pyplot as plt
 from scipy.stats import entropy, chisquare
 from tabulate import tabulate
 import subprocess
 import os
-import sys
+
+matplotlib.use('TkAgg')
 
 # --- 1. MATHEMATICAL METRICS CLASS ---
 class CryptoMetrics:

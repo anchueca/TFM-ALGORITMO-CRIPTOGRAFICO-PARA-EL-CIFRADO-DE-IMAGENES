@@ -124,8 +124,8 @@ calculate_password(const std::string &input, size_t num_blocks,
   int bytes_for_flow = img_dimensions.cols * precision_level;
 
   // Total length
-  int length_bytes = bytes_for_rows + bytes_for_columns + bytes_for_blocks +
-                     bytes_for_flow;
+  int length_bytes =
+      bytes_for_rows + bytes_for_columns + bytes_for_blocks + bytes_for_flow;
 
   std::vector<unsigned char> password = generate_sha3_hash(input, length_bytes);
 

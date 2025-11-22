@@ -6,10 +6,10 @@
 #include <iostream>
 #include <vector>
 
+#include "CudaPermutation.cuh"
 #include "automata.cuh"
 #include "kernels.cuh"
 #include "structs.cuh"
-#include "CudaPermutation.cuh"
 
 /**
  * @brief Generate block permutations from flow passwords used by the flow
@@ -48,28 +48,29 @@ __host__ void block_phase_permutation(unsigned char *d_image,
                                       Image_dimnesions img_dimensions,
                                       size_t block_size);
 
-
 __host__ void block_phase_permutation_simple(unsigned char *d_image,
-                                      unsigned char *d_image_out,
-                                      unsigned int *permutation,
-                                      unsigned int *permutation_inverse,
-                                      Image_dimnesions img_dimensions,
-                                      size_t block_size);
+                                             unsigned char *d_image_out,
+                                             unsigned int *permutation,
+                                             unsigned int *permutation_inverse,
+                                             Image_dimnesions img_dimensions,
+                                             size_t block_size);
 
 /**
  * @brief Executes row and column permutations on the GPU.
- * * @note MEMORY FLOW WARNING: 
+ * * @note MEMORY FLOW WARNING:
  * This function performs a "ping-pong" operation.
  * 1. Row Permutation: Input -> Output (buffer)
  * 2. Col Permutation: Output (buffer) -> Input
- * * RESULT: The final permutated image resides in 'd_image' (the input pointer),
- * NOT in 'd_image_out'. 'd_image_out' is used only as a temporary scratchpad.
+ * * RESULT: The final permutated image resides in 'd_image' (the input
+ * pointer), NOT in 'd_image_out'. 'd_image_out' is used only as a temporary
+ * scratchpad.
  * * @param d_image Input image data (and final destination).
  * @param d_image_out Temporary buffer for intermediate step.
  * @param d_row_permutations Device pointer to row permutation vector.
  * @param d_col_permutations Device pointer to col permutation vector.
  * @param img_dimensions Struct containing width and height.
- * @param inverse If true, applies inverse permutations in reverse order (Cols then Rows).
+ * @param inverse If true, applies inverse permutations in reverse order (Cols
+ * then Rows).
  */
 __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
@@ -90,7 +91,8 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
  * @param r Chaotic map parameter.
  * @param rounds Number of flow rounds to perform.
  */
-__host__ void flow_encrypt(D_pointers &d_pointers, Image_dimnesions img_dimensions);
+__host__ void flow_encrypt(D_pointers &d_pointers,
+                           Image_dimnesions img_dimensions);
 
 /**
  * @brief Generate the flow stream stage using provided seeds and chaotic
@@ -104,7 +106,7 @@ __host__ void flow_encrypt(D_pointers &d_pointers, Image_dimnesions img_dimensio
  * @param r Chaotic map parameter.
  */
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                           Image_dimnesions img_dimensions, double r);
+                                   Image_dimnesions img_dimensions, double r);
 
 /**
  * @brief Generate permutations from cellular automata instances.
@@ -134,7 +136,8 @@ __host__ unsigned int *generate_automata_permutations(
  * @param block_length Length of each permutation block.
  * @param num_blocks Number of permutations (blocks) to invert.
  */
-__host__ void inverse_permutations(unsigned int *d_permutations, unsigned int **d_permutations_inverse,
+__host__ void inverse_permutations(unsigned int *d_permutations,
+                                   unsigned int **d_permutations_inverse,
                                    size_t block_length, size_t num_blocks);
 
 /**

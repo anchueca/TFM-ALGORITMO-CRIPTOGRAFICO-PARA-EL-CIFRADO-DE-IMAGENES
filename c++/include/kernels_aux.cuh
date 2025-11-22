@@ -15,15 +15,16 @@ template <typename T>
 __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
                                                unsigned int *indices,
                                                size_t block_length) {
-  
+
   T local_vals[MAX_BLOCK_SIZE];
   unsigned int local_indices[MAX_BLOCK_SIZE];
 
-  if (block_length > MAX_BLOCK_SIZE) return; 
+  if (block_length > MAX_BLOCK_SIZE)
+    return;
 
   for (size_t i = 0; i < block_length; i++) {
-      local_vals[i] = chaotic_vals[base_idx + i];
-      local_indices[i] = indices[base_idx + i];
+    local_vals[i] = chaotic_vals[base_idx + i];
+    local_indices[i] = indices[base_idx + i];
   }
 
   for (size_t i = 1; i < block_length; i++) {
@@ -43,8 +44,8 @@ __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
   }
 
   for (size_t i = 0; i < block_length; i++) {
-      indices[base_idx + i] = local_indices[i];
-      chaotic_vals[base_idx + i] = local_vals[i]; 
+    indices[base_idx + i] = local_indices[i];
+    chaotic_vals[base_idx + i] = local_vals[i];
   }
 }
 

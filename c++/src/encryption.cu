@@ -1,20 +1,37 @@
 #include "../include/encryption.cuh"
 
-/**
- * @brief Orchestrates the high-level image encryption process.
- * * @param image The input OpenCV matrix (image).
- * @param password The user-provided password for key generation.
- * @param params Struct containing configuration for encryption (block size, rounds, etc.).
- * @param verbose Flag to enable console logging for performance metrics.
- * @param encrypt True to encrypt, False to decrypt.
- */
-__host__ void encrypt_image(cv::Mat image, const std::string &password,
+// =================================================================================
+//                                  MAIN ORCHESTRATOR
+// =================================================================================
+
+__host__ void encrypt_image(cv::Mat &image, const std::string &password,
                             const EncryptionParams &params, bool verbose,
                             bool encrypt) {
 
-  // For now we assume the image dimensions are multiples of block_size
-  const Image_dimnesions img_dimensions = {static_cast<size_t>(image.cols),
-                                           static_cast<size_t>(image.rows)};
+  // --- 1. PRE-PROCESSING (Symmetric Unstacking) ---
+  // If the image is RGB, we flatten it (unstack) to process it on the GPU.
+  // If decrypting, we assume the input is already flattened OR we attempt to
+  // flatten it if it was read as RGB by OpenCV.
+  cv::Mat processed_image;
+  bool is_color = (image.channels() == 3);
+
+  if (is_color) {
+    if (verbose)
+      std::cout << "[INFO] 3-Channel image detected. Unstacking..."
+                << std::endl;
+    std::vector<cv::Mat> channels;
+    cv::split(image, channels);
+    cv::hconcat(channels,
+                processed_image); // Concatenate [R][G][B] side-by-side
+  } else {
+    processed_image = image.clone();
+  }
+
+  // CRITICAL: Use the dimensions of the PROCESSED (flattened) image for all
+  // calculations
+  const Image_dimnesions img_dimensions = {
+      static_cast<size_t>(processed_image.cols),
+      static_cast<size_t>(processed_image.rows)};
 
   D_pointers d_pointers;
 
@@ -26,262 +43,252 @@ __host__ void encrypt_image(cv::Mat image, const std::string &password,
       img_dimensions.cols / params.block_size +
       (img_dimensions.cols % params.block_size != 0);
   const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
-  const size_t num_blocks_permutations = 1; //num_blocks; // Case multiple permutation blocks
+  const size_t num_blocks_permutations = 1;
   const size_t block_data_length = params.block_size * params.block_size;
 
-  // --- Key Generation Phase ---
-  auto start = std::chrono::high_resolution_clock::now();
-  const std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(password, num_blocks_permutations, params.precision_level, img_dimensions);
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> time = end - start;
-  if (verbose)
-    std::cout << "Password generation time: " << time.count() << " s"
-              << std::endl << std::endl;
-
+  // --- 2. VERBOSE REPORTING ---
   if (verbose) {
-    std::cout << "=== Encryption parameters ===" << std::endl;
-    std::cout << "\tPrecision level: " << params.precision_level << std::endl;
-    std::cout << "\tAutomata steps: " << params.automata_steps << std::endl;
-    std::cout << "\tTransition length: " << params.transition_length
+    std::cout
+        << "\n============================================================"
+        << std::endl;
+    std::cout << "               ENCRYPTION CONFIGURATION REPORT              "
               << std::endl;
-    std::cout << "\tBlock size: " << params.block_size << std::endl;
-    std::cout << "\tNum blocks per row: " << num_blocks_per_row << std::endl;
-    std::cout << "\tNum blocks per col: " << num_blocks_per_col << std::endl;
-    std::cout << "\tNum blocks: " << num_blocks << std::endl;
-    std::cout << "\tBlock data length: " << block_data_length << std::endl;
-    std::cout << "===========================" << std::endl << std::endl;
+    std::cout << "============================================================"
+              << std::endl;
+
+    std::cout << " [IMAGE PROPERTIES]" << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Operation Mode:" << (encrypt ? "ENCRYPTION" : "DECRYPTION")
+              << std::endl;
+    std::cout << "  " << std::left << std::setw(25) << "Original Format:"
+              << (is_color ? "Color (RGB)" : "Grayscale (1-CH)") << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Processing Dims:" << img_dimensions.cols << " x "
+              << img_dimensions.rows << " px" << std::endl;
+
+    std::cout << "\n [ALGORITHM SETTINGS]" << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Rounds:" << params.rounds << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Block Size:" << params.block_size << " px" << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Automata Steps:" << params.automata_steps << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Transition Length:" << params.transition_length << std::endl;
+
+    std::cout << "\n [GRID ARCHITECTURE]" << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Grid Layout:" << num_blocks_per_col << " (cols) x "
+              << num_blocks_per_row << " (rows)" << std::endl;
+    std::cout << "  " << std::left << std::setw(25)
+              << "Total Blocks:" << num_blocks << std::endl;
+    std::cout
+        << "============================================================\n"
+        << std::endl;
   }
 
-  // --- Automata Permutation Generation ---
+  // --- 3. KEY GENERATION ---
+  auto start = std::chrono::high_resolution_clock::now();
+  const std::vector<std::vector<unsigned char>> password_segments =
+      calculate_password(password, num_blocks_permutations,
+                         params.precision_level, img_dimensions);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time = end - start;
+
   if (verbose)
-    std::cout << "Generating row and column permutations using Elemental "
-                 "Cellular Automata..."
-              << std::endl << std::endl;
-  // 1. Column Permutations
+    std::cout << " > Password hashing & expansion: " << time.count() << " s"
+              << std::endl;
+
+  // --- 4. PERMUTATION GENERATION ---
+  if (verbose)
+    std::cout << " > Generating Permutations..." << std::endl;
+
+  // A. Columns
   ElementalCelularAutomata automata(
       password_segments[1], img_dimensions.cols * params.precision_level * 8,
       30);
   const std::vector<ElementalCelularAutomata *> cols_automata = {&automata};
-
-  start = std::chrono::high_resolution_clock::now();
   d_pointers.d_permutation_cols = generate_automata_permutations(
       cols_automata, params.automata_steps, img_dimensions.cols);
-  end = std::chrono::high_resolution_clock::now();
-  time = end - start;
-  if (verbose)
-    std::cout << "\tgenerate_automata_permutations (cols) time: "
-              << time.count() << " s" << std::endl;
 
-  // 2. Row Permutations
+  // B. Rows
   ElementalCelularAutomata automata1(
       password_segments[0], img_dimensions.rows * params.precision_level * 8,
       30);
   const std::vector<ElementalCelularAutomata *> rows_automata = {&automata1};
-
-  start = std::chrono::high_resolution_clock::now();
   d_pointers.d_permutation_rows = generate_automata_permutations(
       rows_automata, params.automata_steps, img_dimensions.rows);
-  end = std::chrono::high_resolution_clock::now();
-  time = end - start;
+
+  // C. Blocks (Chaotic Map)
+  d_pointers.d_permutation_blocks = generate_flow_permutations(
+      password_segments[2], block_data_length, num_blocks_permutations,
+      params.transition_length);
+
+  // --- 5. INVERSE PERMUTATIONS ---
   if (verbose)
-    std::cout << "\tgenerate_automata_permutations (rows) time: "
-              << time.count() << " s" << std::endl;
+    std::cout << " > Calculating Inverse Permutations..." << std::endl;
+  inverse_permutations(d_pointers.d_permutation_cols,
+                       &d_pointers.d_permutation_cols_inverse,
+                       img_dimensions.cols, 1);
+  inverse_permutations(d_pointers.d_permutation_rows,
+                       &d_pointers.d_permutation_rows_inverse,
+                       img_dimensions.rows, 1);
+  inverse_permutations(d_pointers.d_permutation_blocks,
+                       &d_pointers.d_permutation_blocks_inverse,
+                       block_data_length, num_blocks_permutations);
 
-  // 3. Block Permutations (Chaotic Map)
-  if (verbose)
-    std::cout << ("\tGenerating block permutations using chaotic function...")
-              << std::endl;
+  // --- 6. MEMORY ALLOCATION ---
+  const size_t img_size = processed_image.total() * processed_image.elemSize();
 
-  start = std::chrono::high_resolution_clock::now();
-  d_pointers.d_permutation_blocks =
-      generate_flow_permutations(password_segments[2], block_data_length,
-                                 num_blocks_permutations, params.transition_length);
-  end = std::chrono::high_resolution_clock::now();
-  time = end - start;
-  if (verbose)
-    std::cout << "\tgenerate_flow_permutations (blocks) time: "
-              << time.count() << " s" << std::endl;
-
-  const size_t img_size = image.total() * image.elemSize();
-
-  // --- Inverse Permutations Calculation ---
-  if (verbose)
-    std::cout << "Calculating inverse permutations..." << std::endl;
-
-    start = std::chrono::high_resolution_clock::now();
-    inverse_permutations(d_pointers.d_permutation_cols,&d_pointers.d_permutation_cols_inverse, img_dimensions.cols,
-                          1);
-    end = std::chrono::high_resolution_clock::now();
-    time = end - start;
-    if (verbose)
-      std::cout << "\tinverse cols time: " << time.count() << " s" << std::endl;
-
-    start = std::chrono::high_resolution_clock::now();
-    inverse_permutations(d_pointers.d_permutation_rows,&d_pointers.d_permutation_rows_inverse, img_dimensions.rows,
-                          1);
-    end = std::chrono::high_resolution_clock::now();
-    time = end - start;
-    if (verbose)
-      std::cout << "\tinverse rows time: " << time.count() << " s" << std::endl;
-
-    start = std::chrono::high_resolution_clock::now();
-    inverse_permutations(d_pointers.d_permutation_blocks,&d_pointers.d_permutation_blocks_inverse, block_data_length,
-                          num_blocks_permutations);
-    end = std::chrono::high_resolution_clock::now();
-    time = end - start;
-    if (verbose)
-      std::cout << "\tinverse blocks time: " << time.count() << " s"
-                << std::endl;
-
-  // --- Device Memory Allocation ---
   cudaMalloc(&d_pointers.d_image, img_size);
   cudaMalloc(&d_pointers.d_image_out, img_size);
   cudaMalloc(&d_pointers.d_flow, img_size);
-  cudaMalloc(&d_pointers.d_seeds, password_segments[3].size() * sizeof(unsigned char));
+  cudaMalloc(&d_pointers.d_seeds,
+             password_segments[3].size() * sizeof(unsigned char));
 
-  // Copy initial data to device
-  cudaMemcpy(d_pointers.d_image, image.data, img_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(d_pointers.d_seeds, password_segments[3].data(), password_segments[3].size() * sizeof(unsigned char), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_pointers.d_image, processed_image.data, img_size,
+             cudaMemcpyHostToDevice);
+  cudaMemcpy(d_pointers.d_seeds, password_segments[3].data(),
+             password_segments[3].size() * sizeof(unsigned char),
+             cudaMemcpyHostToDevice);
 
-  // --- Execution ---
+  // --- 7. EXECUTION ---
   if (encrypt) {
-    encryption_process(d_pointers, img_dimensions,
-                       params.block_size, params.rounds, verbose);
+    encryption_process(d_pointers, img_dimensions, params.block_size,
+                       params.rounds, verbose);
   } else {
-    unencryption_process(d_pointers, img_dimensions,
-                         params.block_size, params.rounds);
+    unencryption_process(d_pointers, img_dimensions, params.block_size,
+                         params.rounds);
   }
+
   if (verbose)
-    std::cout << "Completed" << std::endl;
+    std::cout << " > GPU Execution Completed." << std::endl;
 
-  // Copy result back to host
-  cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
+  // Retrieve result to processed_image
+  cudaMemcpy(processed_image.data, d_pointers.d_image, img_size,
+             cudaMemcpyDeviceToHost);
 
-  // --- Cleanup ---
+  // --- 8. POST-PROCESSING (Symmetric Restacking) ---
+  // Logic: If we started with 3 channels, we MUST return 3 channels.
+  // - Encrypting: processed_image is Wide Scrambled -> We stack to RGB
+  // Scrambled.
+  // - Decrypting: processed_image is Wide Original -> We stack to RGB Original.
+
+  if (is_color) {
+    if (verbose)
+      std::cout << "[INFO] Restacking channels back to RGB..." << std::endl;
+
+    int w = processed_image.cols / 3;
+    int h = processed_image.rows;
+
+    cv::Mat b = processed_image(cv::Rect(0, 0, w, h));
+    cv::Mat g = processed_image(cv::Rect(w, 0, w, h));
+    cv::Mat r = processed_image(cv::Rect(2 * w, 0, w, h));
+
+    std::vector<cv::Mat> channels = {b, g, r};
+    cv::merge(channels, image); // Reconstruct in the original reference
+  } else {
+    image = processed_image;
+  }
+
+  // --- CLEANUP ---
   cudaFree(d_pointers.d_permutation_cols);
   cudaFree(d_pointers.d_permutation_rows);
   cudaFree(d_pointers.d_permutation_blocks);
-
   cudaFree(d_pointers.d_seeds);
   cudaFree(d_pointers.d_flow);
   cudaFree(d_pointers.d_image);
   cudaFree(d_pointers.d_image_out);
 }
 
+// =================================================================================
+//                            PROCESS FLOW LOGIC
+// =================================================================================
+
 void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
                         size_t block_size, size_t rounds, bool verbose) {
 
   if (verbose)
-    std::cout << "Starting encryption with " << rounds << " rounds."
+    std::cout << " > Starting Encryption Loop (" << rounds << " rounds)"
               << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  // Initial Confusion Phase
+  // 1. Initial Confusion
+  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+
+  // 2. Diffusion + Confusion Rounds
+  for (size_t i = 0; i < rounds; i++) {
+    // A. Generate Chaotic Stream
+    generate_flow_stream(d_pointers, img_dimensions, 3.999);
+
+    // B. Permute the Stream (not the image)
+    permutation_encryption_process(d_pointers, img_dimensions, block_size);
+
+    // C. Diffusion (Image XOR Stream)
+    // Assuming flow_encrypt updates d_image in-place using d_flow
+    flow_encrypt(d_pointers, img_dimensions);
+
+    if (verbose)
+      std::cout << "\tRound " << i + 1 << "/" << rounds << " complete."
+                << std::endl;
+  }
+
+  // 3. Final Confusion
   image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
-  std::cout << "\tInitial image_permutation_encryption_proces time: "
-            << time.count() << " s" << std::endl;
-
-  // Diffusion Rounds
-  for (size_t i = 0; i < rounds; i++) {
-    start = std::chrono::high_resolution_clock::now();
-    auto start1 = std::chrono::high_resolution_clock::now();
-    generate_flow_stream(d_pointers, img_dimensions,3.999);
-    auto end1 = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> time1 = end1 - start1;
-    if (verbose)
-      std::cout << "\t\t\tgenerate_flow_stream(" << i << ")"
-              << " time: " << time1.count() << " s" << std::endl;
-    // Permutation on the flow/stream itself
-    permutation_encryption_process(d_pointers, img_dimensions, block_size);
-    end1 = std::chrono::high_resolution_clock::now();
-    time1 = end1 - start1;
-    if (verbose)
-      std::cout << "\t\t\tpermutation_encryption_process(" << i << ")"
-              << " time: " << time1.count() << " s" << std::endl;
-    // XOR/Diffusion with flow
-    flow_encrypt(d_pointers,img_dimensions);
-    end1 = std::chrono::high_resolution_clock::now();
-    time1 = end1 - start1;
-    if (verbose)
-      std::cout << "\t\t\tflow_encrypt(" << i << ")"
-              << " time: " << time1.count() << " s" << std::endl;
-
-    end = std::chrono::high_resolution_clock::now();
-    time = end - start;
-    if (verbose)
-      std::cout << "\t\tround(" << i << ")" << " time: " << time.count() << " s"
-              << std::endl;
-  }
-
-  // Final Confusion Phase
-  start = std::chrono::high_resolution_clock::now();
-
-  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
-
-  end = std::chrono::high_resolution_clock::now();
-  time = end - start;
   if (verbose)
-    std::cout << "\tFinal image_permutation_encryption_process time: "
-            << time.count() << " s" << std::endl;
+    std::cout << " > Total Loop Time: " << time.count() << " s" << std::endl;
 }
 
 void unencryption_process(D_pointers &d_pointers,
-                          Image_dimnesions img_dimensions,
-                          size_t block_size, size_t rounds) {
+                          Image_dimnesions img_dimensions, size_t block_size,
+                          size_t rounds) {
 
-  std::cout << "Starting decryption with " << rounds << " rounds." << std::endl;
+  std::cout << " > Starting Decryption Loop..." << std::endl;
 
   // 1. Reverse Final Confusion
-  image_permutation_unencryption_process(d_pointers, img_dimensions,block_size);
+  image_permutation_unencryption_process(d_pointers, img_dimensions,
+                                         block_size);
 
   // 2. Reverse Rounds
   for (size_t i = 0; i < rounds; i++) {
-    generate_flow_stream(d_pointers, img_dimensions,3.999);
+    // Regenerate exact same flow
+    generate_flow_stream(d_pointers, img_dimensions, 3.999);
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
-    flow_encrypt(d_pointers,img_dimensions);
+
+    // Inverse XOR (Identical to forward XOR)
+    flow_encrypt(d_pointers, img_dimensions);
   }
 
   // 3. Reverse Initial Confusion
-  image_permutation_unencryption_process(d_pointers, img_dimensions,block_size);
+  image_permutation_unencryption_process(d_pointers, img_dimensions,
+                                         block_size);
 }
+
+// =================================================================================
+//                            PERMUTATION STAGES
+// =================================================================================
 
 void image_permutation_encryption_process(D_pointers &d_pointers,
                                           Image_dimnesions img_dimensions,
                                           size_t block_size) {
   for (size_t j = 0; j < 2; j++) {
-    // Rows and columns
+    // 1. Rows and Columns
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
                                  d_pointers.d_permutation_rows,
                                  d_pointers.d_permutation_cols, img_dimensions,
                                  false);
-    // Block
+    // 2. Blocks
+    // Input: d_image (new data) -> Output: d_image_out (free buffer)
     block_phase_permutation_simple(d_pointers.d_image, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks,d_pointers.d_permutation_blocks_inverse, img_dimensions,
-                            block_size);
+                                   d_pointers.d_permutation_blocks,
+                                   d_pointers.d_permutation_blocks_inverse,
+                                   img_dimensions, block_size);
 
     std::swap(d_pointers.d_image, d_pointers.d_image_out);
-  }
-}
-
-void permutation_encryption_process(D_pointers &d_pointers,
-                                    Image_dimnesions img_dimensions,
-                                    size_t block_size) {
-  for (size_t j = 0; j < 2; j++) {
-    // Rows and columns
-    rows_and_columns_permutation(d_pointers.d_flow, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_rows,
-                                 d_pointers.d_permutation_cols, img_dimensions,
-                                 false);
-    // Block
-    block_phase_permutation_simple(d_pointers.d_flow, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks,d_pointers.d_permutation_blocks_inverse, img_dimensions,
-                            block_size);
-    std::swap(d_pointers.d_flow, d_pointers.d_image_out);
   }
 }
 
@@ -289,17 +296,36 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
                                             Image_dimnesions img_dimensions,
                                             size_t block_size) {
   for (size_t j = 0; j < 2; j++) {
-    // Block
+    // 1. Inverse Blocks
     block_phase_permutation_simple(d_pointers.d_image, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks_inverse,d_pointers.d_permutation_blocks, img_dimensions,
-                            block_size);
-
+                                   d_pointers.d_permutation_blocks_inverse,
+                                   d_pointers.d_permutation_blocks,
+                                   img_dimensions, block_size);
     std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
-    // Rows and columns
+    // 2. Inverse Rows and Columns
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
                                  d_pointers.d_permutation_rows_inverse,
-                                 d_pointers.d_permutation_cols_inverse, img_dimensions,
-                                 true);
+                                 d_pointers.d_permutation_cols_inverse,
+                                 img_dimensions, true);
+  }
+}
+
+void permutation_encryption_process(D_pointers &d_pointers,
+                                    Image_dimnesions img_dimensions,
+                                    size_t block_size) {
+  // Operation on d_flow, using d_image_out as temp buffer
+  for (size_t j = 0; j < 2; j++) {
+    // Rows and Columns on Flow
+    rows_and_columns_permutation(d_pointers.d_flow, d_pointers.d_image_out,
+                                 d_pointers.d_permutation_rows,
+                                 d_pointers.d_permutation_cols, img_dimensions,
+                                 false);
+    // Blocks on Flow
+    block_phase_permutation_simple(d_pointers.d_flow, d_pointers.d_image_out,
+                                   d_pointers.d_permutation_blocks,
+                                   d_pointers.d_permutation_blocks_inverse,
+                                   img_dimensions, block_size);
+    std::swap(d_pointers.d_flow, d_pointers.d_image_out);
   }
 }

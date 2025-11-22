@@ -97,25 +97,32 @@ __host__ unsigned int *generate_automata_permutations(
   for (int i = 0; i < num_blocks; i++) {
     automatas[i]->iterate(steps);
   }
-  
+
   // Allocations
-  unsigned int **d_automatas = nullptr; 
+  unsigned int **d_automatas = nullptr;
   unsigned int *d_indices = nullptr;
   unsigned short *d_chaotic_values = nullptr;
 
-  cudaError_t err = cudaMalloc(&d_automatas, num_blocks * sizeof(unsigned int *));
-  if (err != cudaSuccess) throw std::runtime_error("Alloc failed: d_automatas");
+  cudaError_t err =
+      cudaMalloc(&d_automatas, num_blocks * sizeof(unsigned int *));
+  if (err != cudaSuccess)
+    throw std::runtime_error("Alloc failed: d_automatas");
 
   err = cudaMalloc(&d_indices, total_size * sizeof(unsigned int));
-  if (err != cudaSuccess) { cudaFree(d_automatas); throw std::runtime_error("Alloc failed: d_indices"); }
-
-  err = cudaMalloc(&d_chaotic_values, total_size * sizeof(unsigned short));
-  if (err != cudaSuccess) { 
-      cudaFree(d_automatas); cudaFree(d_indices); 
-      throw std::runtime_error("Alloc failed: d_chaotic_values"); 
+  if (err != cudaSuccess) {
+    cudaFree(d_automatas);
+    throw std::runtime_error("Alloc failed: d_indices");
   }
 
-  const unsigned int **pointers_to_automata_states = new const unsigned int *[num_blocks];
+  err = cudaMalloc(&d_chaotic_values, total_size * sizeof(unsigned short));
+  if (err != cudaSuccess) {
+    cudaFree(d_automatas);
+    cudaFree(d_indices);
+    throw std::runtime_error("Alloc failed: d_chaotic_values");
+  }
+
+  const unsigned int **pointers_to_automata_states =
+      new const unsigned int *[num_blocks];
   for (int i = 0; i < num_blocks; i++) {
     pointers_to_automata_states[i] = automatas[i]->get_cuda_state();
   }
@@ -123,18 +130,21 @@ __host__ unsigned int *generate_automata_permutations(
   err = cudaMemcpy(d_automatas, pointers_to_automata_states,
                    num_blocks * sizeof(unsigned int *), cudaMemcpyHostToDevice);
   delete[] pointers_to_automata_states;
-  if (err != cudaSuccess) throw std::runtime_error("Memcpy failed: automata pointers");
+  if (err != cudaSuccess)
+    throw std::runtime_error("Memcpy failed: automata pointers");
 
   // Generate chaotic values
   const int threadsPerBlock = 256;
-  const int numKerBlocksChaotic = (total_size + threadsPerBlock - 1) / threadsPerBlock;
+  const int numKerBlocksChaotic =
+      (total_size + threadsPerBlock - 1) / threadsPerBlock;
 
   generate_automata_chaotic<<<numKerBlocksChaotic, threadsPerBlock>>>(
       d_automatas, d_chaotic_values, num_blocks, d_indices, block_length);
 
   err = cudaGetLastError();
-  if (err != cudaSuccess) throw std::runtime_error("Kernel fail: generate_automata_chaotic");
-  
+  if (err != cudaSuccess)
+    throw std::runtime_error("Kernel fail: generate_automata_chaotic");
+
   cudaDeviceSynchronize();
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
@@ -146,7 +156,8 @@ __host__ unsigned int *generate_automata_permutations(
   batched_gpu_argsort(d_chaotic_values, d_indices, num_blocks, block_length);
 
   err = cudaGetLastError();
-  if (err != cudaSuccess) throw std::runtime_error("Kernel fail: batched_gpu_argsort");
+  if (err != cudaSuccess)
+    throw std::runtime_error("Kernel fail: batched_gpu_argsort");
 
   cudaDeviceSynchronize();
   end = std::chrono::high_resolution_clock::now();
@@ -176,22 +187,22 @@ __host__ void block_phase_permutation(unsigned char *d_image,
 }
 
 __host__ void block_phase_permutation_simple(unsigned char *d_image,
-                                      unsigned char *d_image_out,
-                                      unsigned int *permutation,
-                                      unsigned int *permutation_inverse,
-                                      Image_dimnesions img_dimensions,
-                                      size_t block_size) {
+                                             unsigned char *d_image_out,
+                                             unsigned int *permutation,
+                                             unsigned int *permutation_inverse,
+                                             Image_dimnesions img_dimensions,
+                                             size_t block_size) {
   dim3 threadsPerBlock(16, 16);
   dim3 numBlocks(
       (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
       (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
   permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
-      d_image, d_image_out, permutation,permutation_inverse, block_size, img_dimensions);
+      d_image, d_image_out, permutation, permutation_inverse, block_size,
+      img_dimensions);
 
   cudaDeviceSynchronize();
 }
-
 
 __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
@@ -207,7 +218,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 
   if (!inverse) {
     // --- ENCRYPTION: Rows -> Cols ---
-    
+
     // Step 1: Permute Rows (Source -> Temp)
     permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
         d_image, d_image_out, d_row_permutations, img_dimensions);
@@ -219,7 +230,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
     // Step 2: Permute Columns (Temp -> Source)
     permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
         d_image_out, d_image, d_col_permutations, img_dimensions);
-        
+
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Col permutation kernel failed");
     }
@@ -227,11 +238,11 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
   } else {
     // --- DECRYPTION: Inverse Cols -> Inverse Rows ---
     // Order must be strictly reversed relative to encryption
-    
+
     // Step 1: Inverse Permute Columns (Source -> Temp)
     permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
         d_image, d_image_out, d_col_permutations, img_dimensions);
-        
+
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Col permutation (inverse) kernel failed");
     }
@@ -239,7 +250,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
     // Step 2: Inverse Permute Rows (Temp -> Source)
     permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
         d_image_out, d_image, d_row_permutations, img_dimensions);
-        
+
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Row permutation (inverse) kernel failed");
     }
@@ -249,13 +260,14 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
   cudaDeviceSynchronize();
 }
 
-__host__ void flow_encrypt(D_pointers &d_pointers, Image_dimnesions img_dimensions) {
-
+__host__ void flow_encrypt(D_pointers &d_pointers,
+                           Image_dimnesions img_dimensions) {
 
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
-  image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,d_pointers.d_image,img_dimensions);
+  image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,
+                                            d_pointers.d_image, img_dimensions);
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("Flow encryption error");
   }
@@ -263,14 +275,14 @@ __host__ void flow_encrypt(D_pointers &d_pointers, Image_dimnesions img_dimensio
 }
 
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                           Image_dimnesions img_dimensions, double r){
+                                   Image_dimnesions img_dimensions, double r) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
   keystream_generation<<<numBlocks, threadsPerBlock>>>(d_pointers,
-                                                     img_dimensions, r);
+                                                       img_dimensions, r);
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("generate_flow_stream: Flow generation error");
   }
