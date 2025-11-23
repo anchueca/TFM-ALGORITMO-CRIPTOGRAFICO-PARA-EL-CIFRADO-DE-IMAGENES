@@ -9,30 +9,6 @@
 #include "structs.cuh"
 
 /**
- * @brief Unstacks an image that was previously stacked/tiled into a single
- * matrix.
- *
- * This function rearranges a stacked/tiled cv::Mat back into its original
- * multi-tile layout. The exact tiling scheme mirrors the implementation in
- * the corresponding source file.
- *
- * @param image Stacked input image.
- * @return Unstacked image as cv::Mat.
- */
-__host__ cv::Mat unstack_image(cv::Mat image);
-
-/**
- * @brief Stacks / tiles an input image into a single matrix.
- *
- * This function packs multiple tiles of the image into a stacked arrangement
- * suitable for block-based processing on the GPU.
- *
- * @param image Input image to stack.
- * @return Stacked image as cv::Mat.
- */
-__host__ cv::Mat stack_image(cv::Mat image);
-
-/**
  * @brief Generate a SHA3-derived hash of a given input string.
  *
  * The function returns a vector of bytes of the requested length derived from

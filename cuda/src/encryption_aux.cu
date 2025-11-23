@@ -5,6 +5,7 @@
  */
 
 #include "../include/encryption_aux.cuh"
+#include <cstddef>
 
 __host__ unsigned int *
 generate_flow_permutations(const std::vector<unsigned char> block_passwords,
@@ -16,12 +17,12 @@ generate_flow_permutations(const std::vector<unsigned char> block_passwords,
 
   size_t total_size = num_blocks * block_length;
 
-  unsigned char *d_passwords = nullptr;
+  unsigned int *d_passwords = nullptr;
   unsigned int *d_indices = nullptr;
   double *d_chaotic_values = nullptr;
 
   cudaError_t err =
-      cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned char));
+      cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned int));
   if (err != cudaSuccess) {
     throw std::runtime_error(
         "Flow: Failed to allocate device memory for passwords");
@@ -43,7 +44,7 @@ generate_flow_permutations(const std::vector<unsigned char> block_passwords,
 
   // Copy
   err = cudaMemcpy(d_passwords, block_passwords.data(),
-                   num_blocks * sizeof(unsigned char), cudaMemcpyHostToDevice);
+                   num_blocks * sizeof(unsigned int), cudaMemcpyHostToDevice);
   if (err != cudaSuccess) {
     cudaFree(d_passwords);
     cudaFree(d_indices);
@@ -265,26 +266,48 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 __host__ void flow_encrypt(D_pointers &d_pointers,
                            Image_dimnesions img_dimensions) {
 
-  dim3 threadsPerBlock(256);
-  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
-                 threadsPerBlock.x);
-  image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,
-                                            d_pointers.d_image, img_dimensions);
-  if (cudaGetLastError() != cudaSuccess) {
-    throw std::runtime_error("Flow encryption error");
-  }
-  cudaDeviceSynchronize();
+    dim3 threadsPerBlock(16, 16);
+
+    dim3 numBlocks(
+        (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+        (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y
+    );
+
+    image_xor<<<numBlocks, threadsPerBlock>>>(
+        d_pointers.d_flow, 
+        d_pointers.d_image, 
+        img_dimensions
+    );
+
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        std::string errorMsg = "Flow encryption kernel launch error: ";
+        errorMsg += cudaGetErrorString(err);
+        throw std::runtime_error(errorMsg);
+    }
+
+    err = cudaDeviceSynchronize();
+    if (err != cudaSuccess) {
+        std::string errorMsg = "Flow encryption execution error: ";
+        errorMsg += cudaGetErrorString(err);
+        throw std::runtime_error(errorMsg);
+    }
 }
 
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                                   Image_dimnesions img_dimensions, double r) {
+                                   Image_dimnesions img_dimensions, double r,size_t traansition_length) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
-  keystream_generation<<<numBlocks, threadsPerBlock>>>(d_pointers,
-                                                       img_dimensions, r);
+  keystream_generation<<<numBlocks, threadsPerBlock>>>(
+        d_pointers.d_flow,
+        d_pointers.d_seeds,
+        img_dimensions,
+        r,
+        traansition_length // transition_length
+    );
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("generate_flow_stream: Flow generation error");
   }

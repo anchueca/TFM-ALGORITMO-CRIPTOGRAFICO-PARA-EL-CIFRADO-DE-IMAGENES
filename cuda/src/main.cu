@@ -2,15 +2,13 @@
 
 #include <chrono>
 #include <cstring>
-#include <iomanip>
 #include <iostream>
-#include <vector>
-#include <stdexcept>
 
 #include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <string>
 
 using namespace std;
 
@@ -23,7 +21,7 @@ enum class OutputMode {
 void print_usage(const char *prog_name) {
   cout << "Usage: " << prog_name << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
        << "<Rounds> <Verbose(0/1)> <Mode(1=Enc/0=Dec)> "
-       << "<BlockSize> <Precision> <AutoSteps> <TransLen>" << endl;
+       << "<BlockSize> <Precision> <AutoSteps> <TransLen> <chaosParam>" << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
   cout << "  SHOW     : Opens a window with the result (Requires GUI)" << endl;
@@ -31,7 +29,7 @@ void print_usage(const char *prog_name) {
 }
 
 int main(int argc, char **argv) {
-  const size_t required_args = 11;
+  const size_t required_args = 12;
 
   if (argc != required_args) {
     cerr << "[ERROR] Invalid number of arguments! " << argc << " received, "
@@ -62,6 +60,7 @@ int main(int argc, char **argv) {
     params.precision_level = stoi(argv[8]);
     params.automata_steps = stoi(argv[9]);
     params.transition_length = stoi(argv[10]);
+    params.chaos_parameter = stod(argv[11]);
 
     if (output_arg == "SHOW" || output_arg == "NULL") {
         output_mode = OutputMode::DISPLAY_WINDOW;
@@ -89,13 +88,9 @@ int main(int argc, char **argv) {
   // --- 2. Load Image ---
   cv::Mat image;
   if (input_image_path == "STDIN") {
-      // MODO MEMORIA: Leemos los bytes crudos desde la entrada estándar (Pipe)
-      
-      // Desactivar sincronización para velocidad (opcional pero recomendado)
+      // MEMORY MODE 
       std::ios::sync_with_stdio(false);
       
-      // Leemos todo el flujo de entrada en un vector de bytes
-      // istreambuf_iterator lee char por char hasta el final del stream (EOF)
       std::vector<uchar> input_buffer(
           (std::istreambuf_iterator<char>(std::cin)),
           (std::istreambuf_iterator<char>())
@@ -106,7 +101,6 @@ int main(int argc, char **argv) {
           return -1;
       }
 
-      // Decodificamos el buffer directamente a una Matriz OpenCV
       try {
           image = cv::imdecode(input_buffer, cv::IMREAD_UNCHANGED);
       } catch (const cv::Exception& e) {
@@ -115,7 +109,7 @@ int main(int argc, char **argv) {
       }
 
   } else {
-      // MODO DISCO: Comportamiento clásico
+      // DISK MODE
       image = cv::imread(input_image_path, cv::IMREAD_UNCHANGED);
   }
 

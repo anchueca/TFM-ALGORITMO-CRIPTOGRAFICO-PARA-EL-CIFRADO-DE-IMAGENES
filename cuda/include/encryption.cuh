@@ -62,7 +62,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
  * @param verbose Print verbose info if true.
  */
 void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
-                        size_t block_size, size_t rounds, bool verbose);
+                        size_t block_size, const EncryptionParams &params, bool verbose);
 
 /**
  * @brief Internal pipeline function that performs the decryption (inverse of
@@ -81,7 +81,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
  */
 void unencryption_process(D_pointers &d_pointers,
                           Image_dimnesions img_dimensions, size_t block_size,
-                          size_t rounds, bool verbose);
+                          const EncryptionParams &params, bool verbose);
 
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimnesions img_dimensions,

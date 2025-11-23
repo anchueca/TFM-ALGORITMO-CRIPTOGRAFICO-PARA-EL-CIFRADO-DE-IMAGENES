@@ -115,7 +115,7 @@ class ExternalCipherTester:
         Python (Matrix) -> Encode -> Stdin -> C++ -> Stdout -> Python (Matrix)
         """
         if not isinstance(image_matrix, np.ndarray):
-             raise ValueError("Input to cipher must be a numpy array (image matrix), not a path.")
+             raise ValueError(f"Input to cipher must be a numpy array (image matrix), not a path: {image_matrix}")
 
         mode_flag = '1' if mode_enc else '0'
         
@@ -136,7 +136,7 @@ class ExternalCipherTester:
             self.rounds,
             "0",            # Verbose OFF
             mode_flag,
-            "8", "2", "20", "10" # Fixed params
+            "8", "2", "20", "10", "6.1" # Fixed params
         ]
 
         try:
@@ -185,11 +185,9 @@ class ExternalCipherTester:
             alt_img[0,0] ^= 1
         
         # Encrypt Original (C1)
-        # FIX: We pass self.original_img (Matrix), NOT self.input_path (String)
         c1 = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
         
         # Encrypt Modified (C2)
-        # FIX: We pass alt_img (Matrix)
         c2 = self.run_cipher_ram_to_ram(alt_img, mode_enc=True)
         
         if c1 is not None and c2 is not None:

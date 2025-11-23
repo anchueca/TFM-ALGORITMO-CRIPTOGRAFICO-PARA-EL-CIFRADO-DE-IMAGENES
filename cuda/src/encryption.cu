@@ -144,21 +144,21 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   cudaMalloc(&d_pointers.d_image_out, img_size);
   cudaMalloc(&d_pointers.d_flow, img_size);
   cudaMalloc(&d_pointers.d_seeds,
-             password_segments[3].size() * sizeof(unsigned char));
+             password_segments[3].size() * sizeof(unsigned int));
 
   cudaMemcpy(d_pointers.d_image, processed_image.data, img_size,
              cudaMemcpyHostToDevice);
   cudaMemcpy(d_pointers.d_seeds, password_segments[3].data(),
-             password_segments[3].size() * sizeof(unsigned char),
+             password_segments[3].size() * sizeof(unsigned int),
              cudaMemcpyHostToDevice);
 
   // --- 7. EXECUTION ---
   if (encrypt) {
     encryption_process(d_pointers, img_dimensions, params.block_size,
-                       params.rounds, verbose);
+                       params, verbose);
   } else {
     unencryption_process(d_pointers, img_dimensions, params.block_size,
-                         params.rounds,verbose);
+                         params,verbose);
   }
 
   if (verbose)
@@ -206,10 +206,10 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 // =================================================================================
 
 void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
-                        size_t block_size, size_t rounds, bool verbose) {
+                        size_t block_size, const EncryptionParams &params, bool verbose) {
 
   if (verbose)
-    std::cout << " > Starting Encryption Loop (" << rounds << " rounds)"
+    std::cout << " > Starting Encryption Loop (" << params.rounds << " rounds)"
               << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
@@ -218,19 +218,18 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
   image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
   // 2. Diffusion + Confusion Rounds
-  for (size_t i = 0; i < rounds; i++) {
+  for (size_t i = 0; i < params.rounds; i++) {
     // A. Generate Chaotic Stream
-    generate_flow_stream(d_pointers, img_dimensions, 3.999);
+    generate_flow_stream(d_pointers, img_dimensions, params.chaos_parameter,params.transition_length);
 
     // B. Permute the Stream (not the image)
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
     // C. Diffusion (Image XOR Stream)
-    // Assuming flow_encrypt updates d_image in-place using d_flow
     flow_encrypt(d_pointers, img_dimensions);
 
     if (verbose)
-      std::cout << "\tRound " << i + 1 << "/" << rounds << " complete."
+      std::cout << "\tRound " << i + 1 << "/" << params.rounds << " complete."
                 << std::endl;
   }
 
@@ -245,7 +244,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
 
 void unencryption_process(D_pointers &d_pointers,
                           Image_dimnesions img_dimensions, size_t block_size,
-                          size_t rounds, bool verbose) {
+                          const EncryptionParams &params, bool verbose) {
   if (verbose)
     std::cout << " > Starting Decryption Loop..." << std::endl;
 
@@ -254,9 +253,9 @@ void unencryption_process(D_pointers &d_pointers,
                                          block_size);
 
   // 2. Reverse Rounds
-  for (size_t i = 0; i < rounds; i++) {
+  for (size_t i = 0; i < params.rounds; i++) {
     // Regenerate exact same flow
-    generate_flow_stream(d_pointers, img_dimensions, 3.999);
+    generate_flow_stream(d_pointers, img_dimensions, params.chaos_parameter,params.transition_length);
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
     // Inverse XOR (Identical to forward XOR)

@@ -6,70 +6,6 @@
 
 #include "../include/aux.cuh"
 
-// Implementation of helpers for stacking/unstacking and password derivation.
-__host__ cv::Mat unstack_image(cv::Mat image) {
-  int width = image.cols;
-  int height = image.rows;
-
-  cv::Mat unstacked_image(height, width * 3, CV_8UC1);
-
-  unsigned char *d_src, *d_dst;
-
-  cudaMalloc(&d_src, width * height * 3 * sizeof(unsigned char));
-  cudaMalloc(&d_dst, width * height * 3 * sizeof(unsigned char));
-
-  cudaMemcpy(d_src, image.data, width * height * 3 * sizeof(unsigned char),
-             cudaMemcpyHostToDevice);
-
-  dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks((width + threadsPerBlock.x - 1) / threadsPerBlock.x,
-                 (height + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-  split_and_concat_kernel<<<numBlocks, threadsPerBlock>>>(d_src, d_dst, width,
-                                                          height);
-
-  cudaMemcpy(unstacked_image.data, d_dst,
-             width * height * 3 * sizeof(unsigned char),
-             cudaMemcpyDeviceToHost);
-
-  cudaFree(d_src);
-  cudaFree(d_dst);
-
-  return unstacked_image;
-}
-
-// Stack/tile an image for GPU processing (implementation).
-__host__ cv::Mat stack_image(cv::Mat image) {
-  int dst_width = image.cols / 3;
-  int dst_height = image.rows;
-
-  cv::Mat stacked_image(dst_height, dst_width, CV_8UC3);
-
-  unsigned char *d_src, *d_dst;
-
-  cudaMalloc(&d_src, image.total() * image.elemSize());
-  cudaMalloc(&d_dst, stacked_image.total() * stacked_image.elemSize());
-
-  cudaMemcpy(d_src, image.data, image.total() * image.elemSize(),
-             cudaMemcpyHostToDevice);
-
-  dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks((dst_width + threadsPerBlock.x - 1) / threadsPerBlock.x,
-                 (dst_height + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-  merge_and_stack_kernel<<<numBlocks, threadsPerBlock>>>(d_src, d_dst,
-                                                         dst_width, dst_height);
-
-  cudaMemcpy(stacked_image.data, d_dst,
-             stacked_image.total() * stacked_image.elemSize(),
-             cudaMemcpyDeviceToHost);
-
-  cudaFree(d_src);
-  cudaFree(d_dst);
-
-  return stacked_image;
-}
-
 // Generate SHA3-512-derived bytes (implementation; see header for API)
 __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
                                                        size_t length) {
@@ -120,8 +56,8 @@ calculate_password(const std::string &input, size_t num_blocks,
   // Required lengths
   int bytes_for_rows = img_dimensions.rows * precision_level;
   int bytes_for_columns = img_dimensions.cols * precision_level;
-  int bytes_for_blocks = num_blocks * precision_level;
-  int bytes_for_flow = img_dimensions.cols * precision_level;
+  int bytes_for_blocks = num_blocks * precision_level * 4;
+  int bytes_for_flow = img_dimensions.cols * precision_level*4;
 
   // Total length
   int length_bytes =

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstddef>
 #include <iostream>
 #include <vector>
 
@@ -106,7 +107,7 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
  * @param r Chaotic map parameter.
  */
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                                   Image_dimnesions img_dimensions, double r);
+                                   Image_dimnesions img_dimensions, double r, size_t traansition_length);
 
 /**
  * @brief Generate permutations from cellular automata instances.

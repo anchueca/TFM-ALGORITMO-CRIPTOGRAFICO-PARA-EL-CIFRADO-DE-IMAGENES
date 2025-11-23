@@ -11,12 +11,14 @@
  * permutations.
  * - transition_length: Length of transition sequence used in flow permutations.
  */
+#include <cmath>
 struct EncryptionParams {
   size_t rounds;
   size_t block_size;
   size_t precision_level;
   size_t automata_steps;
   size_t transition_length;
+  double chaos_parameter;
 };
 
 struct Image_dimnesions {
@@ -28,7 +30,7 @@ struct D_pointers {
   unsigned char *d_image;
   unsigned char *d_image_out;
   unsigned char *d_flow;
-  unsigned char *d_seeds;
+  unsigned int *d_seeds;
   unsigned int *d_permutation_rows;
   unsigned int *d_permutation_cols;
   unsigned int *d_permutation_blocks;

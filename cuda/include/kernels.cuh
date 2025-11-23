@@ -2,11 +2,13 @@
 #define KERNELS_CUH
 
 // CUDA headers first
+#include <cstddef>
 #include <cuda_runtime.h>
 
 // Standard headers
 #include <iostream>
 #include <vector>
+#include <limits.h>
 
 // Project headers
 #include "automata.cuh"
@@ -23,27 +25,11 @@
  * @param r Chaotic parameter.
  * @return The next chaotic value.
  */
-__device__ double uno(double x, double r);
-
-/**
- * @brief Kernel that applies the recursive flow encryption on image blocks.
- *
- * This kernel evolves a chaotic map driven by seeds to produce a flow that is
- * applied to the image pixels across several rounds.
- *
- * @param image Input image buffer in device memory.
- * @param image_out Output image buffer in device memory.
- * @param seeds Per-block seeds used to initialize chaotic maps.
- * @param width Image width (columns).
- * @param height Image height (rows).
- * @param r Chaotic map parameter.
- * @param rounds Number of rounds to apply.
- */
-__global__ void keystream_to_image(unsigned char *image,
-                                   unsigned char *image_out,
-                                   const unsigned char *seeds,
-                                   Image_dimnesions img_dimensions, double r,
-                                   int rounds);
+template <typename T>
+__device__ __forceinline__ T uno(T x, T r) {
+  T t = r + 3.0 * x * x;
+  return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
+}
 
 /**
  * @brief Kernel that generate the keystrea
@@ -54,10 +40,12 @@ __global__ void keystream_to_image(unsigned char *image,
  * @param width Matrix width (columns).
  * @param height Matrix height (rows).
  * @param r Chaotic map parameter.
- * @param rounds Number of rounds to apply.
  */
-__global__ void keystream_generation(D_pointers d_pointers,
-                                     Image_dimnesions img_dimensions, double r);
+__global__ void keystream_generation(unsigned char* __restrict__ d_flow,
+                                     unsigned int* __restrict__ d_seeds,
+                                     Image_dimnesions img_dimensions,
+                                     double r, 
+                                     size_t transition_length);
 
 /**
  * @brief Kernel that permutes image blocks according to provided permutations.
@@ -124,7 +112,7 @@ __global__ void permute_blocks_kernel_simple(unsigned char *image,
  * @param transition_length Number of transition values used for permutation
  * generation.
  */
-__global__ void generate_chaotic(unsigned char *passwords, size_t num_blocks,
+__global__ void generate_chaotic(unsigned int *passwords, size_t num_blocks,
                                  double *chaotic_vals, unsigned int *indices,
                                  double r, size_t block_length,
                                  size_t transition_length);

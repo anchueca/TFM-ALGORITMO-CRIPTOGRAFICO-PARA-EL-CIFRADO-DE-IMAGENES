@@ -5,79 +5,61 @@
  */
 
 #include "../include/kernels.cuh"
+#include <cfloat>
+#include <climits>
+#include <cstddef>
+#include <cstdio>
 
-// Device helpers and kernels for the flow generator and permutations.
-__device__ double uno(double x, double r) {
-  double t = r + 3.0 * x * x;
-  return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
-}
-
-__global__ void keystream_to_image(unsigned char *image,
-                                   unsigned char *image_out,
-                                   const unsigned char *seeds,
-                                   Image_dimnesions img_dimensions, double r,
-                                   int rounds) {
-  // Each thread processes one column; uses `uno` to generate XOR mask values.
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-
-  if (x >= img_dimensions.cols)
-    return;
-
-  double xn = seeds[x] / 255.0;
-
-  for (int y = 0; y < img_dimensions.rows; y++) {
-    xn = uno(xn, r);
-
-    int idx = y * img_dimensions.cols + x;
-
-    union {
-      double f;
-      unsigned long long u;
-    } conv;
-    conv.f = xn;
-
-    unsigned char b1 = (conv.u >> 4) & 0xFF;
-    unsigned char b2 = (conv.u >> 12) & 0xFF;
-    unsigned char mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
-
-    image_out[idx] = image[idx] ^ mixed;
-  }
-}
-
-__global__ void keystream_generation(D_pointers d_pointers,
+__global__ void keystream_generation(unsigned char* __restrict__ d_flow,
+                                     unsigned int* __restrict__ d_seeds,
                                      Image_dimnesions img_dimensions,
-                                     double r) {
+                                     double r, 
+                                     size_t transition_length) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (x >= img_dimensions.cols)
     return;
 
-  double xn = d_pointers.d_seeds[x] / 255.0;
+  double xn = d_seeds[x] / (UINT_MAX*1.0);
   unsigned char mixed = 0;
+
+  /*if (xn == 0.0){
+    xn = 1e-9;
+    printf("Ha llegado a 0");
+  } 
+  if (xn >= (1.0 - 1e-9)) {
+    xn = 0.987654321;
+    printf("Ha llegado a 1");
+  }*/
 
   int idx = x;
 
   int stride = img_dimensions.cols;
 
-  for (int k = 0; k < 200; k++) {
-    xn = uno(xn, r);
+
+  for (int k = 0; k < transition_length; k++) {
+    xn = uno<double>(xn, r);
   }
 
+
+  unsigned char b1;
+  unsigned char b2;
+
   for (int y = 0; y < img_dimensions.rows; y++) {
-    xn = uno(xn, r);
+    xn = uno<double>(xn, r);
 
     unsigned long long u = __double_as_longlong(xn);
 
-    unsigned char b1 = (u >> 4) & 0xFF;
-    unsigned char b2 = (u >> 12) & 0xFF;
+    b1 = (u >> 4) & 0xFF;
+    b2 = (u >> 12) & 0xFF;
 
     mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
 
-    d_pointers.d_flow[idx] = mixed;
+    d_flow[idx] = mixed;
 
     idx += stride;
   }
-  d_pointers.d_seeds[x] = mixed;
+  d_seeds[x] = (unsigned int)(xn * (double)0xFFFFFFFF);
 }
 
 __global__ void permute_blocks_kernel(unsigned char *image,
@@ -207,7 +189,7 @@ __global__ void permute_columns_kernel(unsigned char *image,
   }
 }
 
-__global__ void generate_chaotic(unsigned char *passwords, size_t num_blocks,
+__global__ void generate_chaotic(unsigned int *passwords, size_t num_blocks,
                                  double *chaotic_vals, unsigned int *indices,
                                  double r, size_t block_length,
                                  size_t transition_length) {
@@ -216,7 +198,7 @@ __global__ void generate_chaotic(unsigned char *passwords, size_t num_blocks,
     return;
 
   double x =
-      (static_cast<double>(passwords[idx]) + 1.0) / 257.0; // Normalize to (0,1)
+      (static_cast<double>(passwords[idx]) + 1.0) / (UINT_MAX*1.0); // Normalize to (0,1)
 
   for (int i = 0; i < transition_length; ++i) {
     x = uno(x, r);
