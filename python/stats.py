@@ -124,9 +124,18 @@ class CryptoMetrics:
 
     @staticmethod
     def calculate_chi_square(image):
+        """
+        Calculates Chi-Square statistic for Histogram Uniformity.
+        H0: The distribution is uniform.
+        """
         flat_data = image.flatten()
+        # Observed frequencies
         hist, _ = np.histogram(flat_data, bins=256, range=[0, 256])
+        
+        # Expected frequencies (Uniform)
         expected = np.ones(256) * (len(flat_data) / 256)
+        
+        # Chi-Square Test
         chi2, p_val = chisquare(hist, expected)
         return chi2, p_val
 
@@ -380,7 +389,7 @@ def plot_dashboard(original, ciphered, decrypted,
     plt.tight_layout()
     plt.subplots_adjust(top=0.95, hspace=0.6)
     
-    out_file = "full_report_english.png"
+    out_file = "full_report.jpg"
     print(f"\n[+] Saving Dashboard to: {out_file}")
     plt.savefig(out_file, dpi=150)
 
@@ -403,11 +412,15 @@ def main():
         decrypted = tester.decrypt_flow(ciphered)
         if ciphered is None or decrypted is None: return
 
-        print("[+] 2. Analyzing Statistics (Entropy, Correlation, GLCM)...")
+        print("[+] 2. Analyzing Statistics (Entropy, Correlation, GLCM, Chi-Square)...")
         ent_orig = CryptoMetrics.calculate_global_entropy(tester.original_img)
         ent_ciph = CryptoMetrics.calculate_global_entropy(ciphered)
         corr_orig = CryptoMetrics.calculate_correlations_full(tester.original_img)
         corr_ciph = CryptoMetrics.calculate_correlations_full(ciphered)
+        
+        # Chi-Square Test
+        chi2, p_val = CryptoMetrics.calculate_chi_square(ciphered)
+        chi_res = "PASS (Uniform)" if p_val > 0.05 else "FAIL (Reject H0)"
         
         # GLCM Metrics
         cont_orig, hom_orig, ene_orig = CryptoMetrics.calculate_glcm_properties(tester.original_img)
@@ -426,19 +439,19 @@ def main():
         benchmark_data = tester.run_scalability_test(repeats=5)
 
         # --- CONSOLE REPORT (ENGLISH) ---
-        print("\n" + "="*70)
+        print("\n" + "="*75)
         print(" FINAL CRYPTOGRAPHIC REPORT ")
-        print("="*70)
+        print("="*75)
 
         headers = ["Metric", "Original", "Encrypted", "Ideal Ref"]
         data = [
-            ["Global Entropy", f"{ent_orig:.5f}", f"{ent_ciph:.5f}", "~7.999"],
+            ["Global Entropy",  f"{ent_orig:.5f}",     f"{ent_ciph:.5f}",     "~7.999"],
+            ["Chi-Square Test", "-",                   f"{chi2:.2f} (P={p_val:.4f})", "P > 0.05"],
             ["Correlation (H)", f"{corr_orig[0]:.5f}", f"{corr_ciph[0]:.5f}", "0.0"],
             ["Correlation (V)", f"{corr_orig[1]:.5f}", f"{corr_ciph[1]:.5f}", "0.0"],
             ["Correlation (D)", f"{corr_orig[2]:.5f}", f"{corr_ciph[2]:.5f}", "0.0"],
             ["GLCM Contrast",   f"{cont_orig:.2f}",    f"{cont_ciph:.2f}",    "High (>1000)"],
             ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{hom_ciph:.4f}",     "Low (~0)"],
-            ["GLCM Energy",     f"{ene_orig:.4f}",     f"{ene_ciph:.4f}",     "Low (~0)"],
             ["NPCR (Plaintext)", "-",                  f"{npcr_p:.4f}%",      ">99.6%"],
             ["UACI (Plaintext)", "-",                  f"{uaci_p:.4f}%",      "~33.4%"],
             ["NPCR (Key Sens)",  "-",                  f"{npcr_k:.4f}%",      ">99.6%"],
