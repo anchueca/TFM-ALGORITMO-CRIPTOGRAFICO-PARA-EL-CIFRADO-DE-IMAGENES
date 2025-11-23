@@ -10,56 +10,64 @@
 #include <cstddef>
 #include <cstdio>
 
+#define EPSILON 1.0e-9
+
+__device__ __forceinline__ double pwlcm(double x, double p) {
+    if (x < p) {
+        return x / p;
+    } else {
+        return (1.0 - x) / (1.0 - p);
+    }
+}
+
 __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
                                      unsigned int* __restrict__ d_seeds,
                                      Image_dimnesions img_dimensions,
                                      double r, 
                                      size_t transition_length) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    if (x >= img_dimensions.cols) return;
+    
+    double xn = d_seeds[x] / (double)UINT_MAX;
 
-  if (x >= img_dimensions.cols)
-    return;
+    int idx = x;
+    int stride = img_dimensions.cols;
 
-  double xn = d_seeds[x] / (UINT_MAX*1.0);
-  unsigned char mixed = 0;
+    // --- 2. TRANSITORIOS ---
+    // Quemar valores iniciales
+    for (int k = 0; k < transition_length; k++) {
+        xn = uno<double>(xn, r);
+    }
 
-  /*if (xn == 0.0){
-    xn = 1e-9;
-    printf("Ha llegado a 0");
-  } 
-  if (xn >= (1.0 - 1e-9)) {
-    xn = 0.987654321;
-    printf("Ha llegado a 1");
-  }*/
+    // --- 3. GENERACIÓN (Garantizando Histograma Plano) ---
+    for (int y = 0; y < img_dimensions.rows; y++) {
+        // A. Avanzar mapa
+        xn = uno<double>(xn, r);
 
-  int idx = x;
+        // B. Discretización a Entero de 32 bits
+        // Multiplicamos por UINT_MAX para usar todo el rango
+        unsigned int val = (unsigned int)(xn * UINT_MAX);
 
-  int stride = img_dimensions.cols;
+        // C. Extracción (XOR FOLDING)
+        // Tomamos los 4 bytes del entero y los hacemos XOR entre sí.
+        // Esto aplana cualquier micro-sesgo que pudiera quedar.
+        // NUNCA uses suma (+) aquí.
+        unsigned char b1 = (val >> 24) & 0xFF;
+        unsigned char b2 = (val >> 16) & 0xFF;
+        unsigned char b3 = (val >> 8) & 0xFF;
+        unsigned char b4 = val & 0xFF;
 
+        unsigned char keystream_byte = b1 ^ b2 ^ b3 ^ b4;
 
-  for (int k = 0; k < transition_length; k++) {
-    xn = uno<double>(xn, r);
-  }
+        // D. Guardar
+        d_flow[idx] = keystream_byte;
 
+        idx += stride;
+    }
 
-  unsigned char b1;
-  unsigned char b2;
-
-  for (int y = 0; y < img_dimensions.rows; y++) {
-    xn = uno<double>(xn, r);
-
-    unsigned long long u = __double_as_longlong(xn);
-
-    b1 = (u >> 4) & 0xFF;
-    b2 = (u >> 12) & 0xFF;
-
-    mixed = (b1 ^ ((b2 << 3) | (b2 >> 5))) + (b1 >> 2);
-
-    d_flow[idx] = mixed;
-
-    idx += stride;
-  }
-  d_seeds[x] = (unsigned int)(xn * (double)0xFFFFFFFF);
+    // --- 4. GUARDAR ESTADO ---
+    d_seeds[x] = (unsigned int)(xn * UINT_MAX);
 }
 
 __global__ void permute_blocks_kernel(unsigned char *image,

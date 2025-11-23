@@ -9,6 +9,10 @@
 #include <iostream>
 #include <vector>
 #include <limits.h>
+#include <cfloat>
+#include <climits>
+#include <cstddef>
+#include <cstdio>
 
 // Project headers
 #include "automata.cuh"
@@ -30,6 +34,8 @@ __device__ __forceinline__ T uno(T x, T r) {
   T t = r + 3.0 * x * x;
   return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
 }
+
+__device__ __forceinline__ double pwlcm(double x, double p);
 
 /**
  * @brief Kernel that generate the keystrea

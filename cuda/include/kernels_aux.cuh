@@ -79,45 +79,6 @@ __global__ void sort_indices_by_chaotic_values_global(T *d_chaotic_values,
 }
 
 /**
- * @brief Kernel that merges and stacks image tiles.
- *
- * Implementation merges multiple source tiles into a stacked destination image
- * layout. Parameters are kept generic to match the project usage.
- *
- * @param src Source image tiles.
- * @param dst Destination stacked image buffer.
- * @param dst_width Width of the destination image.
- * @param dst_height Height of the destination image.
- */
-__global__ void merge_and_stack_kernel(const unsigned char *src,
-                                       unsigned char *dst, int dst_width,
-                                       int dst_height);
-
-/**
- * @brief Kernel that splits and concatenates an image into tiles.
- *
- * This kernel performs the inverse operation of merge_and_stack_kernel,
- * splitting a source image into tiles and concatenating them into the
- * destination buffer arranged in a specific order.
- *
- * @param src Source image buffer.
- * @param dst Destination tiled/concatenated image buffer.
- * @param width Width of the source image.
- * @param height Height of the source image.
- */
-__global__ void split_and_concat_kernel(const unsigned char *src,
-                                        unsigned char *dst, int width,
-                                        int height);
-/**
- * @brief Kernel to invert a batch of permutations in parallel.
- * Each CUDA block is responsible for inverting one permutation.
- * @param permutations Input array of permutations on the GPU.
- * @param inverses Output array for the inverted permutations on the GPU.
- * @param block_length The length of a single permutation.
- * @param num_blocks (Unused) The total number of permutations. The kernel
- * deduces this from the grid size.
- */
-/**
  * @brief Kernel to invert a batch of permutations in parallel.
  *
  * Each CUDA block is responsible for inverting one permutation.
