@@ -1,9 +1,12 @@
 #ifndef AUX_CUH
 #define AUX_CUH
 
+#include <istream>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <openssl/evp.h>
+
+#include <iostream>
 
 #include "kernels_aux.cuh"
 #include "structs.cuh"
@@ -38,6 +41,6 @@ __host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
  */
 __host__ std::vector<std::vector<unsigned char>>
 calculate_password(const std::string &input, size_t num_blocks,
-                   size_t precision_level, Image_dimnesions img_dimensions);
+                   size_t precision_level, Image_dimnesions img_dimensions, bool verbose);
 
 #endif // AUX_CUH

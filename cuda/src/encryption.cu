@@ -91,7 +91,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
       calculate_password(password, num_blocks_permutations,
-                         params.precision_level, img_dimensions);
+                         params.precision_level, img_dimensions,verbose);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
 
@@ -105,7 +105,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 
   // A. Columns
   ElementalCelularAutomata automata(
-      password_segments[1], img_dimensions.cols * params.precision_level * 8,
+      password_segments[1], img_dimensions.cols * 2 * 8,
       30);
   const std::vector<ElementalCelularAutomata *> cols_automata = {&automata};
   d_pointers.d_permutation_cols = generate_automata_permutations(
@@ -113,7 +113,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 
   // B. Rows
   ElementalCelularAutomata automata1(
-      password_segments[0], img_dimensions.rows * params.precision_level * 8,
+      password_segments[0], img_dimensions.rows * 2 * 8,
       30);
   const std::vector<ElementalCelularAutomata *> rows_automata = {&automata1};
   d_pointers.d_permutation_rows = generate_automata_permutations(

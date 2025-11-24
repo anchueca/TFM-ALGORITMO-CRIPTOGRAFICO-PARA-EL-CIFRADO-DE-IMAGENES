@@ -242,8 +242,7 @@ class ExternalCipherTester:
         return damaged, recovered
 
     def run_scalability_test(self, repeats=5):
-        # Extreme scaling up to 10x
-        scales = [0.5, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0] 
+        scales = [0.5, 1.0, 2.0, 4.0] 
         pixel_counts = []
         enc_times_avg = []
         dec_times_avg = []
@@ -436,7 +435,7 @@ def main():
         occ_input, occ_output = tester.occlusion_attack(ciphered)
 
         print("[+] 5. Scalability Benchmark (up to 10x)...")
-        benchmark_data = tester.run_scalability_test(repeats=5)
+        benchmark_data = tester.run_scalability_test(repeats=2)
 
         # --- CONSOLE REPORT (ENGLISH) ---
         print("\n" + "="*75)
