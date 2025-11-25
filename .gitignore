@@ -13,3 +13,4 @@ aes_try/salida.tif
 *.pyc
 cuda/doc/
 template
+full_report.jpg
