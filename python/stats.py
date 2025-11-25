@@ -172,8 +172,8 @@ class ExternalCipherTester:
         
         cmd = [
             self.exe, "STDIN", "STDOUT",
-            password_to_use, self.rounds, "0", mode_flag,
-            "16", "2", "20", "10", "3.999"
+            password_to_use, self.rounds, mode_flag,
+            "8", "4", "20", "10", "3.999", "0"
         ]
         try:
             res = subprocess.run(cmd, input=encoded_buffer.tobytes(), capture_output=True, check=True)

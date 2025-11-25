@@ -35,7 +35,11 @@ __device__ __forceinline__ T uno(T x, T r) {
   return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
 }
 
-__device__ __forceinline__ double pwlcm(double x, double p);
+template <>
+__device__ __forceinline__ float uno<float>(float x, float r) {
+    float t = r + 3.0f * x * x;
+    return fabsf(cosf(3.14159265f * r * cosf(3.14159265f * t) * t));
+}
 
 /**
  * @brief Kernel that generate the keystrea
@@ -47,6 +51,12 @@ __device__ __forceinline__ double pwlcm(double x, double p);
  * @param height Matrix height (rows).
  * @param r Chaotic map parameter.
  */
+ // 24 bits precission only
+__global__ void keystream_generation(unsigned char* __restrict__ d_flow,
+                                     unsigned int* __restrict__ d_seeds,
+                                     Image_dimnesions img_dimensions,
+                                     float r, 
+                                     size_t transition_length);
 __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
                                      unsigned int* __restrict__ d_seeds,
                                      Image_dimnesions img_dimensions,
@@ -118,10 +128,32 @@ __global__ void permute_blocks_kernel_simple(unsigned char *image,
  * @param transition_length Number of transition values used for permutation
  * generation.
  */
+ template <typename T>
 __global__ void generate_chaotic(unsigned int *passwords, size_t num_blocks,
-                                 double *chaotic_vals, unsigned int *indices,
-                                 double r, size_t block_length,
-                                 size_t transition_length);
+                                 T *chaotic_vals, unsigned int *indices,
+                                 T r, size_t block_length,
+                                 size_t transition_length) {
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (idx >= num_blocks)
+    return;
+
+  T x =
+      (static_cast<T>(passwords[idx]) + 1.0) / (UINT_MAX*1.0); // Normalize to (0,1)
+
+  for (int i = 0; i < transition_length; ++i) {
+    x = uno<T>(x, r);
+  }
+
+  int base_idx = idx * block_length;
+  for (int i = 0; i < block_length; i++) {
+    x = uno<T>(x, r);
+    chaotic_vals[base_idx + i] = x;
+    indices[base_idx + i] = i;
+  }
+
+  sort_indices_by_chaotic_values<T>(base_idx, chaotic_vals, indices,
+                                         block_length);
+}
 
 /**
  * @brief Kernel that permutes columns of the image according to a permutation.

@@ -38,3 +38,34 @@ __global__ void image_xor(unsigned char *keystream, unsigned char *image,
 
   image[idx] ^= keystream[idx];
 }
+
+__device__ unsigned char convertToBitStream(double value){
+
+  unsigned long long raw_bits = __double_as_longlong(value);
+
+  //I get the lsb bits of the antissa
+  unsigned int lsb_mantissa = (unsigned int)raw_bits;
+  
+  unsigned char b1 = (lsb_mantissa >> 24) & 0xFF;
+  unsigned char b2 = (lsb_mantissa >> 16) & 0xFF;
+  unsigned char b3 = (lsb_mantissa >> 8)  & 0xFF;
+  unsigned char b4 = lsb_mantissa & 0xFF;
+
+  unsigned char keystream_byte = b1 ^ b2 ^ b3 ^ b4;
+
+  return  keystream_byte;
+}
+
+__device__ unsigned char convertToBitStream(float value){
+
+  unsigned int raw_bits = __float_as_uint(value);
+
+  unsigned int mantissa = raw_bits & 0xFFFF;
+  
+  unsigned char b1 = (mantissa >> 8) & 0xFF; // Bits 15-8
+  unsigned char b2 = mantissa & 0xFF;        // Bits 7-0
+
+  unsigned char keystream_byte = b1 ^ b2;
+
+  return  keystream_byte;
+}

@@ -28,10 +28,79 @@
  * @return Device pointer to the flattened permutations array (caller must
  * free).
  */
+ template <typename T>
 __host__ unsigned int *
 generate_flow_permutations(const std::vector<unsigned char> block_passwords,
                            size_t block_length, size_t num_blocks,
-                           const size_t transition_length);
+                           const size_t transition_length, T r) {
+  if (block_passwords.size() < num_blocks) {
+    throw std::runtime_error("Insufficient passwords for blocks");
+  }
+
+  size_t total_size = num_blocks * block_length;
+
+  unsigned int *d_passwords = nullptr;
+  unsigned int *d_indices = nullptr;
+  T *d_chaotic_values = nullptr;
+
+  cudaError_t err =
+      cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned int));
+  if (err != cudaSuccess) {
+    throw std::runtime_error(
+        "Flow: Failed to allocate device memory for passwords");
+  }
+
+  err = cudaMalloc(&d_indices, total_size * sizeof(unsigned int));
+  if (err != cudaSuccess) {
+    cudaFree(d_passwords);
+    throw std::runtime_error("Failed to allocate device memory for indices");
+  }
+
+  err = cudaMalloc(&d_chaotic_values, total_size * sizeof(T));
+  if (err != cudaSuccess) {
+    cudaFree(d_passwords);
+    cudaFree(d_indices);
+    throw std::runtime_error(
+        "Failed to allocate device memory for chaotic values");
+  }
+
+  // Copy
+  err = cudaMemcpy(d_passwords, block_passwords.data(),
+                   num_blocks * sizeof(unsigned int), cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) {
+    cudaFree(d_passwords);
+    cudaFree(d_indices);
+    cudaFree(d_chaotic_values);
+    throw std::runtime_error("Failed to copy passwords to device");
+  }
+
+  const int threadsPerBlock = 256;
+  const int numBlocks = (num_blocks + threadsPerBlock - 1) / threadsPerBlock;
+
+  generate_chaotic<T><<<numBlocks, threadsPerBlock>>>(
+      d_passwords, num_blocks, d_chaotic_values, d_indices, r, block_length,
+      transition_length);
+
+  err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    cudaFree(d_passwords);
+    cudaFree(d_chaotic_values);
+    throw std::runtime_error("Kernel execution failed");
+  }
+
+  err = cudaDeviceSynchronize();
+
+  if (err != cudaSuccess) {
+    cudaFree(d_passwords);
+    cudaFree(d_chaotic_values);
+    throw std::runtime_error("Kernel synchronization failed");
+  }
+
+  cudaFree(d_passwords);
+  cudaFree(d_chaotic_values);
+
+  return d_indices;
+};
 
 /**
  * @brief Apply a block-phase permutation to the image on the device.
@@ -83,7 +152,6 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 /**
  * @brief Applies the flow encryption stage using provided seeds and chaotic
  * parameter.
- *
  * @param image Device pointer to the input image.
  * @param image_out Device pointer to the output image.
  * @param seeds Flow seeds per block.
@@ -98,7 +166,6 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
 /**
  * @brief Generate the flow stream stage using provided seeds and chaotic
  * parameter.
- *
  * @param d_flow Device pointer to the output flow.
  * @param d_flow Device pointer to the seeds.
  * @param seeds Flow seeds per block.
@@ -106,8 +173,26 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
  * @param rows Image height in blocks or pixels depending on the pipeline.
  * @param r Chaotic map parameter.
  */
+ template <typename T>
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                                   Image_dimnesions img_dimensions, double r, size_t traansition_length);
+                                   Image_dimnesions img_dimensions, T r,size_t traansition_length) {
+
+  // Launch flow stream kernel
+  dim3 threadsPerBlock(256);
+  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
+                 threadsPerBlock.x);
+  keystream_generation<<<numBlocks, threadsPerBlock>>>(
+        d_pointers.d_flow,
+        d_pointers.d_seeds,
+        img_dimensions,
+        (T)r,   // Overload for T types
+        traansition_length // transition_length
+    );
+  if (cudaGetLastError() != cudaSuccess) {
+    throw std::runtime_error("generate_flow_stream: Flow generation error");
+  }
+  cudaDeviceSynchronize();
+}
 
 /**
  * @brief Generate permutations from cellular automata instances.

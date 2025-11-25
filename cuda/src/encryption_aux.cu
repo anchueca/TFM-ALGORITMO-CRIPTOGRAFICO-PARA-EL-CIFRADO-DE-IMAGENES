@@ -7,80 +7,6 @@
 #include "../include/encryption_aux.cuh"
 #include <cstddef>
 
-__host__ unsigned int *
-generate_flow_permutations(const std::vector<unsigned char> block_passwords,
-                           size_t block_length, size_t num_blocks,
-                           const size_t transition_length) {
-  if (block_passwords.size() < num_blocks) {
-    throw std::runtime_error("Insufficient passwords for blocks");
-  }
-
-  size_t total_size = num_blocks * block_length;
-
-  unsigned int *d_passwords = nullptr;
-  unsigned int *d_indices = nullptr;
-  double *d_chaotic_values = nullptr;
-
-  cudaError_t err =
-      cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned int));
-  if (err != cudaSuccess) {
-    throw std::runtime_error(
-        "Flow: Failed to allocate device memory for passwords");
-  }
-
-  err = cudaMalloc(&d_indices, total_size * sizeof(unsigned int));
-  if (err != cudaSuccess) {
-    cudaFree(d_passwords);
-    throw std::runtime_error("Failed to allocate device memory for indices");
-  }
-
-  err = cudaMalloc(&d_chaotic_values, total_size * sizeof(double));
-  if (err != cudaSuccess) {
-    cudaFree(d_passwords);
-    cudaFree(d_indices);
-    throw std::runtime_error(
-        "Failed to allocate device memory for chaotic values");
-  }
-
-  // Copy
-  err = cudaMemcpy(d_passwords, block_passwords.data(),
-                   num_blocks * sizeof(unsigned int), cudaMemcpyHostToDevice);
-  if (err != cudaSuccess) {
-    cudaFree(d_passwords);
-    cudaFree(d_indices);
-    cudaFree(d_chaotic_values);
-    throw std::runtime_error("Failed to copy passwords to device");
-  }
-
-  const int threadsPerBlock = 256;
-  const int numBlocks = (num_blocks + threadsPerBlock - 1) / threadsPerBlock;
-  double r = 0.998;
-
-  generate_chaotic<<<numBlocks, threadsPerBlock>>>(
-      d_passwords, num_blocks, d_chaotic_values, d_indices, r, block_length,
-      transition_length);
-
-  err = cudaGetLastError();
-  if (err != cudaSuccess) {
-    cudaFree(d_passwords);
-    cudaFree(d_chaotic_values);
-    throw std::runtime_error("Kernel execution failed");
-  }
-
-  err = cudaDeviceSynchronize();
-
-  if (err != cudaSuccess) {
-    cudaFree(d_passwords);
-    cudaFree(d_chaotic_values);
-    throw std::runtime_error("Kernel synchronization failed");
-  }
-
-  cudaFree(d_passwords);
-  cudaFree(d_chaotic_values);
-
-  return d_indices;
-}
-
 __host__ unsigned int *generate_automata_permutations(
     const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
     const size_t block_length,bool verbose) {
@@ -292,26 +218,6 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
         errorMsg += cudaGetErrorString(err);
         throw std::runtime_error(errorMsg);
     }
-}
-
-__host__ void generate_flow_stream(D_pointers &d_pointers,
-                                   Image_dimnesions img_dimensions, double r,size_t traansition_length) {
-
-  // Launch flow stream kernel
-  dim3 threadsPerBlock(256);
-  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
-                 threadsPerBlock.x);
-  keystream_generation<<<numBlocks, threadsPerBlock>>>(
-        d_pointers.d_flow,
-        d_pointers.d_seeds,
-        img_dimensions,
-        r,
-        traansition_length // transition_length
-    );
-  if (cudaGetLastError() != cudaSuccess) {
-    throw std::runtime_error("generate_flow_stream: Flow generation error");
-  }
-  cudaDeviceSynchronize();
 }
 
 __host__ void inverse_permutations(unsigned int *d_permutations,

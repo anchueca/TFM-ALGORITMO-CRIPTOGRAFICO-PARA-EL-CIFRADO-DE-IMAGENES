@@ -122,7 +122,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   // C. Blocks (Chaotic Map)
   d_pointers.d_permutation_blocks = generate_flow_permutations(
       password_segments[2], block_data_length, num_blocks_permutations,
-      params.transition_length);
+      params.transition_length, params.chaos_parameter);
 
   // --- 5. INVERSE PERMUTATIONS ---
   if (verbose)

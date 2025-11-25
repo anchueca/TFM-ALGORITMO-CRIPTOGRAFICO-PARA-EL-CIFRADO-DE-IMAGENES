@@ -5,19 +5,39 @@
  */
 
 #include "../include/kernels.cuh"
-#include <cfloat>
-#include <climits>
-#include <cstddef>
-#include <cstdio>
+
 
 #define EPSILON 1.0e-9
 
-__device__ __forceinline__ double pwlcm(double x, double p) {
-    if (x < p) {
-        return x / p;
-    } else {
-        return (1.0 - x) / (1.0 - p);
+__global__ void keystream_generation(unsigned char* __restrict__ d_flow,
+                                     unsigned int* __restrict__ d_seeds,
+                                     Image_dimnesions img_dimensions,
+                                     float r, 
+                                     size_t transition_length) {
+    
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    if (x >= img_dimensions.cols) return;
+    
+    float xn = d_seeds[x] / (float)UINT_MAX;
+
+    int idx = x;
+    int stride = img_dimensions.cols;
+
+    for (int k = 0; k < transition_length; k++) {
+        xn = uno<float>(xn, r);
     }
+
+    for (int y = 0; y < img_dimensions.rows; y++) {
+        xn = uno<float>(xn, r);
+
+        unsigned char keystream_byte = convertToBitStream(xn);
+
+        d_flow[idx] = keystream_byte;
+
+        idx += stride;
+    }
+
+    d_seeds[x] = (unsigned int)(xn * UINT_MAX);
 }
 
 __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
@@ -34,41 +54,23 @@ __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
     int idx = x;
     int stride = img_dimensions.cols;
 
-    // --- 2. TRANSITORIOS ---
-    // Quemar valores iniciales
     for (int k = 0; k < transition_length; k++) {
         xn = uno<double>(xn, r);
     }
 
-    // --- 3. GENERACIÓN (Garantizando Histograma Plano) ---
     for (int y = 0; y < img_dimensions.rows; y++) {
-        // A. Avanzar mapa
         xn = uno<double>(xn, r);
 
-        // B. Discretización a Entero de 32 bits
-        // Multiplicamos por UINT_MAX para usar todo el rango
-        unsigned int val = (unsigned int)(xn * UINT_MAX);
+        unsigned char keystream_byte = convertToBitStream(xn);
 
-        // C. Extracción (XOR FOLDING)
-        // Tomamos los 4 bytes del entero y los hacemos XOR entre sí.
-        // Esto aplana cualquier micro-sesgo que pudiera quedar.
-        // NUNCA uses suma (+) aquí.
-        unsigned char b1 = (val >> 24) & 0xFF;
-        unsigned char b2 = (val >> 16) & 0xFF;
-        unsigned char b3 = (val >> 8) & 0xFF;
-        unsigned char b4 = val & 0xFF;
-
-        unsigned char keystream_byte = b1 ^ b2 ^ b3 ^ b4;
-
-        // D. Guardar
         d_flow[idx] = keystream_byte;
 
         idx += stride;
     }
 
-    // --- 4. GUARDAR ESTADO ---
     d_seeds[x] = (unsigned int)(xn * UINT_MAX);
 }
+
 
 __global__ void permute_blocks_kernel(unsigned char *image,
                                       unsigned char *image_out,
@@ -195,32 +197,6 @@ __global__ void permute_columns_kernel(unsigned char *image,
     image_out[y * img_dimensions.cols + x] =
         image[y * img_dimensions.cols + permutation[x]];
   }
-}
-
-__global__ void generate_chaotic(unsigned int *passwords, size_t num_blocks,
-                                 double *chaotic_vals, unsigned int *indices,
-                                 double r, size_t block_length,
-                                 size_t transition_length) {
-  int idx = threadIdx.x + blockIdx.x * blockDim.x;
-  if (idx >= num_blocks)
-    return;
-
-  double x =
-      (static_cast<double>(passwords[idx]) + 1.0) / (UINT_MAX*1.0); // Normalize to (0,1)
-
-  for (int i = 0; i < transition_length; ++i) {
-    x = uno(x, r);
-  }
-
-  int base_idx = idx * block_length;
-  for (int i = 0; i < block_length; i++) {
-    x = uno(x, r);
-    chaotic_vals[base_idx + i] = x;
-    indices[base_idx + i] = i;
-  }
-
-  sort_indices_by_chaotic_values<double>(base_idx, chaotic_vals, indices,
-                                         block_length);
 }
 
 __global__ void generate_automata_chaotic(unsigned int **automata_states,

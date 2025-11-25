@@ -20,8 +20,8 @@ enum class OutputMode {
 
 void print_usage(const char *prog_name) {
   cout << "Usage: " << prog_name << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
-       << "<Rounds> <Verbose(0/1)> <Mode(1=Enc/0=Dec)> "
-       << "<BlockSize> <Precision> <AutoSteps> <TransLen> <chaosParam>" << endl;
+       << "<Rounds <Mode(1=Enc/0=Dec)> <BlockSize>"
+       << "<Precision> <AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>" << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
   cout << "  SHOW     : Opens a window with the result (Requires GUI)" << endl;
@@ -53,14 +53,14 @@ int main(int argc, char **argv) {
     password = argv[3];
     params.rounds = stoi(argv[4]);
 
-    verbose_arg = (strcmp(argv[5], "1") == 0);
-    encrypt = (strcmp(argv[6], "1") == 0);
-
-    params.block_size = stoi(argv[7]);
-    params.precision_level = stoi(argv[8]);
-    params.automata_steps = stoi(argv[9]);
-    params.transition_length = stoi(argv[10]);
-    params.chaos_parameter = stod(argv[11]);
+    encrypt = (strcmp(argv[5], "1") == 0);
+    
+    params.block_size = stoi(argv[6]);
+    params.precision_level = stoi(argv[7]);
+    params.automata_steps = stoi(argv[8]);
+    params.transition_length = stoi(argv[9]);
+    params.chaos_parameter = stod(argv[10]);
+    verbose_arg = (strcmp(argv[11], "1") == 0);
 
     if (output_arg == "SHOW" || output_arg == "NULL") {
         output_mode = OutputMode::DISPLAY_WINDOW;
