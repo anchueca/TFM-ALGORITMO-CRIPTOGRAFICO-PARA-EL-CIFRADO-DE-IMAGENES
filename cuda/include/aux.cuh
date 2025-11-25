@@ -5,23 +5,15 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <openssl/evp.h>
+#include <vector>
 
 #include <iostream>
 
 #include "kernels_aux.cuh"
 #include "structs.cuh"
 
-/**
- * @brief Generate a SHA3-derived hash of a given input string.
- *
- * The function returns a vector of bytes of the requested length derived from
- * the SHA3 hash of the input string, used for key derivation in the project.
- *
- * @param input Input string to hash.
- * @param length Desired length of the output byte vector.
- * @return Vector of unsigned chars containing the truncated/expanded hash.
- */
-__host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
+
+__host__ std::vector<unsigned char> generate_hash(const std::string &input,
                                                        size_t length);
 
 /**

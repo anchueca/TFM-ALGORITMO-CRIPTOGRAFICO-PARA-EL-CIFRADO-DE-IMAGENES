@@ -52,16 +52,37 @@ __device__ __forceinline__ float uno<float>(float x, float r) {
  * @param r Chaotic map parameter.
  */
  // 24 bits precission only
+ template <typename T>
 __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
                                      unsigned int* __restrict__ d_seeds,
                                      Image_dimnesions img_dimensions,
-                                     float r, 
-                                     size_t transition_length);
-__global__ void keystream_generation(unsigned char* __restrict__ d_flow,
-                                     unsigned int* __restrict__ d_seeds,
-                                     Image_dimnesions img_dimensions,
-                                     double r, 
-                                     size_t transition_length);
+                                     T r, 
+                                     size_t transition_length) {
+    
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    if (x >= img_dimensions.cols) return;
+    
+    T xn = d_seeds[x] / (T)UINT_MAX;
+
+    int idx = x;
+    int stride = img_dimensions.cols;
+
+    for (int k = 0; k < transition_length; k++) {
+        xn = uno<T>(xn, r);
+    }
+
+    for (int y = 0; y < img_dimensions.rows; y++) {
+        xn = uno<T>(xn, r);
+
+        unsigned char keystream_byte = convertToBitStream(xn);
+
+        d_flow[idx] = keystream_byte;
+
+        idx += stride;
+    }
+
+    d_seeds[x] = (unsigned int)(xn * UINT_MAX);
+}
 
 /**
  * @brief Kernel that permutes image blocks according to provided permutations.

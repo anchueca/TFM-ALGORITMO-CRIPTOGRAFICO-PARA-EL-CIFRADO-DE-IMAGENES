@@ -181,7 +181,7 @@ __host__ void generate_flow_stream(D_pointers &d_pointers,
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
-  keystream_generation<<<numBlocks, threadsPerBlock>>>(
+  keystream_generation<T><<<numBlocks, threadsPerBlock>>>(
         d_pointers.d_flow,
         d_pointers.d_seeds,
         img_dimensions,

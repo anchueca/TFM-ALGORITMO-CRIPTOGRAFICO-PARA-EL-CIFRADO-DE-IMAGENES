@@ -7,45 +7,40 @@
 #include "../include/aux.cuh"
 
 // Generate SHA3-512-derived bytes (implementation; see header for API)
-__host__ std::vector<unsigned char> generate_sha3_hash(const std::string &input,
-                                                       size_t length) {
-  EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
-  const EVP_MD *sha3 = EVP_sha3_512(); // SHA3-512 (64 bytes)
+__host__ std::vector<unsigned char> generate_hash(const std::string &input, size_t length) {
+    
+    // 1. Crear el contexto de OpenSSL
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) {
+        throw std::runtime_error("Error: Fallo al crear el contexto EVP de OpenSSL");
+    }
 
-  EVP_DigestInit_ex(mdctx, sha3, nullptr);
-  EVP_DigestUpdate(mdctx, input.c_str(), input.length());
+    // 2. Inicializar el digest para SHAKE256
+    // Importante: SHAKE es un XOF (Extendable Output Function)
+    if (EVP_DigestInit_ex(ctx, EVP_shake256(), nullptr) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("Error: Fallo al inicializar SHAKE256");
+    }
 
-  std::vector<unsigned char> out(64);
-  EVP_DigestFinal_ex(mdctx, out.data(), nullptr);
-  EVP_MD_CTX_free(mdctx);
+    // 3. Absorb (Alimentar datos)
+    if (EVP_DigestUpdate(ctx, input.data(), input.size()) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("Error: Fallo al actualizar el digest (Update)");
+    }
 
-  if (length <= 64) {
-    out.resize(length);
-    return out;
-  }
+    // 4. Preparar el vector de salida del tamaño solicitado (length)
+    std::vector<unsigned char> output(length);
 
-  std::vector<unsigned char> result;
-  size_t current_length = 64;
+    // 5. Squeeze (Extraer datos)
+    // Para SHAKE se usa EVP_DigestFinalXOF, no EVP_DigestFinal_ex
+    if (EVP_DigestFinalXOF(ctx, output.data(), length) != 1) {
+        EVP_MD_CTX_free(ctx);
+        throw std::runtime_error("Error: Fallo al extraer el hash (FinalXOF)");
+    }
 
-  result.insert(result.end(), out.begin(), out.end());
+    EVP_MD_CTX_free(ctx);
 
-  while (current_length < length) {
-    EVP_MD_CTX *mdctx_iter = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(mdctx_iter, sha3, nullptr);
-    EVP_DigestUpdate(mdctx_iter, reinterpret_cast<const char *>(result.data()),
-                     result.size());
-
-    EVP_DigestFinal_ex(mdctx_iter, out.data(), nullptr);
-    EVP_MD_CTX_free(mdctx_iter);
-
-    result.insert(result.end(), out.begin(), out.end());
-
-    current_length += 64;
-  }
-
-  result.resize(length);
-
-  return result;
+    return output;
 }
 
 // Calculate password segments from a master password (implementation)
@@ -70,7 +65,7 @@ calculate_password(const std::string &input, size_t num_blocks,
   << "Flow bytes: " << bytes_for_flow << std::endl
   << "Total bytes: " << length_bytes << std::endl;
 
-  std::vector<unsigned char> password = generate_sha3_hash(input, length_bytes);
+  std::vector<unsigned char> password = generate_hash(input, length_bytes);
 
   std::vector<std::vector<unsigned char>> password_segments(4);
 
