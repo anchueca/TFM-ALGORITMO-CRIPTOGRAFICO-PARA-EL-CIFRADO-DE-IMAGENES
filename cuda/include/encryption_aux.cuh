@@ -31,8 +31,8 @@
  template <typename T>
 __host__ unsigned int *
 generate_flow_permutations(const std::vector<unsigned char> block_passwords,
-                           size_t block_length, size_t num_blocks,
-                           const size_t transition_length, T r) {
+                           const size_t block_length, const size_t num_blocks,
+                           const size_t transition_length, const T r) {
   if (block_passwords.size() < num_blocks) {
     throw std::runtime_error("Insufficient passwords for blocks");
   }
@@ -115,14 +115,14 @@ generate_flow_permutations(const std::vector<unsigned char> block_passwords,
 __host__ void block_phase_permutation(unsigned char *d_image,
                                       unsigned char *d_image_out,
                                       unsigned int *block_permutations,
-                                      Image_dimnesions img_dimensions,
+                                      Image_dimensions img_dimensions,
                                       size_t block_size);
 
 __host__ void block_phase_permutation_simple(unsigned char *d_image,
                                              unsigned char *d_image_out,
                                              unsigned int *permutation,
                                              unsigned int *permutation_inverse,
-                                             Image_dimnesions img_dimensions,
+                                             Image_dimensions img_dimensions,
                                              size_t block_size);
 
 /**
@@ -146,8 +146,46 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
                                            unsigned int *d_row_permutations,
                                            unsigned int *d_col_permutations,
-                                           Image_dimnesions img_dimensions,
+                                           Image_dimensions img_dimensions,
                                            bool inverse);
+
+
+
+template <typename T>
+__host__ void convert_bits_to_real(const std::vector<unsigned char>& password_segment,
+                                   T **d_seeds) {
+    
+    size_t total_bytes = password_segment.size();
+    size_t element_size = sizeof(unsigned int);
+
+    if (total_bytes % element_size != 0) {
+        throw std::runtime_error("Invalid length.");
+    }
+
+    size_t num_elements = total_bytes / element_size;
+
+    cudaError_t err = cudaMalloc((void**)d_seeds, total_bytes);
+    if (err != cudaSuccess) throw std::runtime_error("Error cudaMalloc");
+
+    err = cudaMemcpy(*d_seeds, password_segment.data(), total_bytes, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        cudaFree(*d_seeds);
+        throw std::runtime_error("Error cudaMemcpy");
+    }
+
+    const int threadsPerBlock = 256;
+    const int gridOfBlocks = (num_elements + threadsPerBlock - 1) / threadsPerBlock;
+
+    convert_bits_to_real_kernel<T><<<gridOfBlocks, threadsPerBlock>>>(*d_seeds, num_elements);
+
+    if (cudaGetLastError() != cudaSuccess) {
+        cudaFree(*d_seeds);
+        throw std::runtime_error("Error en kernel convert_bits_to_real");
+    }
+    
+    cudaDeviceSynchronize();
+}
+
 
 /**
  * @brief Applies the flow encryption stage using provided seeds and chaotic
@@ -161,7 +199,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
  * @param rounds Number of flow rounds to perform.
  */
 __host__ void flow_encrypt(D_pointers &d_pointers,
-                           Image_dimnesions img_dimensions);
+                           Image_dimensions img_dimensions);
 
 /**
  * @brief Generate the flow stream stage using provided seeds and chaotic
@@ -175,23 +213,47 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
  */
  template <typename T>
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                                   Image_dimnesions img_dimensions, T r,size_t traansition_length) {
+                                   Image_dimensions img_dimensions, T r,size_t traansition_length) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
-  keystream_generation<T><<<numBlocks, threadsPerBlock>>>(
+  keystream_generation<<<numBlocks, threadsPerBlock>>>(
         d_pointers.d_flow,
         d_pointers.d_seeds,
         img_dimensions,
-        (T)r,   // Overload for T types
+        r,
         traansition_length // transition_length
     );
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("generate_flow_stream: Flow generation error");
   }
   cudaDeviceSynchronize();
+}
+
+
+ template <typename T>
+__host__ void generate_flow_stream_paralell(D_pointers &d_pointers,
+                                   Image_dimensions img_dimensions, T r,size_t traansition_length) {
+
+  // Launch flow stream kernel
+  dim3 threadsPerBlock(256);
+  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
+                 threadsPerBlock.x);
+  for(size_t i =0; i< img_dimensions.rows; i++){
+    keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
+          d_pointers.d_flow,
+          d_pointers.d_seeds,
+          img_dimensions,
+          r,   // Overload for T types
+          i // transition_length
+      );
+    if (cudaGetLastError() != cudaSuccess) {
+      throw std::runtime_error("generate_flow_stream: Flow generation error");
+    }
+    cudaDeviceSynchronize();
+}
 }
 
 /**

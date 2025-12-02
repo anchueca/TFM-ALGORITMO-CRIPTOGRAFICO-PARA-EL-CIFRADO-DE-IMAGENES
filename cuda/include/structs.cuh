@@ -21,7 +21,7 @@ struct EncryptionParams {
   double chaos_parameter;
 };
 
-struct Image_dimnesions {
+struct Image_dimensions {
   size_t cols;
   size_t rows;
 };
@@ -30,7 +30,7 @@ struct D_pointers {
   unsigned char *d_image;
   unsigned char *d_image_out;
   unsigned char *d_flow;
-  unsigned int *d_seeds;
+  double *d_seeds;
   unsigned int *d_permutation_rows;
   unsigned int *d_permutation_cols;
   unsigned int *d_permutation_blocks;

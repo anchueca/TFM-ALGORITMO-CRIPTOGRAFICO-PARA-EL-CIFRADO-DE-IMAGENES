@@ -435,7 +435,7 @@ def main():
         occ_input, occ_output = tester.occlusion_attack(ciphered)
 
         print("[+] 5. Scalability Benchmark (up to 10x)...")
-        benchmark_data = tester.run_scalability_test(repeats=2)
+        benchmark_data = tester.run_scalability_test(repeats=1)
 
         # --- CONSOLE REPORT (ENGLISH) ---
         print("\n" + "="*75)

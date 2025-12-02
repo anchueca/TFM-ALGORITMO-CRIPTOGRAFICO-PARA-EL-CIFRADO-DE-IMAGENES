@@ -61,7 +61,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
  * @param rounds Number of rounds for this stage.
  * @param verbose Print verbose info if true.
  */
-void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
+void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
                         size_t block_size, const EncryptionParams &params, bool verbose);
 
 /**
@@ -80,19 +80,19 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
  * @param rounds Number of rounds for this stage.
  */
 void unencryption_process(D_pointers &d_pointers,
-                          Image_dimnesions img_dimensions, size_t block_size,
+                          Image_dimensions img_dimensions, size_t block_size,
                           const EncryptionParams &params, bool verbose);
 
 void permutation_encryption_process(D_pointers &d_pointers,
-                                    Image_dimnesions img_dimensions,
+                                    Image_dimensions img_dimensions,
                                     size_t block_size);
 
 void image_permutation_unencryption_process(D_pointers &d_pointers,
-                                            Image_dimnesions img_dimensions,
+                                            Image_dimensions img_dimensions,
                                             size_t block_size);
 
 void image_permutation_encryption_process(D_pointers &d_pointers,
-                                          Image_dimnesions img_dimensions,
+                                          Image_dimensions img_dimensions,
                                           size_t block_size);
 
 #endif // ENCRYPTION_CUH

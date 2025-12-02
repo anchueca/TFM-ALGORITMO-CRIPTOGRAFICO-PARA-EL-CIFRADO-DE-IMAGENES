@@ -1,12 +1,11 @@
 import struct
 import sys
 import argparse
-
-from modeloCaos import *
+import Chaos_Generator  # Imports the file created above
 
 def generate_chaos_data(function, x0, num_values, output_file):
     """
-    Generates binarized chaotic data and writes it to a file.
+    Generates binarized chaotic data and writes it to a file using buffered I/O.
 
     Args:
         function (callable): Chaotic function.
@@ -14,88 +13,110 @@ def generate_chaos_data(function, x0, num_values, output_file):
         num_values (int): Number of values to generate.
         output_file (str): Output file name.
     """
-    bit_buffer = []
-    output_bytes = bytearray()
-
-    for n in range(200):
+    
+    # Configuration
+    BUFFER_SIZE = 65536  # Write to disk in 64KB chunks for performance
+    byte_buffer = bytearray()
+    
+    # Burn-in period (transient removal)
+    # We ignore these values to let the system settle onto the attractor
+    for _ in range(200):
         x0 = function(x0)
 
     try:
-        def write_byte(byte):
-            if output_file:
-                f.write(struct.pack("B", byte))
-            else:
-                output_bytes.append(byte)
-
-        f = open(output_file, 'wb')
-        print(f"Writing {num_values} values to '{output_file}'...", file=sys.stderr)
+        # Open file in binary write mode using a context manager
+        # If output_file is None, we technically don't write to disk in this snippet,
+        # but for this logic we assume a file path is provided or handle sys.stdout.buffer
+        
+        fd = open(output_file, 'wb') if output_file else None
+        
+        print(f"Generating {num_values} values...", file=sys.stderr)
 
         for n in range(num_values):
             x0 = function(x0)
+            
+            # Handle both 1D (float) and nD (list/tuple) maps
             values = x0 if isinstance(x0, (list, tuple)) else [x0]
 
             for val in values:
-                # Convert float to 64-bit IEEE 754 representation
+                # 1. Convert float to 64-bit IEEE 754 representation (double)
+                # 'd' is double, 'Q' is unsigned long long (8 bytes)
                 float_bits = struct.unpack('>Q', struct.pack('>d', val))[0]
 
-                # Extract 52-bit mantissa
+                # 2. Extract 52-bit mantissa
+                # The mantissa contains the chaotic "fractional" part which is most sensitive
                 mantissa = float_bits & ((1 << 52) - 1)
 
-                # Take the top 32 bits of the mantissa
+                # 3. Take the top 32 bits of the mantissa
                 top32 = mantissa >> (52 - 32)
 
-                # Split into 4 blocks of 8 bits and XOR them
+                # 4. Whitening: Split into 4 blocks of 8 bits and XOR them
+                # This helps reduce bias in the resulting byte
                 b0 = (top32 >> 24) & 0xFF
                 b1 = (top32 >> 16) & 0xFF
                 b2 = (top32 >> 8)  & 0xFF
                 b3 = top32 & 0xFF
 
-                result_byte = b0 ^ b1 ^ b2 ^ b3  # Final XOR
+                result_byte = b0 ^ b1 ^ b2 ^ b3 
 
-                write_byte(result_byte)
+                # Add to buffer
+                byte_buffer.append(result_byte)
 
-            if output_file and num_values > 10 and n % (num_values // 10) == 0:
-                print(f"Progress: {(n / num_values) * 100:.2f}%", file=sys.stderr)
+            # Flush buffer to file if it is full
+            if fd and len(byte_buffer) >= BUFFER_SIZE:
+                fd.write(byte_buffer)
+                byte_buffer.clear()
 
-        # Write remaining bits if not multiple of 8
-        if bit_buffer:
-            while len(bit_buffer) < 8:
-                bit_buffer.append(0)
-            byte = sum((bit << (7 - i)) for i, bit in enumerate(bit_buffer))
-            write_byte(byte)
+            # Progress bar
+            if num_values > 100 and n % (num_values // 10) == 0:
+                print(f"Progress: {(n / num_values) * 100:.1f}%", file=sys.stderr)
 
-        f.close()
+        # Write remaining data in buffer
+        if fd and len(byte_buffer) > 0:
+            fd.write(byte_buffer)
+
         print("Progress: 100.00%", file=sys.stderr)
-        print(f"Writing completed in '{output_file}'.", file=sys.stderr)
-        return None
+        
+        if fd:
+            fd.close()
+            print(f"Writing completed in '{output_file}'.", file=sys.stderr)
 
-    except Exception as e:
-        print(f"An unexpected error occurred during generation: {e}", file=sys.stderr)
+    except IOError as e:
+        print(f"File I/O Error: {e}", file=sys.stderr)
         sys.exit(1)
-
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}", file=sys.stderr)
+        sys.exit(1)
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate values from a chaotic function and optionally analyze them with the NIST STS suite.")
-    parser.add_argument("functionName", help="Name of the chaotic function (e.g. logistic, sine, tent)", type=str)
-    parser.add_argument("x0", help="Initial condition (floating point number)", type=float)
-    parser.add_argument("num_values", help="Number of values to generate", type=int)
-    parser.add_argument("--output_file", help="Output file name. If not specified, data is passed to NIST STS.", type=str)
+    parser = argparse.ArgumentParser(description="Generate chaotic binary data.")
+    parser.add_argument("functionName", help="Name of the chaotic function (logistic, sine, tent, henon)", type=str)
+    parser.add_argument("x0", help="Initial condition (float). For Henon, x=x0, y=0", type=float)
+    parser.add_argument("num_values", help="Number of iterations to generate", type=int)
+    parser.add_argument("--output_file", help="Output file name", type=str, required=True)
+    
     args = parser.parse_args()
 
-    selected_function = selectFunction(args.functionName)[0]
+    # Select function from the module
+    selected_function, is_multidimensional = Chaos_Generator.selectFunction(args.functionName)
+    
     if not selected_function:
         print(f"Error: Function '{args.functionName}' not recognized.", file=sys.stderr)
+        print("Available functions: logistic, sine, tent, henon", file=sys.stderr)
         sys.exit(1)
 
-    initial_state = args.x0
+    # Handle initial state
+    if is_multidimensional:
+        # For Henon or other 2D maps, we need a tuple
+        initial_state = (args.x0, 0.0)
+    else:
+        initial_state = args.x0
 
-    num_values = args.num_values
-    if num_values <= 0:
-        print("Error: Number of values to generate must be greater than zero.", file=sys.stderr)
+    if args.num_values <= 0:
+        print("Error: num_values must be > 0", file=sys.stderr)
         sys.exit(1)
 
-    return selected_function, initial_state, num_values, args.output_file
+    generate_chaos_data(selected_function, initial_state, args.num_values, args.output_file)
 
 if __name__ == "__main__":
-    selected_function, initial_state, num_values, output_file = main()
-    generate_chaos_data(selected_function, initial_state, num_values, output_file)
+    main()

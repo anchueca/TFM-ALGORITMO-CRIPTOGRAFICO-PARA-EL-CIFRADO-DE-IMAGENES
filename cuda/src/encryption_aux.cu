@@ -102,7 +102,7 @@ __host__ unsigned int *generate_automata_permutations(
 __host__ void block_phase_permutation(unsigned char *d_image,
                                       unsigned char *d_image_out,
                                       unsigned int *block_permutations,
-                                      Image_dimnesions img_dimensions,
+                                      Image_dimensions img_dimensions,
                                       size_t block_size) {
   dim3 threadsPerBlock(16, 16);
   dim3 numBlocks(
@@ -119,7 +119,7 @@ __host__ void block_phase_permutation_simple(unsigned char *d_image,
                                              unsigned char *d_image_out,
                                              unsigned int *permutation,
                                              unsigned int *permutation_inverse,
-                                             Image_dimnesions img_dimensions,
+                                             Image_dimensions img_dimensions,
                                              size_t block_size) {
   dim3 threadsPerBlock(16, 16);
   dim3 numBlocks(
@@ -137,7 +137,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
                                            unsigned int *d_row_permutations,
                                            unsigned int *d_col_permutations,
-                                           Image_dimnesions img_dimensions,
+                                           Image_dimensions img_dimensions,
                                            bool inverse) {
   // Define standard block size for 2D images
   dim3 threadsPerBlock(16, 16);
@@ -190,7 +190,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 }
 
 __host__ void flow_encrypt(D_pointers &d_pointers,
-                           Image_dimnesions img_dimensions) {
+                           Image_dimensions img_dimensions) {
 
     dim3 threadsPerBlock(16, 16);
 

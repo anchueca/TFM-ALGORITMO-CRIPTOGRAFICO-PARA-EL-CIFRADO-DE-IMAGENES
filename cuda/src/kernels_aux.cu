@@ -26,7 +26,7 @@ __global__ void invert_permutations_kernel(unsigned int *permutations,
 }
 
 __global__ void image_xor(unsigned char *keystream, unsigned char *image,
-                          Image_dimnesions img_dimensions) {
+                          Image_dimensions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 

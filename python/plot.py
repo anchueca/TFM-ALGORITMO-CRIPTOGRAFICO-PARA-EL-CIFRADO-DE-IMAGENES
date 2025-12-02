@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 
-from modeloCaos import *
+from python.Chaos_Generator import *
 
 def plot(function,r,iterations,x0,y0,save,dpi):
     xs = [x0]

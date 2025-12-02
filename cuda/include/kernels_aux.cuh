@@ -110,7 +110,7 @@ __global__ void invert_permutations_kernel(unsigned int *d_permutations,
  * @param height Image height in pixels (rows).
  */
 __global__ void image_xor(unsigned char *keystream, unsigned char *image,
-                          Image_dimnesions img_dimensions);
+                          Image_dimensions img_dimensions);
 
 
 

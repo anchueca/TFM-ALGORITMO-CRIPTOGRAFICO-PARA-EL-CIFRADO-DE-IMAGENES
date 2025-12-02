@@ -5,13 +5,14 @@
  */
 
 #include "../include/kernels.cuh"
+#include <climits>
 
 
 __global__ void permute_blocks_kernel(unsigned char *image,
                                       unsigned char *image_out,
                                       unsigned int *permutations,
                                       size_t block_size,
-                                      Image_dimnesions img_dimensions) {
+                                      Image_dimensions img_dimensions) {
   // 1. Global thread coordinates (Destination Pixel)
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -59,12 +60,19 @@ __global__ void permute_blocks_kernel(unsigned char *image,
   }
 }
 
+__global__ void convert_bits_to_real_kernel(double* d_seeds, size_t num_elements) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    
+    if (idx >= num_elements) return;
+        d_seeds[idx] = static_cast<double>(reinterpret_cast<uint32_t*>(d_seeds)[idx]) / UINT_MAX;
+}
+
 __global__ void permute_blocks_kernel_simple(unsigned char *image,
                                              unsigned char *image_out,
                                              unsigned int *permutation,
                                              unsigned int *permutation_inverse,
                                              size_t block_size,
-                                             Image_dimnesions img_dimensions) {
+                                             Image_dimensions img_dimensions) {
   // Calculate global thread coordinates
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -112,7 +120,7 @@ __global__ void permute_blocks_kernel_simple(unsigned char *image,
 __global__ void permute_rows_kernel(unsigned char *image,
                                     unsigned char *image_out,
                                     unsigned int *permutation,
-                                    Image_dimnesions img_dimensions) {
+                                    Image_dimensions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
   if (x < img_dimensions.cols && y < img_dimensions.rows) {
@@ -124,7 +132,7 @@ __global__ void permute_rows_kernel(unsigned char *image,
 __global__ void permute_columns_kernel(unsigned char *image,
                                        unsigned char *image_out,
                                        unsigned int *permutation,
-                                       Image_dimnesions img_dimensions) {
+                                       Image_dimensions img_dimensions) {
   int x = blockIdx.x * blockDim.x + threadIdx.x;
   int y = blockIdx.y * blockDim.y + threadIdx.y;
 

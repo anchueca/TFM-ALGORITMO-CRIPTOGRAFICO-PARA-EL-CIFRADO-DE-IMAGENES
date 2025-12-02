@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 
-from modeloCaos import *
+from python.Chaos_Generator import *
 
 def bifurcation(function,r,r_min,r_max,num_r,iterations,transition,initial_condition,name,save,dpi,num_params=1):
     for n in range(0,num_params):

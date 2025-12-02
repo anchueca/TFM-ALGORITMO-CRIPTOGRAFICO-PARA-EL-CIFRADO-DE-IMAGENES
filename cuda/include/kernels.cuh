@@ -54,15 +54,15 @@ __device__ __forceinline__ float uno<float>(float x, float r) {
  // 24 bits precission only
  template <typename T>
 __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
-                                     unsigned int* __restrict__ d_seeds,
-                                     Image_dimnesions img_dimensions,
+                                     T* __restrict__ d_seeds,
+                                     Image_dimensions img_dimensions,
                                      T r, 
                                      size_t transition_length) {
     
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     if (x >= img_dimensions.cols) return;
     
-    T xn = d_seeds[x] / (T)UINT_MAX;
+    T xn = d_seeds[x];
 
     int idx = x;
     int stride = img_dimensions.cols;
@@ -81,7 +81,59 @@ __global__ void keystream_generation(unsigned char* __restrict__ d_flow,
         idx += stride;
     }
 
-    d_seeds[x] = (unsigned int)(xn * UINT_MAX);
+    d_seeds[x] = xn;
+}
+
+
+template <typename T> //Coupled map lattice
+__global__ void keystream_generation_parallel(unsigned char* __restrict__ d_flow,
+                                     T* __restrict__ d_seeds,
+                                     Image_dimensions img_dimensions,
+                                     T r,
+                                     size_t position) {
+    
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    if (x >= img_dimensions.cols) return;
+    
+    int current_idx = position * img_dimensions.cols + x;
+    
+    T xn; 
+
+    if (position == 0) {
+        xn = (T)d_seeds[x];
+    } 
+    else {
+        int prev_row_offset = (position - 1) * img_dimensions.cols;
+
+        unsigned char c = d_flow[prev_row_offset + x];
+
+        int idx_left = (x == 0) ? img_dimensions.cols - 1 : x - 1;
+        unsigned char l = d_flow[prev_row_offset + idx_left];
+
+        int idx_right = (x == img_dimensions.cols - 1) ? 0 : x + 1;
+        unsigned char r_val = d_flow[prev_row_offset + idx_right];
+
+        unsigned char coupled_value = l ^ c ^ r_val;
+        
+        xn = (T)coupled_value; 
+    }
+
+    xn = uno<T>(xn, r);
+
+    unsigned char keystream_byte = convertToBitStream(xn);
+    d_flow[current_idx] = keystream_byte;
+
+    if(position == img_dimensions.rows - 1) {
+      d_seeds[x] = xn;
+    }
+}
+
+template <typename T>
+  __global__ void convert_bits_to_real_kernel(T* d_seeds, size_t num_elements) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    
+    if (idx >= num_elements) return;
+        d_seeds[idx] = static_cast<T>(reinterpret_cast<uint32_t*>(d_seeds)[idx]) / UINT_MAX;
 }
 
 /**
@@ -98,7 +150,7 @@ __global__ void permute_blocks_kernel(unsigned char *image,
                                       unsigned char *image_out,
                                       unsigned int *permutations,
                                       size_t block_size,
-                                      Image_dimnesions img_dimensions);
+                                      Image_dimensions img_dimensions);
 
 /**
  * @brief Performs intra-block pixel permutation using a checkerboard pattern
@@ -132,7 +184,7 @@ __global__ void permute_blocks_kernel_simple(unsigned char *image,
                                              unsigned int *permutation,
                                              unsigned int *permutation_inverse,
                                              size_t block_size,
-                                             Image_dimnesions img_dimensions);
+                                             Image_dimensions img_dimensions);
 
 /**
  * @brief Kernel to generate chaotic values used for ordering/permutations.
@@ -188,7 +240,7 @@ __global__ void generate_chaotic(unsigned int *passwords, size_t num_blocks,
 __global__ void permute_columns_kernel(unsigned char *image,
                                        unsigned char *image_out,
                                        unsigned int *permutation,
-                                       Image_dimnesions img_dimensions);
+                                       Image_dimensions img_dimensions);
 
 /**
  * @brief Kernel that permutes rows of the image according to a permutation.
@@ -202,7 +254,7 @@ __global__ void permute_columns_kernel(unsigned char *image,
 __global__ void permute_rows_kernel(unsigned char *image,
                                     unsigned char *image_out,
                                     unsigned int *permutation,
-                                    Image_dimnesions img_dimensions);
+                                    Image_dimensions img_dimensions);
 
 /**
  * @brief Kernel to generate chaotic values from cellular automata states.

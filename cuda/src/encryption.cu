@@ -29,7 +29,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 
   // CRITICAL: Use the dimensions of the PROCESSED (flattened) image for all
   // calculations
-  const Image_dimnesions img_dimensions = {
+  const Image_dimensions img_dimensions = {
       static_cast<size_t>(processed_image.cols),
       static_cast<size_t>(processed_image.rows)};
 
@@ -143,14 +143,11 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   cudaMalloc(&d_pointers.d_image, img_size);
   cudaMalloc(&d_pointers.d_image_out, img_size);
   cudaMalloc(&d_pointers.d_flow, img_size);
-  cudaMalloc(&d_pointers.d_seeds,
-             password_segments[3].size() * sizeof(unsigned int));
 
   cudaMemcpy(d_pointers.d_image, processed_image.data, img_size,
              cudaMemcpyHostToDevice);
-  cudaMemcpy(d_pointers.d_seeds, password_segments[3].data(),
-             password_segments[3].size() * sizeof(unsigned int),
-             cudaMemcpyHostToDevice);
+
+  convert_bits_to_real(password_segments[3],&d_pointers.d_seeds);
 
   // --- 7. EXECUTION ---
   if (encrypt) {
@@ -205,7 +202,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 //                            PROCESS FLOW LOGIC
 // =================================================================================
 
-void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
+void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
                         size_t block_size, const EncryptionParams &params, bool verbose) {
 
   if (verbose)
@@ -243,7 +240,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimnesions img_dimensions,
 }
 
 void unencryption_process(D_pointers &d_pointers,
-                          Image_dimnesions img_dimensions, size_t block_size,
+                          Image_dimensions img_dimensions, size_t block_size,
                           const EncryptionParams &params, bool verbose) {
   if (verbose)
     std::cout << " > Starting Decryption Loop..." << std::endl;
@@ -272,7 +269,7 @@ void unencryption_process(D_pointers &d_pointers,
 // =================================================================================
 
 void image_permutation_encryption_process(D_pointers &d_pointers,
-                                          Image_dimnesions img_dimensions,
+                                          Image_dimensions img_dimensions,
                                           size_t block_size) {
   for (size_t j = 0; j < 2; j++) {
     // 1. Rows and Columns
@@ -292,7 +289,7 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
 }
 
 void image_permutation_unencryption_process(D_pointers &d_pointers,
-                                            Image_dimnesions img_dimensions,
+                                            Image_dimensions img_dimensions,
                                             size_t block_size) {
   for (size_t j = 0; j < 2; j++) {
     // 1. Inverse Blocks
@@ -311,7 +308,7 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
 }
 
 void permutation_encryption_process(D_pointers &d_pointers,
-                                    Image_dimnesions img_dimensions,
+                                    Image_dimensions img_dimensions,
                                     size_t block_size) {
   // Operation on d_flow, using d_image_out as temp buffer
   for (size_t j = 0; j < 2; j++) {
