@@ -28,7 +28,7 @@
  * @return Device pointer to the flattened permutations array (caller must
  * free).
  */
- template <typename T>
+template <typename T>
 __host__ unsigned int *
 generate_flow_permutations(const std::vector<unsigned char> block_passwords,
                            const size_t block_length, const size_t num_blocks,
@@ -43,8 +43,7 @@ generate_flow_permutations(const std::vector<unsigned char> block_passwords,
   unsigned int *d_indices = nullptr;
   T *d_chaotic_values = nullptr;
 
-  cudaError_t err =
-      cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned int));
+  cudaError_t err = cudaMalloc(&d_passwords, num_blocks * sizeof(unsigned int));
   if (err != cudaSuccess) {
     throw std::runtime_error(
         "Flow: Failed to allocate device memory for passwords");
@@ -149,43 +148,45 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            Image_dimensions img_dimensions,
                                            bool inverse);
 
-
-
 template <typename T>
-__host__ void convert_bits_to_real(const std::vector<unsigned char>& password_segment,
-                                   T **d_seeds) {
-    
-    size_t total_bytes = password_segment.size();
-    size_t element_size = sizeof(unsigned int);
+__host__ void
+convert_bits_to_real(const std::vector<unsigned char> &password_segment,
+                     T **d_seeds) {
 
-    if (total_bytes % element_size != 0) {
-        throw std::runtime_error("Invalid length.");
-    }
+  size_t total_bytes = password_segment.size();
+  size_t element_size = sizeof(unsigned int);
 
-    size_t num_elements = total_bytes / element_size;
+  if (total_bytes % element_size != 0) {
+    throw std::runtime_error("Invalid length.");
+  }
 
-    cudaError_t err = cudaMalloc((void**)d_seeds, total_bytes);
-    if (err != cudaSuccess) throw std::runtime_error("Error cudaMalloc");
+  size_t num_elements = total_bytes / element_size;
 
-    err = cudaMemcpy(*d_seeds, password_segment.data(), total_bytes, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        cudaFree(*d_seeds);
-        throw std::runtime_error("Error cudaMemcpy");
-    }
+  cudaError_t err = cudaMalloc((void **)d_seeds, total_bytes);
+  if (err != cudaSuccess)
+    throw std::runtime_error("Error cudaMalloc");
 
-    const int threadsPerBlock = 256;
-    const int gridOfBlocks = (num_elements + threadsPerBlock - 1) / threadsPerBlock;
+  err = cudaMemcpy(*d_seeds, password_segment.data(), total_bytes,
+                   cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) {
+    cudaFree(*d_seeds);
+    throw std::runtime_error("Error cudaMemcpy");
+  }
 
-    convert_bits_to_real_kernel<T><<<gridOfBlocks, threadsPerBlock>>>(*d_seeds, num_elements);
+  const int threadsPerBlock = 256;
+  const int gridOfBlocks =
+      (num_elements + threadsPerBlock - 1) / threadsPerBlock;
 
-    if (cudaGetLastError() != cudaSuccess) {
-        cudaFree(*d_seeds);
-        throw std::runtime_error("Error en kernel convert_bits_to_real");
-    }
-    
-    cudaDeviceSynchronize();
+  convert_bits_to_real_kernel<T>
+      <<<gridOfBlocks, threadsPerBlock>>>(*d_seeds, num_elements);
+
+  if (cudaGetLastError() != cudaSuccess) {
+    cudaFree(*d_seeds);
+    throw std::runtime_error("Error en kernel convert_bits_to_real");
+  }
+
+  cudaDeviceSynchronize();
 }
-
 
 /**
  * @brief Applies the flow encryption stage using provided seeds and chaotic
@@ -211,49 +212,45 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
  * @param rows Image height in blocks or pixels depending on the pipeline.
  * @param r Chaotic map parameter.
  */
- template <typename T>
+template <typename T>
 __host__ void generate_flow_stream(D_pointers &d_pointers,
-                                   Image_dimensions img_dimensions, T r,size_t traansition_length) {
+                                   Image_dimensions img_dimensions, T r,
+                                   size_t traansition_length) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
   keystream_generation<<<numBlocks, threadsPerBlock>>>(
-        d_pointers.d_flow,
-        d_pointers.d_seeds,
-        img_dimensions,
-        r,
-        traansition_length // transition_length
-    );
+      d_pointers.d_flow, d_pointers.d_seeds, img_dimensions, r,
+      traansition_length // transition_length
+  );
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("generate_flow_stream: Flow generation error");
   }
   cudaDeviceSynchronize();
 }
 
-
- template <typename T>
+template <typename T>
 __host__ void generate_flow_stream_paralell(D_pointers &d_pointers,
-                                   Image_dimensions img_dimensions, T r,size_t traansition_length) {
+                                            Image_dimensions img_dimensions,
+                                            T r, size_t traansition_length) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
-  for(size_t i =0; i< img_dimensions.rows; i++){
+  for (size_t i = 0; i < img_dimensions.rows; i++) {
     keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
-          d_pointers.d_flow,
-          d_pointers.d_seeds,
-          img_dimensions,
-          r,   // Overload for T types
-          i // transition_length
-      );
+        d_pointers.d_flow, d_pointers.d_seeds, img_dimensions,
+        r, // Overload for T types
+        i  // transition_length
+    );
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("generate_flow_stream: Flow generation error");
     }
     cudaDeviceSynchronize();
-}
+  }
 }
 
 /**
@@ -270,7 +267,7 @@ __host__ void generate_flow_stream_paralell(D_pointers &d_pointers,
  */
 __host__ unsigned int *generate_automata_permutations(
     const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
-    const size_t block_length,bool verbose);
+    const size_t block_length, bool verbose);
 
 /**
  * @brief Inverts a batch of permutations stored on the GPU.

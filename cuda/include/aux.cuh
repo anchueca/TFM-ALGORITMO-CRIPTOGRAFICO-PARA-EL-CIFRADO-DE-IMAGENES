@@ -12,9 +12,8 @@
 #include "kernels_aux.cuh"
 #include "structs.cuh"
 
-
 __host__ std::vector<unsigned char> generate_hash(const std::string &input,
-                                                       size_t length);
+                                                  size_t length);
 
 /**
  * @brief Calculate password segments from a textual password.
@@ -33,6 +32,7 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
  */
 __host__ std::vector<std::vector<unsigned char>>
 calculate_password(const std::string &input, size_t num_blocks,
-                   size_t precision_level, Image_dimensions img_dimensions, bool verbose);
+                   size_t precision_level, Image_dimensions img_dimensions,
+                   bool verbose);
 
 #endif // AUX_CUH

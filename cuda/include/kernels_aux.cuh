@@ -42,7 +42,7 @@ __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
     local_vals[j + 1] = key_val;
     local_indices[j + 1] = key_idx;
   }
-  
+
   for (size_t i = 0; i < block_length; i++) {
     indices[base_idx + i] = local_indices[i];
     chaotic_vals[base_idx + i] = local_vals[i];
@@ -111,7 +111,5 @@ __global__ void invert_permutations_kernel(unsigned int *d_permutations,
  */
 __global__ void image_xor(unsigned char *keystream, unsigned char *image,
                           Image_dimensions img_dimensions);
-
-
 
 #endif // KERNELS_AUX_CUH

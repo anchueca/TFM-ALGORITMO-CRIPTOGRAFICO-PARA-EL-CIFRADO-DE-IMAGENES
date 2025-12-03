@@ -36,19 +36,44 @@ Notes:
 
 ## CLI Usage
 
-The CLI expects exactly 10 numeric arguments after the binary name (see `main.cu`):
+The CLI expects exactly 12 arguments after the binary name (see `main.cu`):
 
 ```
-./bin/cipher.out <InputPath> <OutputPath> <Password> <Rounds> <Verbose(0/1)> <Mode(1=Enc/0=Dec)> <BlockSize> <Precision> <AutoSteps> <TransLen>
+./bin/cipher.out <InputPath> <OutputPath|SHOW|STDOUT> <Password> <Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> <Precision> <AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>
 ```
 
-Example encrypt:
+**Arguments:**
+- `InputPath`: Path to input image file, or `STDIN` to read from standard input
+- `OutputPath`: Path to output file, `SHOW` to display in window (requires GUI), or `STDOUT` to pipe to standard output
+- `Password`: Encryption/decryption password
+- `Rounds`: Number of encryption rounds (typically 1-5)
+- `Mode`: `1` for encryption, `0` for decryption
+- `BlockSize`: Size of square blocks for block permutations (e.g., 8, 16, 32)
+- `Precision`: Precision level for automata/password derivation (e.g., 2, 4, 8)
+- `AutoSteps`: Number of cellular automata evolution steps (e.g., 20, 50, 100)
+- `TransLen`: Transition sequence length for flow permutations (e.g., 10, 20, 50)
+- `chaosParam`: Chaos parameter for the logistic map (typically 3.57-4.0, e.g., 3.9 or 3.999)
+- `Verbose`: `1` to enable verbose logging, `0` for silent operation
+
+**Example - Encrypt:**
 
 ```bash
-./bin/cipher.out ../repositorio/set3/lena3.jpg ./bin/salida.tif password 3 1 1 8 2 20 10
+./bin/cipher.out ../repositorio/set3/lena3.jpg ./bin/salida.tif password 3 1 8 4 20 10 3.9 1
 ```
 
-The order and count of arguments is enforced by `main.cu`. Other scripts in the repository may assume the same ordering.
+**Example - Decrypt:**
+
+```bash
+./bin/cipher.out ./bin/salida.tif ./bin/decrypted.tif password 3 0 8 4 20 10 3.9 1
+```
+
+**Example - Streaming mode (STDIN/STDOUT):**
+
+```bash
+cat input.jpg | ./bin/cipher.out STDIN STDOUT password 3 1 8 4 20 10 3.9 0 > encrypted.tif
+```
+
+The order and count of arguments is strictly enforced by `main.cu`. Other scripts in the repository may assume the same ordering.
 
 ## Testing / Example run
 
@@ -99,9 +124,9 @@ Practical example: generate two ciphertexts and compute NPCR/UACI using Python +
 
 ```bash
 # encrypt original
-./cuda/bin/cipher.out ../repositorio/set3/lena3.jpg ./tmp/ct1.tif password 3 1 1 8 2 20 10
+./cuda/bin/cipher.out ../repositorio/set3/lena3.jpg ./tmp/ct1.tif password 3 1 8 4 20 10 3.9 0
 # flip one bit in the plaintext or use a different key to produce ct2 (example using the same binary with a slightly different password)
-./cuda/bin/cipher.out ../repositorio/set3/lena3.jpg ./tmp/ct2.tif password_alt 3 1 1 8 2 20 10
+./cuda/bin/cipher.out ../repositorio/set3/lena3.jpg ./tmp/ct2.tif password_alt 3 1 8 4 20 10 3.9 0
 
 python - <<'PY'
 import cv2, numpy as np
@@ -125,4 +150,48 @@ Notes and recommendations:
 
 If you would like, I can add a small, self-contained CLI utility (C++ or Python) to compute the standard NPCR/UACI/entropy/CC metrics automatically from two images and produce a concise report.
 
+## Python Analysis Tools
+
+The `python/` directory contains a comprehensive suite of cryptographic analysis tools:
+
+### stats.py - Comprehensive Cryptographic Analysis
+
+The main analysis tool that computes standard cryptographic metrics and generates visual reports:
+
+```bash
+cd python
+python stats.py <input_image> <password> <path_to_cipher_executable> [--rounds N]
+```
+
+**Example:**
+```bash
+python stats.py ../repositorio/set3/lena3.jpg mypassword ../cuda/bin/cipher.out --rounds 3
+```
+
+**Metrics computed:**
+- **Shannon Entropy**: Measures randomness (ideal ~7.999 for 8-bit images)
+- **Correlation Coefficients**: Horizontal, vertical, and diagonal pixel correlations (ideal ~0.0)
+- **NPCR/UACI**: Differential attack resistance metrics
+- **Chi-Square Test**: Histogram uniformity test
+- **GLCM Properties**: Texture analysis (contrast, homogeneity, energy)
+- **DFT Spectrum**: Frequency domain analysis
+- **Key Sensitivity**: Tests encryption with different keys
+- **Occlusion Attack**: Tests robustness to data loss
+- **Performance Benchmarking**: Scalability analysis at multiple image sizes
+
+**Output:** Generates `full_report.jpg` with a comprehensive visual dashboard containing all analysis results.
+
+### Other Python Tools
+
+- **`bifurcacion.py`**: Generates bifurcation diagrams for chaotic map analysis
+- **`lyapunov.py`**: Computes Lyapunov exponents to characterize chaotic behavior
+- **`Chaos_Generator.py`**: Utilities for generating chaotic sequences
+- **`TestNIST.py`**: Integration with NIST statistical test suite for randomness
+- **`plot.py`**: General plotting utilities
+
+**Installation:**
+```bash
+cd python
+pip install -r requirements.txt
+```
 
