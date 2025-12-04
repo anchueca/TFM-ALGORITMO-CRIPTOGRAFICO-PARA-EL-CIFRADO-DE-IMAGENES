@@ -62,7 +62,8 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
  * @param verbose Print verbose info if true.
  */
 void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
-                        size_t block_size, const EncryptionParams &params, bool verbose);
+                        size_t block_size, const EncryptionParams &params,
+                        bool verbose);
 
 /**
  * @brief Internal pipeline function that performs the decryption (inverse of
@@ -83,14 +84,49 @@ void unencryption_process(D_pointers &d_pointers,
                           Image_dimensions img_dimensions, size_t block_size,
                           const EncryptionParams &params, bool verbose);
 
+/**
+ * @brief Executes the permutation-only encryption process.
+ *
+ * This function handles the encryption pipeline when only permutations are
+ * applied (without the diffusion/XOR stage). It orchestrates the block, row,
+ * and column permutations.
+ *
+ * @param d_pointers Struct containing device pointers for image data and
+ * permutations.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param block_size The size of the blocks used for permutation.
+ */
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimensions img_dimensions,
                                     size_t block_size);
 
+/**
+ * @brief Executes the inverse permutation process for decryption.
+ *
+ * This function reverses the permutation steps applied during encryption. It
+ * applies the inverse row, column, and block permutations to restore the
+ * original image structure.
+ *
+ * @param d_pointers Struct containing device pointers for image data and
+ * inverse permutations.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param block_size The size of the blocks used for permutation.
+ */
 void image_permutation_unencryption_process(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
                                             size_t block_size);
 
+/**
+ * @brief Executes the forward permutation process for encryption.
+ *
+ * This function applies the row, column, and block permutations to the image
+ * data as part of the encryption process.
+ *
+ * @param d_pointers Struct containing device pointers for image data and
+ * permutations.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param block_size The size of the blocks used for permutation.
+ */
 void image_permutation_encryption_process(D_pointers &d_pointers,
                                           Image_dimensions img_dimensions,
                                           size_t block_size);

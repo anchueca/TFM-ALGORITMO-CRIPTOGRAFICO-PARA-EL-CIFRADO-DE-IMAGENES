@@ -11,6 +11,21 @@
 
 #define MAX_BLOCK_SIZE 64
 
+/**
+ * @brief Sorts indices within a block based on chaotic values using insertion
+ * sort.
+ *
+ * This device function performs an in-place insertion sort on a local array of
+ * chaotic values and their corresponding indices. It is used to generate
+ * permutations for a specific block.
+ *
+ * @tparam T The data type of the chaotic values (e.g., float, double).
+ * @param base_idx The global base index for the current block in the input
+ * arrays.
+ * @param chaotic_vals Pointer to the global array of chaotic values.
+ * @param indices Pointer to the global array of indices to be sorted.
+ * @param block_length The number of elements in the block to be sorted.
+ */
 template <typename T>
 __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
                                                unsigned int *indices,
@@ -48,7 +63,22 @@ __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
     chaotic_vals[base_idx + i] = local_vals[i];
   }
 };
+/**
+ * @brief Converts a double precision chaotic value to a single byte keystream
+ * value.
+ *
+ * @param value The input chaotic value (double).
+ * @return The corresponding byte value (unsigned char).
+ */
 __device__ unsigned char convertToBitStream(double value);
+
+/**
+ * @brief Converts a single precision chaotic value to a single byte keystream
+ * value.
+ *
+ * @param value The input chaotic value (float).
+ * @return The corresponding byte value (unsigned char).
+ */
 __device__ unsigned char convertToBitStream(float value);
 
 /**

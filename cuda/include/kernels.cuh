@@ -82,6 +82,22 @@ __global__ void keystream_generation(unsigned char *__restrict__ d_flow,
   d_seeds[x] = xn;
 }
 
+/**
+ * @brief Kernel to generate keystream using a Coupled Map Lattice (CML) in
+ * parallel.
+ *
+ * This kernel implements the CML system where each cell's next state depends on
+ * its current state and the states of its neighbors (coupling). This provides
+ * spatial diffusion in the generated keystream.
+ *
+ * @tparam T The floating-point type for the chaotic map.
+ * @param d_flow Output buffer for the generated keystream.
+ * @param d_seeds Input/Output buffer for the seeds/state of the map.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param r The chaotic parameter.
+ * @param position The current row index being processed (used for coupling with
+ * the previous row).
+ */
 template <typename T> // Coupled map lattice
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, T *__restrict__ d_seeds,
@@ -123,6 +139,19 @@ __global__ void keystream_generation_parallel(
   }
 }
 
+/**
+ * @brief Kernel to convert raw bits (integers) into normalized floating-point
+ * seeds.
+ *
+ * This kernel takes an array of raw integer data (interpreted from the password
+ * bytes) and normalizes each element to the range [0, 1] to be used as initial
+ * seeds for the chaotic maps.
+ *
+ * @tparam T The floating-point type (float or double).
+ * @param d_seeds Pointer to the device memory containing the raw integers
+ * (in-place conversion).
+ * @param num_elements The total number of elements to convert.
+ */
 template <typename T>
 __global__ void convert_bits_to_real_kernel(T *d_seeds, size_t num_elements) {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;

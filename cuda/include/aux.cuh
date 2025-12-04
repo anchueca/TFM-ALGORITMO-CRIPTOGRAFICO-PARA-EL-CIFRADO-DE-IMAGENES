@@ -12,6 +12,17 @@
 #include "kernels_aux.cuh"
 #include "structs.cuh"
 
+/**
+ * @brief Generates a SHA-256 hash of the input string.
+ *
+ * This function computes the SHA-256 hash of the provided input string and
+ * returns a vector of bytes containing the hash. If the requested length is
+ * less than the hash size, the result is truncated.
+ *
+ * @param input The input string to be hashed.
+ * @param length The desired length of the output hash in bytes.
+ * @return A vector of unsigned characters containing the hash.
+ */
 __host__ std::vector<unsigned char> generate_hash(const std::string &input,
                                                   size_t length);
 

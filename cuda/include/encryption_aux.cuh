@@ -117,6 +117,20 @@ __host__ void block_phase_permutation(unsigned char *d_image,
                                       Image_dimensions img_dimensions,
                                       size_t block_size);
 
+/**
+ * @brief Applies a simplified block permutation to the image.
+ *
+ * This function applies a permutation to each block of the image. It uses a
+ * checkerboard pattern where some blocks use the forward permutation and others
+ * use the inverse permutation to increase diffusion.
+ *
+ * @param d_image Input device image buffer.
+ * @param d_image_out Output device image buffer.
+ * @param permutation Device pointer to the forward permutation array.
+ * @param permutation_inverse Device pointer to the inverse permutation array.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param block_size The size of the blocks used for permutation.
+ */
 __host__ void block_phase_permutation_simple(unsigned char *d_image,
                                              unsigned char *d_image_out,
                                              unsigned int *permutation,
@@ -148,6 +162,18 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            Image_dimensions img_dimensions,
                                            bool inverse);
 
+/**
+ * @brief Converts password bits into real-valued seeds for chaotic maps.
+ *
+ * This function takes a segment of the password (bytes) and converts it into
+ * floating-point seeds (normalized to [0, 1]) that are used to initialize
+ * the chaotic maps.
+ *
+ * @tparam T The floating-point type for the seeds (float or double).
+ * @param password_segment A vector of bytes representing the password segment.
+ * @param d_seeds Pointer to the device memory where the generated seeds will be
+ * stored. The function allocates this memory.
+ */
 template <typename T>
 __host__ void
 convert_bits_to_real(const std::vector<unsigned char> &password_segment,
@@ -231,6 +257,23 @@ __host__ void generate_flow_stream(D_pointers &d_pointers,
   cudaDeviceSynchronize();
 }
 
+/**
+ * @brief Generates the flow keystream in parallel using a Coupled Map Lattice
+ * (CML).
+ *
+ * This function generates a keystream based on a chaotic map. It uses a
+ * parallel approach where each row of the image is processed by a separate
+ * thread block (or set of blocks), with coupling between adjacent cells to
+ * ensure diffusion.
+ *
+ * @tparam T The floating-point type for the chaotic map (float or double).
+ * @param d_pointers Struct containing device pointers, specifically d_flow
+ * (output) and d_seeds (input/state).
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param r The chaotic parameter for the map.
+ * @param traansition_length The number of transition iterations to perform
+ * before generating the stream.
+ */
 template <typename T>
 __host__ void generate_flow_stream_paralell(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
