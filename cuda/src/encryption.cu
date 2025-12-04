@@ -9,23 +9,8 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
                             bool encrypt) {
 
   // --- 1. PRE-PROCESSING (Symmetric Unstacking) ---
-  // If the image is RGB, we flatten it (unstack) to process it on the GPU.
-  // If decrypting, we assume the input is already flattened OR we attempt to
-  // flatten it if it was read as RGB by OpenCV.
-  cv::Mat processed_image;
   bool is_color = (image.channels() == 3);
-
-  if (is_color) {
-    if (verbose)
-      std::cout << "[INFO] 3-Channel image detected. Unstacking..."
-                << std::endl;
-    std::vector<cv::Mat> channels;
-    cv::split(image, channels);
-    cv::hconcat(channels,
-                processed_image); // Concatenate [R][G][B] side-by-side
-  } else {
-    processed_image = image.clone();
-  }
+  cv::Mat processed_image = unstack_channels(image, verbose);
 
   // CRITICAL: Use the dimensions of the PROCESSED (flattened) image for all
   // calculations
@@ -91,7 +76,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
       calculate_password(password, num_blocks_permutations,
-                         params.precision_level, img_dimensions,verbose);
+                         params.precision_level, img_dimensions, verbose);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
 
@@ -104,20 +89,18 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
     std::cout << " > Generating Permutations..." << std::endl;
 
   // A. Columns
-  ElementalCelularAutomata automata(
-      password_segments[1], img_dimensions.cols * 2 * 8,
-      30);
+  ElementalCelularAutomata automata(password_segments[1],
+                                    img_dimensions.cols * 2 * 8, 30);
   const std::vector<ElementalCelularAutomata *> cols_automata = {&automata};
   d_pointers.d_permutation_cols = generate_automata_permutations(
-      cols_automata, params.automata_steps, img_dimensions.cols,verbose);
+      cols_automata, params.automata_steps, img_dimensions.cols, verbose);
 
   // B. Rows
-  ElementalCelularAutomata automata1(
-      password_segments[0], img_dimensions.rows * 2 * 8,
-      30);
+  ElementalCelularAutomata automata1(password_segments[0],
+                                     img_dimensions.rows * 2 * 8, 30);
   const std::vector<ElementalCelularAutomata *> rows_automata = {&automata1};
   d_pointers.d_permutation_rows = generate_automata_permutations(
-      rows_automata, params.automata_steps, img_dimensions.rows,verbose);
+      rows_automata, params.automata_steps, img_dimensions.rows, verbose);
 
   // C. Blocks (Chaotic Map)
   d_pointers.d_permutation_blocks = generate_flow_permutations(
@@ -147,15 +130,15 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   cudaMemcpy(d_pointers.d_image, processed_image.data, img_size,
              cudaMemcpyHostToDevice);
 
-  convert_bits_to_real(password_segments[3],&d_pointers.d_seeds);
+  convert_bits_to_real(password_segments[3], &d_pointers.d_seeds);
 
   // --- 7. EXECUTION ---
   if (encrypt) {
-    encryption_process(d_pointers, img_dimensions, params.block_size,
-                       params, verbose);
+    encryption_process(d_pointers, img_dimensions, params.block_size, params,
+                       verbose);
   } else {
-    unencryption_process(d_pointers, img_dimensions, params.block_size,
-                         params,verbose);
+    unencryption_process(d_pointers, img_dimensions, params.block_size, params,
+                         verbose);
   }
 
   if (verbose)
@@ -166,27 +149,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
              cudaMemcpyDeviceToHost);
 
   // --- 8. POST-PROCESSING (Symmetric Restacking) ---
-  // Logic: If we started with 3 channels, we MUST return 3 channels.
-  // - Encrypting: processed_image is Wide Scrambled -> We stack to RGB
-  // Scrambled.
-  // - Decrypting: processed_image is Wide Original -> We stack to RGB Original.
-
-  if (is_color) {
-    if (verbose)
-      std::cout << "[INFO] Restacking channels back to RGB..." << std::endl;
-
-    int w = processed_image.cols / 3;
-    int h = processed_image.rows;
-
-    cv::Mat b = processed_image(cv::Rect(0, 0, w, h));
-    cv::Mat g = processed_image(cv::Rect(w, 0, w, h));
-    cv::Mat r = processed_image(cv::Rect(2 * w, 0, w, h));
-
-    std::vector<cv::Mat> channels = {b, g, r};
-    cv::merge(channels, image); // Reconstruct in the original reference
-  } else {
-    image = processed_image;
-  }
+  stack_channels(image, processed_image, is_color, verbose);
 
   // --- CLEANUP ---
   cudaFree(d_pointers.d_permutation_cols);
@@ -203,7 +166,8 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 // =================================================================================
 
 void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
-                        size_t block_size, const EncryptionParams &params, bool verbose) {
+                        size_t block_size, const EncryptionParams &params,
+                        bool verbose) {
 
   if (verbose)
     std::cout << " > Starting Encryption Loop (" << params.rounds << " rounds)"
@@ -217,7 +181,8 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
   // 2. Diffusion + Confusion Rounds
   for (size_t i = 0; i < params.rounds; i++) {
     // A. Generate Chaotic Stream
-    generate_flow_stream(d_pointers, img_dimensions, params.chaos_parameter,params.transition_length);
+    generate_flow_stream(d_pointers, img_dimensions, params.chaos_parameter,
+                         params.transition_length);
 
     // B. Permute the Stream (not the image)
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
@@ -252,7 +217,8 @@ void unencryption_process(D_pointers &d_pointers,
   // 2. Reverse Rounds
   for (size_t i = 0; i < params.rounds; i++) {
     // Regenerate exact same flow
-    generate_flow_stream(d_pointers, img_dimensions, params.chaos_parameter,params.transition_length);
+    generate_flow_stream(d_pointers, img_dimensions, params.chaos_parameter,
+                         params.transition_length);
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
     // Inverse XOR (Identical to forward XOR)
@@ -323,5 +289,40 @@ void permutation_encryption_process(D_pointers &d_pointers,
                                    d_pointers.d_permutation_blocks_inverse,
                                    img_dimensions, block_size);
     std::swap(d_pointers.d_flow, d_pointers.d_image_out);
+  }
+}
+
+cv::Mat unstack_channels(const cv::Mat &image, bool verbose) {
+  cv::Mat processed_image;
+  if (image.channels() == 3) {
+    if (verbose)
+      std::cout << "[INFO] 3-Channel image detected. Unstacking..."
+                << std::endl;
+    std::vector<cv::Mat> channels;
+    cv::split(image, channels);
+    cv::hconcat(channels, processed_image);
+  } else {
+    processed_image = image.clone();
+  }
+  return processed_image;
+}
+
+void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
+                    bool is_color, bool verbose) {
+  if (is_color) {
+    if (verbose)
+      std::cout << "[INFO] Restacking channels back to RGB..." << std::endl;
+
+    int w = processed_image.cols / 3;
+    int h = processed_image.rows;
+
+    cv::Mat b = processed_image(cv::Rect(0, 0, w, h));
+    cv::Mat g = processed_image(cv::Rect(w, 0, w, h));
+    cv::Mat r = processed_image(cv::Rect(2 * w, 0, w, h));
+
+    std::vector<cv::Mat> channels = {b, g, r};
+    cv::merge(channels, image);
+  } else {
+    image = processed_image;
   }
 }

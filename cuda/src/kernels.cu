@@ -7,7 +7,6 @@
 #include "../include/kernels.cuh"
 #include <climits>
 
-
 __global__ void permute_blocks_kernel(unsigned char *image,
                                       unsigned char *image_out,
                                       unsigned int *permutations,
@@ -58,13 +57,6 @@ __global__ void permute_blocks_kernel(unsigned char *image,
     image_out[y * img_dimensions.cols + x] =
         image[src_global_y * img_dimensions.cols + src_global_x];
   }
-}
-
-__global__ void convert_bits_to_real_kernel(double* d_seeds, size_t num_elements) {
-    int idx = threadIdx.x + blockIdx.x * blockDim.x;
-    
-    if (idx >= num_elements) return;
-        d_seeds[idx] = static_cast<double>(reinterpret_cast<uint32_t*>(d_seeds)[idx]) / UINT_MAX;
 }
 
 __global__ void permute_blocks_kernel_simple(unsigned char *image,
