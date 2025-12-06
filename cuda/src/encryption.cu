@@ -81,7 +81,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   std::chrono::duration<double> time = end - start;
 
   if (verbose)
-    std::cout << " > Password hashing & expansion: " << time.count() << " s"
+    std::cout << " > Password hashing & expansion: " << time.count() * 1000.0f << " ms"
               << std::endl;
 
   // --- 4. PERMUTATION GENERATION (GPU) ---
@@ -217,7 +217,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
-    std::cout << " > Total Loop Time: " << time.count() << " s" << std::endl;
+    std::cout << " > Total Loop Time: " << time.count() * 1000.0f << " ms" << std::endl;
 }
 
 void unencryption_process(D_pointers &d_pointers,

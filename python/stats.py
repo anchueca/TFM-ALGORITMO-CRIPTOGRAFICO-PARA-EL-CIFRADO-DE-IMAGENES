@@ -178,13 +178,28 @@ class ExternalCipherTester:
         try:
             res = subprocess.run(cmd, input=encoded_buffer.tobytes(), capture_output=True, check=True)
             if not res.stdout: raise ValueError("C++ returned empty output")
+            
+            # Parse EXEC_TIME from stderr
+            exec_time = 0.0
+            try:
+                stderr_str = res.stderr.decode('utf-8', errors='ignore')
+                for line in stderr_str.split('\n'):
+                    if "EXEC_TIME:" in line:
+                        exec_time = float(line.split("EXEC_TIME:")[1].strip())
+            except Exception:
+                pass
+
             nparr = np.frombuffer(res.stdout, np.uint8)
-            return cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED)
+            return cv2.imdecode(nparr, cv2.IMREAD_UNCHANGED), exec_time
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"C++ Error: {e.stderr.decode('utf-8', errors='ignore')}")
 
-    def encrypt_flow(self): return self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
-    def decrypt_flow(self, img): return self.run_cipher_ram_to_ram(img, mode_enc=False)
+    def encrypt_flow(self): 
+        img, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
+        return img
+    def decrypt_flow(self, img): 
+        res, _ = self.run_cipher_ram_to_ram(img, mode_enc=False)
+        return res
     
     def diff_attack_plaintext(self):
         """
@@ -194,8 +209,8 @@ class ExternalCipherTester:
         flat = alt_img.view(np.uint8).flatten()
         flat[len(flat)//2] ^= 1 # Flip LSB of center pixel
         
-        c1 = self.run_cipher_ram_to_ram(self.original_img, True)
-        c2 = self.run_cipher_ram_to_ram(alt_img, True)
+        c1, _ = self.run_cipher_ram_to_ram(self.original_img, True)
+        c2, _ = self.run_cipher_ram_to_ram(alt_img, True)
         
         if c1 is not None and c2 is not None:
             return CryptoMetrics.calculate_npcr_uaci(c1, c2)
@@ -216,8 +231,8 @@ class ExternalCipherTester:
             
         print(f"   [Debug] Key Sensitivity: '{original_pw}' vs '{mod_pw}'")
             
-        c1 = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=original_pw)
-        c2 = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=mod_pw)
+        c1, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=original_pw)
+        c2, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=mod_pw)
         
         # Calculate visual difference for plotting
         diff_img = cv2.absdiff(c1, c2)
@@ -270,15 +285,12 @@ class ExternalCipherTester:
                 except: pass 
 
                 for i in range(repeats):
-                    t0 = time.perf_counter()
-                    ciph = self.run_cipher_ram_to_ram(resized_img, mode_enc=True)
-                    t1 = time.perf_counter()
-                    curr_enc_times.append(t1 - t0)
+                    # Use internal C++ time (CPU/GPU-only) instead of Python wall clock
+                    ciph, t_enc = self.run_cipher_ram_to_ram(resized_img, mode_enc=True)
+                    curr_enc_times.append(t_enc * 1000.0) # Convert to ms
                     
-                    t2 = time.perf_counter()
-                    _ = self.run_cipher_ram_to_ram(ciph, mode_enc=False)
-                    t3 = time.perf_counter()
-                    curr_dec_times.append(t3 - t2)
+                    dec, t_dec = self.run_cipher_ram_to_ram(ciph, mode_enc=False)
+                    curr_dec_times.append(t_dec * 1000.0) # Convert to ms
                 
                 # Remove outliers
                 if repeats >= 3:
@@ -291,7 +303,7 @@ class ExternalCipherTester:
                 enc_times_avg.append(np.mean(curr_enc_times))
                 dec_times_avg.append(np.mean(curr_dec_times))
                 
-                print(f"   -> Scale {s}x ({n_pixels/1e6:.1f} MP): Enc={enc_times_avg[-1]:.4f}s")
+                print(f"   -> Scale {s}x ({n_pixels/1e6:.1f} MP): Enc={enc_times_avg[-1]:.4f} ms")
                 
             except Exception as e:
                 print(f"[!] Fail at scale {s}x: {e}")
@@ -381,7 +393,7 @@ def plot_dashboard(original, ciphered, decrypted,
     
     ax_perf.set_title(f"Performance Scalability (0.5x to 10.0x)", fontsize=10)
     ax_perf.set_xlabel("Image Size (Megapixels)")
-    ax_perf.set_ylabel("Time (Seconds)")
+    ax_perf.set_ylabel("Time (Milliseconds)")
     ax_perf.legend()
     ax_perf.grid(True, linestyle='--', alpha=0.6)
 

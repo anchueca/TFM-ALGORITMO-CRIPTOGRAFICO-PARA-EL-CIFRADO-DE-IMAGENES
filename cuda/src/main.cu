@@ -153,8 +153,10 @@ int main(int argc, char **argv) {
   std::chrono::duration<double> time = end - start;
 
   if (verbose_arg) {
-    std::cout << "Total Pipeline Time: " << time.count() << " s" << std::endl;
+    std::cout << "Total Pipeline Time: " << time.count() * 1000.0f << " ms" << std::endl;
   }
+  // Always print time to stderr for Python parsing (excludes overhead)
+  std::cerr << "EXEC_TIME:" << time.count() << std::endl;
 
   // --- 5. Validation & Output Handling ---
   if (image.empty()) {

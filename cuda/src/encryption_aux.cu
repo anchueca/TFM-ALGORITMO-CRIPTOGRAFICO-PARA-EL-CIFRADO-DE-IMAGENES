@@ -76,7 +76,7 @@ __host__ unsigned int *generate_automata_permutations(
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
-    std::cout << "\t\tAutomata & Gen time: " << time.count() << " s" << std::endl;
+    std::cout << "\t\tAutomata & Gen time: " << time.count() * 1000.0f << " ms" << std::endl;
 
   // Short
   start = std::chrono::high_resolution_clock::now();
@@ -91,7 +91,7 @@ __host__ unsigned int *generate_automata_permutations(
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
-    std::cout << "\t\tBatched Sort time: " << time.count() << " s" << std::endl;
+    std::cout << "\t\tBatched Sort time: " << time.count() * 1000.0f << " ms" << std::endl;
 
   cudaFree(d_automatas);
   cudaFree(d_chaotic_values);
