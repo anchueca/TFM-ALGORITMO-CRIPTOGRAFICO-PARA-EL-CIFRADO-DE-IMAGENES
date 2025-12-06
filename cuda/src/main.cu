@@ -138,6 +138,7 @@ int main(int argc, char **argv) {
   }
 
   // --- 4. Execution ---
+  cudaFree(0); // Dummy call to initialize CUDA context
   auto start = std::chrono::high_resolution_clock::now();
 
   try {
