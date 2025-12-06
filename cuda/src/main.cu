@@ -59,7 +59,11 @@ int main(int argc, char **argv) {
     params.precision_level = stoi(argv[7]);
     params.automata_steps = stoi(argv[8]);
     params.transition_length = stoi(argv[9]);
+#ifdef USE_DOUBLE_PRECISION
     params.chaos_parameter = stod(argv[10]);
+#else
+    params.chaos_parameter = stof(argv[10]);
+#endif
     verbose_arg = (strcmp(argv[11], "1") == 0);
 
     if (output_arg == "SHOW" || output_arg == "NULL") {
@@ -135,6 +139,12 @@ int main(int argc, char **argv) {
     std::cout
         << "============================================================\n"
         << std::endl;
+
+#ifdef USE_DOUBLE_PRECISION
+    std::cout << " [PRECISION INFO]:       DOUBLE (High Precision)" << std::endl;
+#else
+    std::cout << " [PRECISION INFO]:       FLOAT (Standard Precision)" << std::endl;
+#endif
   }
 
   // --- 4. Execution ---

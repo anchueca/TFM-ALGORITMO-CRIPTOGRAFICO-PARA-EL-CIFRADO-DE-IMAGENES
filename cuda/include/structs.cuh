@@ -81,14 +81,22 @@
  * @warning The chaos_parameter MUST be in the chaotic regime (3.57, 4.0].
  *          Values outside this range will severely weaken security.
  */
+#ifdef USE_DOUBLE_PRECISION
+using Real = double;
+#else
+using Real = float;
+#endif
+
+// Include standard libs that might be needed for types if not already
 #include <cmath>
+
 struct EncryptionParams {
   size_t rounds;
   size_t block_size;
   size_t precision_level;
   size_t automata_steps;
   size_t transition_length;
-  double chaos_parameter;
+  Real chaos_parameter;
 };
 
 /**
@@ -143,7 +151,7 @@ struct D_pointers {
   unsigned char *d_image;                   ///< Current image data on device
   unsigned char *d_image_out;               ///< Output buffer for operations
   unsigned char *d_flow;                    ///< Chaotic flow sequence
-  double *d_seeds;                          ///< Random seeds for initialization
+  Real *d_seeds;                            ///< Random seeds for initialization
   unsigned int *d_permutation_rows;         ///< Forward row permutation
   unsigned int *d_permutation_cols;         ///< Forward column permutation
   unsigned int *d_permutation_blocks;       ///< Forward block permutation

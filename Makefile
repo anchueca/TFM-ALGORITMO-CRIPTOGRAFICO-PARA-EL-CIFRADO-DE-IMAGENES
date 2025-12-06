@@ -27,8 +27,13 @@ ifeq ($(MODE),debug)
     CXXFLAGS = $(CXXFLAGS_DEBUG)
     NVCCFLAGS = $(NVCCFLAGS_DEBUG)
 else
-    CXXFLAGS = $(CXXFLAGS_NORMAL)
     NVCCFLAGS = $(NVCCFLAGS_NORMAL)
+endif
+
+# Precision selection (new)
+PRECISION ?= float
+ifeq ($(PRECISION),double)
+    NVCCFLAGS += -DUSE_DOUBLE_PRECISION
 endif
 
 NVCCFLAGS += -ccbin g++-12

@@ -79,6 +79,26 @@ The order and count of arguments is strictly enforced by `main.cu`. Other script
 
 A small helper `compile_and_execute.bash` demonstrates a full encrypt+decrypt run using the compiled binary.
 
+## AES Benchmark Comparison
+
+To evaluate the performance of the proposed algorithm against a standard, an AES-256-CBC implementation is provided in `aes_comparison/`.
+
+**Build & Run:**
+```bash
+cd aes_comparison
+make
+./aes_tool <mode:enc/dec> <input_file> <output_file>
+```
+
+This tool uses OpenSSL's EVP API to provide a CPU-based baseline for comparing encryption/decryption throughput.
+
+## Performance Optimizations
+
+The CUDA implementation includes several optimizations to ensure high throughput and accurate benchmarking:
+
+- **Constant Memory:** Block permutation tables are stored in GPU Constant Memory (`__constant__`) to minimize memory latency during the permutation phase.
+- **Initialization Overhead:** A dummy `cudaFree(0)` call is performed before timing starts to absorb the CUDA context initialization cost (~200ms), ensuring that reported metrics reflect the actual algorithm performance (~5-20ms).
+- **Accurate Timing:** The C++ binary reports precise execution times (in ms) to `stderr`, which are parsed by the Python analysis tools to exclude invalid process startup overheads.
 
 ## Contact / Notes
 
@@ -179,7 +199,7 @@ python stats.py ../repositorio/set3/lena3.jpg mypassword ../cuda/bin/cipher.out 
 - **Occlusion Attack**: Tests robustness to data loss
 - **Performance Benchmarking**: Scalability analysis at multiple image sizes
 
-**Output:** Generates `full_report.jpg` with a comprehensive visual dashboard containing all analysis results.
+**Output:** Generates `full_report.jpg` with a comprehensive visual dashboard containing all analysis results. The tool automatically parses the precise `EXEC_TIME` from the C++ binary to report accurate throughput (ms) excluding system overhead.
 
 ### Other Python Tools
 

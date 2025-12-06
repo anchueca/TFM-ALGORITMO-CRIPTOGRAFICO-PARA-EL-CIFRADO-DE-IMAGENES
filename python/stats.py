@@ -139,19 +139,7 @@ class CryptoMetrics:
         chi2, p_val = chisquare(hist, expected)
         return chi2, p_val
 
-    @staticmethod
-    def compute_dft_spectrum(image):
-        """Computes 2D Discrete Fourier Transform for frequency analysis."""
-        if len(image.shape) > 2:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-            
-        f = np.fft.fft2(gray)
-        fshift = np.fft.fftshift(f)
-        # Magnitude spectrum in Log scale
-        magnitude_spectrum = 20 * np.log(np.abs(fshift) + 1e-9)
-        return magnitude_spectrum
+
 
 # --- 2. EXECUTION WRAPPER ---
 class ExternalCipherTester:
@@ -317,13 +305,13 @@ def plot_dashboard(original, ciphered, decrypted,
                    key_sens_diff_img,
                    benchmark_data):
     
-    # Create a 6-Row Dashboard
-    fig = plt.figure(figsize=(16, 26)) 
+    # Create a 5-Row Dashboard (Compact)
+    fig = plt.figure(figsize=(16, 20)) 
     fig.suptitle("Advanced Cryptographic Analysis & Performance", fontsize=16, fontweight='bold')
     
     def show_img(row, col, img, title, cmap='gray'):
         idx = (row - 1) * 4 + col
-        ax = fig.add_subplot(6, 4, idx)
+        ax = fig.add_subplot(5, 4, idx)
         if img is None: return
         if len(img.shape) == 2: ax.imshow(img, cmap=cmap, vmin=0, vmax=255)
         else: ax.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -334,56 +322,43 @@ def plot_dashboard(original, ciphered, decrypted,
     show_img(1, 1, original, "Original")
     show_img(1, 2, ciphered, "Encrypted")
     show_img(1, 3, decrypted, "Decrypted")
-    # New: Show difference between Cipher(Key1) and Cipher(Key2)
-    show_img(1, 4, key_sens_diff_img, "Key Sensitivity Diff (Should be Noise)")
+    show_img(1, 4, key_sens_diff_img, "Key Sensitivity Diff")
 
-    # --- ROW 2: OCCLUSION & SPECTRUM ---
+    # --- ROW 2: OCCLUSION & HISTOGRAMS ---
+    # Cols 1-2: Occlusion
     show_img(2, 1, occluded_input, "Occluded Input")
     show_img(2, 2, occluded_output, "Occlusion Recovery")
     
-    # Frequency Spectrum (DFT)
-    ax_fft_orig = fig.add_subplot(6, 4, 7)
-    dft_orig = CryptoMetrics.compute_dft_spectrum(original)
-    ax_fft_orig.imshow(dft_orig, cmap='inferno')
-    ax_fft_orig.set_title("DFT Spectrum (Original)", fontsize=9)
-    ax_fft_orig.axis('off')
-    
-    ax_fft_ciph = fig.add_subplot(6, 4, 8)
-    dft_ciph = CryptoMetrics.compute_dft_spectrum(ciphered)
-    ax_fft_ciph.imshow(dft_ciph, cmap='inferno')
-    ax_fft_ciph.set_title("DFT Spectrum (Encrypted)", fontsize=9)
-    ax_fft_ciph.axis('off')
-
-    # --- ROW 3: HISTOGRAMS ---
+    # Cols 3-4: Histograms
     for i, (img, col, label) in enumerate(zip([original, ciphered], ['black', 'red'], ['Original', 'Encrypted'])):
-        ax = fig.add_subplot(6, 4, 9 + i*2) # Spread them out
+        ax = fig.add_subplot(5, 4, 7 + i) 
         hist, bins = np.histogram(img.flatten(), bins=256, range=[0, 256])
         ax.bar(bins[:-1], hist, color=col, width=1.0)
         ax.set_title(f"{label} Histogram", fontsize=9)
         ax.set_xlim([0, 256])
         ax.get_yaxis().set_visible(False)
 
-    # --- ROW 4: CORRELATIONS (ORIGINAL) ---
+    # --- ROW 3: CORRELATIONS (ORIGINAL) ---
     directions = ['horizontal', 'vertical', 'diagonal']
     for i, d in enumerate(directions):
-        ax = fig.add_subplot(6, 4, 13 + i)
+        ax = fig.add_subplot(5, 4, 9 + i)
         x, y = CryptoMetrics.get_pixel_pairs(original, d, max_samples=2000)
         cc = np.corrcoef(x, y)[0, 1]
         ax.scatter(x, y, s=0.1, c='black', alpha=0.5)
         ax.set_title(f"Orig {d[:4].capitalize()} (CC: {cc:.4f})", fontsize=8)
         ax.axis('off')
 
-    # --- ROW 5: CORRELATIONS (ENCRYPTED) ---
+    # --- ROW 4: CORRELATIONS (ENCRYPTED) ---
     for i, d in enumerate(directions):
-        ax = fig.add_subplot(6, 4, 17 + i)
+        ax = fig.add_subplot(5, 4, 13 + i)
         x, y = CryptoMetrics.get_pixel_pairs(ciphered, d, max_samples=2000)
         cc = np.corrcoef(x, y)[0, 1]
         ax.scatter(x, y, s=0.1, c='red', alpha=0.5)
         ax.set_title(f"Enc {d[:4].capitalize()} (CC: {cc:.4f})", fontsize=8)
         ax.axis('off')
 
-    # --- ROW 6: PERFORMANCE CHART ---
-    ax_perf = plt.subplot2grid((6, 4), (5, 0), colspan=4)
+    # --- ROW 5: PERFORMANCE CHART ---
+    ax_perf = plt.subplot2grid((5, 4), (4, 0), colspan=4)
     pixels, t_enc, t_dec = benchmark_data
     
     mp_pixels = [p / 1_000_000.0 for p in pixels] 
@@ -398,7 +373,7 @@ def plot_dashboard(original, ciphered, decrypted,
     ax_perf.grid(True, linestyle='--', alpha=0.6)
 
     plt.tight_layout()
-    plt.subplots_adjust(top=0.95, hspace=0.6)
+    plt.subplots_adjust(top=0.95, hspace=0.4)
     
     out_file = "full_report.jpg"
     print(f"\n[+] Saving Dashboard to: {out_file}")

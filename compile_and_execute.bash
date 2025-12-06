@@ -30,9 +30,22 @@
 #
 # Note: You can compare salidaC.tif with the original to verify correctness
 
-# Build the cipher (8 parallel jobs for faster compilation)
-make -j 8 && \
+# Parse arguments with defaults
+ROUNDS=${1:-3}
+PRECISION=${2:-float}
+
+# Configure build command
+if [ "$PRECISION" == "double" ]; then
+    echo "[SCRIPT] Building with Double Precision..."
+    BUILD_CMD="make -j 8 PRECISION=double"
+else
+    echo "[SCRIPT] Building with Standard Float Precision..."
+    BUILD_CMD="make -j 8"
+fi
+
+# Build the cipher
+eval $BUILD_CMD && \
 # Encrypt the test image
-./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $1 1 8 4 50 50 3.9 1 && \
+./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $ROUNDS 1 8 4 50 50 3.9 1 && \
 # Decrypt the encrypted image (verbose=0 for cleaner output)
-./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $1 0 8 4 50 50 3.9 0
+./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $ROUNDS 0 8 4 50 50 3.9 0
