@@ -121,15 +121,14 @@ __host__ void block_phase_permutation_simple(unsigned char *d_image,
                                              unsigned int *permutation_inverse,
                                              Image_dimensions img_dimensions,
                                              size_t block_size) {
-  dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks(
-      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks(
+        (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+        (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
-  permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
-      d_image, d_image_out, permutation, permutation_inverse, block_size,
-      img_dimensions);
-
+    permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
+        d_image, d_image_out, permutation, permutation_inverse, block_size,
+        img_dimensions);
   cudaDeviceSynchronize();
 }
 
@@ -276,4 +275,32 @@ __host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(
         new ElementalCelularAutomata(cuda_pointer, byte_size * 8, 30);
   }
   return container;
+}
+
+__host__ void unstack_channels_gpu(unsigned char *d_interleaved,
+                                   unsigned char *d_planar,
+                                   int width, int height) {
+  dim3 block(32, 32);
+  dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+  
+  deinterleave_channels_kernel<<<grid, block>>>(d_interleaved, d_planar, width, height);
+  
+  if (cudaPeekAtLastError() != cudaSuccess) {
+     throw std::runtime_error("Launch error: deinterleave_channels_kernel");
+  }
+  cudaDeviceSynchronize();
+}
+
+__host__ void stack_channels_gpu(unsigned char *d_planar,
+                                 unsigned char *d_interleaved,
+                                 int width, int height) {
+  dim3 block(32, 32);
+  dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
+  
+  interleave_channels_kernel<<<grid, block>>>(d_planar, d_interleaved, width, height);
+  
+  if (cudaPeekAtLastError() != cudaSuccess) {
+     throw std::runtime_error("Launch error: interleave_channels_kernel");
+  }
+  cudaDeviceSynchronize();
 }

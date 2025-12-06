@@ -2,7 +2,7 @@
 NVCC = nvcc
 
 # Flags normales
-NVCCFLAGS_NORMAL = -O3 -rdc=true
+NVCCFLAGS_NORMAL = -O3 -rdc=true #-use_fast_math
 
 # Flags de depuración
 NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true

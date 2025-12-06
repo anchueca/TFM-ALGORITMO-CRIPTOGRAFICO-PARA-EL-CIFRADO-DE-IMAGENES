@@ -241,7 +241,7 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
 template <typename T>
 __host__ void generate_flow_stream(D_pointers &d_pointers,
                                    Image_dimensions img_dimensions, T r,
-                                   size_t traansition_length) {
+                                   size_t transition_length) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
@@ -249,7 +249,7 @@ __host__ void generate_flow_stream(D_pointers &d_pointers,
                  threadsPerBlock.x);
   keystream_generation<<<numBlocks, threadsPerBlock>>>(
       d_pointers.d_flow, d_pointers.d_seeds, img_dimensions, r,
-      traansition_length // transition_length
+      transition_length // transition_length
   );
   if (cudaGetLastError() != cudaSuccess) {
     throw std::runtime_error("generate_flow_stream: Flow generation error");
@@ -271,29 +271,43 @@ __host__ void generate_flow_stream(D_pointers &d_pointers,
  * (output) and d_seeds (input/state).
  * @param img_dimensions Struct containing the image dimensions.
  * @param r The chaotic parameter for the map.
- * @param traansition_length The number of transition iterations to perform
+ * @param transition_length The number of transition iterations to perform
  * before generating the stream.
  */
 template <typename T>
-__host__ void generate_flow_stream_paralell(D_pointers &d_pointers,
+__host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
-                                            T r, size_t traansition_length) {
+                                            T r, size_t transition_length) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x - 1) /
                  threadsPerBlock.x);
+
+  // Transition
+  for (size_t i = 0; i < transition_length; i++) {
+    keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
+        nullptr, d_pointers.d_seeds, img_dimensions,
+        r,
+        i
+    );
+  }
+
+  // Stream
   for (size_t i = 0; i < img_dimensions.rows; i++) {
     keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
         d_pointers.d_flow, d_pointers.d_seeds, img_dimensions,
-        r, // Overload for T types
-        i  // transition_length
+        r,
+        i
     );
-    if (cudaGetLastError() != cudaSuccess) {
-      throw std::runtime_error("generate_flow_stream: Flow generation error");
-    }
-    cudaDeviceSynchronize();
   }
+  
+  // Final synchronization to ensure all stream generation is done before proceeding
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+      throw std::runtime_error("generate_flow_stream_parallel: Kernel launch error");
+  }
+  cudaDeviceSynchronize();
 }
 
 /**
@@ -346,5 +360,21 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
 __host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(
     const std::vector<std::vector<unsigned char>> &password_segments,
     size_t num_blocks, size_t block_size, size_t precision_level);
+
+/**
+ * @brief Unstacks an interleaved (BGR) image on the device into a planar format.
+ * Wrapper for deinterleave_channels_kernel.
+ */
+__host__ void unstack_channels_gpu(unsigned char *d_interleaved,
+                                   unsigned char *d_planar,
+                                   int width, int height);
+
+/**
+ * @brief Stacks a planar image on the device into an interleaved (BGR) format.
+ * Wrapper for interleave_channels_kernel.
+ */
+__host__ void stack_channels_gpu(unsigned char *d_planar,
+                                 unsigned char *d_interleaved,
+                                 int width, int height);
 
 #endif // ENCRYPTION_AUX_CUH

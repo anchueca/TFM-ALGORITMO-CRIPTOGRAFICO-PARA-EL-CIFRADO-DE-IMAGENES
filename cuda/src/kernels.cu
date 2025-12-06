@@ -149,3 +149,66 @@ __global__ void generate_automata_chaotic(unsigned int **automata_states,
     d_chaotic_values[idx] = automata_state[idx] & 0x0000FFFF;
   indices[idx] = idx;
 }
+
+__global__ void deinterleave_channels_kernel(const unsigned char *input,
+                                             unsigned char *output,
+                                             int width, int height) {
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+  if (x >= width || y >= height) return;
+
+  // Input pointer treats image as 3-channel interleaved (width * 3 bytes per row)
+  // But strictly speaking, input is uchar array.
+  // OpenCV stores BGR: Pixel at (x,y) is input[(y*width + x)*3 + c]
+  
+  int input_idx_base = (y * width + x) * 3;
+  
+  unsigned char b = input[input_idx_base + 0];
+  unsigned char g = input[input_idx_base + 1];
+  unsigned char r = input[input_idx_base + 2];
+
+  // Output logic: Side-by-side [B][G][R]
+  // Total width of output is 3*width.
+  // B is at (x, y)
+  // G is at (x + width, y)
+  // R is at (x + 2*width, y)
+  
+  // Stride of output is 3*width. 
+  int out_stride = width * 3;
+  
+  output[y * out_stride + x]             = b;
+  output[y * out_stride + (x + width)]   = g;
+  output[y * out_stride + (x + 2*width)] = r;
+}
+
+__global__ void interleave_channels_kernel(const unsigned char *input,
+                                           unsigned char *output,
+                                           int width, int height) {
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+  // We iterate over the ORIGINAL image dimensions (WxH)
+  if (x >= width || y >= height) return;
+  
+  // Input maps:
+  // B: (x, y)
+  // G: (x + width, y)
+  // R: (x + 2*width, y)
+  // Input stride is 3*width (concatenated image width)
+  
+  int in_stride = width * 3;
+  
+  unsigned char b = input[y * in_stride + x];
+  unsigned char g = input[y * in_stride + (x + width)];
+  unsigned char r = input[y * in_stride + (x + 2*width)];
+  
+  // Output: Interleaved BGR.
+  // Stride: width * 3
+  
+  int output_idx_base = (y * width + x) * 3;
+  
+  output[output_idx_base + 0] = b;
+  output[output_idx_base + 1] = g;
+  output[output_idx_base + 2] = r;
+}

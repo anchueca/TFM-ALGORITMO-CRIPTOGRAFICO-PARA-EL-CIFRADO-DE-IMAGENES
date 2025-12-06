@@ -72,9 +72,7 @@ __global__ void keystream_generation(unsigned char *__restrict__ d_flow,
   for (int y = 0; y < img_dimensions.rows; y++) {
     xn = uno<T>(xn, r);
 
-    unsigned char keystream_byte = convertToBitStream(xn);
-
-    d_flow[idx] = keystream_byte;
+    d_flow[idx] = convertToBitStream(xn);
 
     idx += stride;
   }
@@ -109,34 +107,18 @@ __global__ void keystream_generation_parallel(
 
   int current_idx = position * img_dimensions.cols + x;
 
-  T xn;
+  T left_xn = (x > 0) ? d_seeds[x - 1] : d_seeds[img_dimensions.cols - 1];
+  T previous_xn = d_seeds[x];
+  T right_xn = (x < img_dimensions.cols - 1) ? d_seeds[x + 1] : d_seeds[0];
 
-  if (position == 0) {
-    xn = (T)d_seeds[x];
-  } else {
-    int prev_row_offset = (position - 1) * img_dimensions.cols;
+  T coupled_xn = (previous_xn + left_xn + right_xn)/3;
 
-    unsigned char c = d_flow[prev_row_offset + x];
+  coupled_xn = uno<T>(coupled_xn, r);
 
-    int idx_left = (x == 0) ? img_dimensions.cols - 1 : x - 1;
-    unsigned char l = d_flow[prev_row_offset + idx_left];
+  if (d_flow != nullptr)
+    d_flow[current_idx] = convertToBitStream(coupled_xn);
 
-    int idx_right = (x == img_dimensions.cols - 1) ? 0 : x + 1;
-    unsigned char r_val = d_flow[prev_row_offset + idx_right];
-
-    unsigned char coupled_value = l ^ c ^ r_val;
-
-    xn = (T)coupled_value;
-  }
-
-  xn = uno<T>(xn, r);
-
-  unsigned char keystream_byte = convertToBitStream(xn);
-  d_flow[current_idx] = keystream_byte;
-
-  if (position == img_dimensions.rows - 1) {
-    d_seeds[x] = xn;
-  }
+  d_seeds[x] = coupled_xn;
 }
 
 /**
@@ -300,5 +282,21 @@ __global__ void generate_automata_chaotic(unsigned int **automata_states,
                                           size_t num_blocks,
                                           unsigned int *indices,
                                           size_t block_length);
+
+/**
+ * @brief De-interleaves a 3-channel image (BGRBGR...) into a planar horizontally stacked layout (B...G...R...).
+ * Mapping: Input(x,y, c) -> Output(x + c*width, y)
+ */
+__global__ void deinterleave_channels_kernel(const unsigned char *input,
+                                             unsigned char *output,
+                                             int width, int height);
+
+/**
+ * @brief Interleaves a planar horizontally stacked image (B...G...R...) into a 3-channel layout (BGRBGR...).
+ * Mapping: Input(x + c*width, y) -> Output(x,y, c)
+ */
+__global__ void interleave_channels_kernel(const unsigned char *input,
+                                           unsigned char *output,
+                                           int width, int height);
 
 #endif // KERNELS_CUH
