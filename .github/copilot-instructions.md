@@ -19,13 +19,13 @@ This file contains concise, actionable guidance to help AI coding agents be prod
 
 - **CLI usage (important — fixed arg order):**
   - Signature (exact 10 numeric args expected after paths/password):
-    `./bin/cipher.out <InputPath> <OutputPath> <Password> <Rounds> <Verbose(0/1)> <Mode(1=Enc/0=Dec)> <BlockSize> <Precision> <AutoSteps> <TransLen>`
+    `./bin/cipher.out <InputPath> <OutputPath> <Password> <Rounds> <Verbose(0/1)> <Mode(1=Enc/0=Dec)> <BlockSize> <AutoSteps> <TransLen>`
   - `main.cu` enforces `required_args == 11` (program name + 10 arguments). Keep this ordering and types.
   - Example encrypt (from `compile_and_execute.bash`):
-    `./bin/cipher.out ../repositorio/set3/lena3.jpg ./bin/salida.tif password 3 1 1 8 2 20 10`
+    `./bin/cipher.out ../repositorio/set3/lena3.jpg ./bin/salida.tif password 3 1 1 8 20 10`
 
 - **Key data structures & semantics:**
-  - `EncryptionParams` (see `c++/include/structs.cuh`): `rounds`, `block_size`, `precision_level`, `automata_steps`, `transition_length` — these control algorithm phases.
+  - `EncryptionParams` (see `c++/include/structs.cuh`): `rounds`, `block_size`, `automata_steps`, `transition_length` — these control algorithm phases.
   - Image handling: code uses `cv::imread(..., IMREAD_UNCHANGED)` and explicitly unstacks/stacks RGB channels inside `encrypt_image` (see `encryption.cuh`). Don’t change channel handling without verifying restacking logic.
 
 - **CUDA & toolchain notes:**

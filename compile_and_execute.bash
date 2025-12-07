@@ -20,7 +20,6 @@
 #   3. Decrypts the encrypted image
 #   4. Both operations use:
 #      - Block size: 8
-#      - Precision: 4
 #      - Automata steps: 50
 #      - Transition length: 50
 #      - Chaos parameter: 3.9
@@ -46,6 +45,6 @@ fi
 # Build the cipher
 eval $BUILD_CMD && \
 # Encrypt the test image
-./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $ROUNDS 1 8 4 50 50 3.9 1 && \
+./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $ROUNDS 1 8 50 50 3.9 1 && \
 # Decrypt the encrypted image (verbose=0 for cleaner output)
-./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $ROUNDS 0 8 4 50 50 3.9 0
+./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $ROUNDS 0 8 50 50 3.9 0

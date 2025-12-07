@@ -30,20 +30,39 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
  * @brief Calculate password segments from a textual password.
  *
  * This function derives multiple password segments used across blocks and
- * automata. Parameters control how many blocks are generated, the precision
- * level of derivation, number of rounds, and target image dimensions.
+ * automata. Parameters control how many blocks are generated, number of rounds,
+ * and target image dimensions.
  *
  * @param input Password string provided by the user.
  * @param num_blocks Number of blocks to split the password into.
- * @param precision_level Precision level used during derivation.
- * @param rounds Number of internal rounds for the KDF.
  * @param image_height Height of target image (for sizing segments).
  * @param image_width Width of target image (for sizing segments).
  * @return Vector of password byte vectors, one per block.
  */
 __host__ std::vector<std::vector<unsigned char>>
 calculate_password(const std::string &input, size_t num_blocks,
-                   size_t precision_level, Image_dimensions img_dimensions,
+                   Image_dimensions img_dimensions,
                    bool verbose);
+
+/**
+ * @brief Unstacks a 3-channel image into a single-channel wide image.
+ *
+ * @param image Input image.
+ * @param verbose Enable verbose logging.
+ * @return cv::Mat Single-channel image.
+ */
+cv::Mat unstack_channels(const cv::Mat &image, bool verbose);
+
+/**
+ * @brief Stacks a single-channel wide image back into a 3-channel image if
+ * needed.
+ *
+ * @param image Output image (modified in place).
+ * @param processed_image Input single-channel wide image.
+ * @param is_color Whether the original image was color.
+ * @param verbose Enable verbose logging.
+ */
+void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
+                    bool is_color, bool verbose);
 
 #endif // AUX_CUH

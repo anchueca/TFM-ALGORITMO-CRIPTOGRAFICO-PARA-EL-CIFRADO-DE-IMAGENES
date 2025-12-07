@@ -20,8 +20,8 @@ enum class OutputMode {
 
 void print_usage(const char *prog_name) {
   cout << "Usage: " << prog_name << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
-       << "<Rounds <Mode(1=Enc/0=Dec)> <BlockSize>"
-       << "<Precision> <AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>" << endl;
+       << "<Rounds <Mode(1=Enc/0=Dec)> <BlockSize> "
+       << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>" << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
   cout << "  SHOW     : Opens a window with the result (Requires GUI)" << endl;
@@ -29,7 +29,7 @@ void print_usage(const char *prog_name) {
 }
 
 int main(int argc, char **argv) {
-  const size_t required_args = 12;
+  const size_t required_args = 11;
 
   if (argc != required_args) {
     cerr << "[ERROR] Invalid number of arguments! " << argc << " received, "
@@ -56,15 +56,14 @@ int main(int argc, char **argv) {
     encrypt = (strcmp(argv[5], "1") == 0);
     
     params.block_size = stoi(argv[6]);
-    params.precision_level = stoi(argv[7]);
-    params.automata_steps = stoi(argv[8]);
-    params.transition_length = stoi(argv[9]);
+    params.automata_steps = stoi(argv[7]);
+    params.transition_length = stoi(argv[8]);
 #ifdef USE_DOUBLE_PRECISION
-    params.chaos_parameter = stod(argv[10]);
+    params.chaos_parameter = stod(argv[9]);
 #else
-    params.chaos_parameter = stof(argv[10]);
+    params.chaos_parameter = stof(argv[9]);
 #endif
-    verbose_arg = (strcmp(argv[11], "1") == 0);
+    verbose_arg = (strcmp(argv[10], "1") == 0);
 
     if (output_arg == "SHOW" || output_arg == "NULL") {
         output_mode = OutputMode::DISPLAY_WINDOW;
@@ -152,7 +151,7 @@ int main(int argc, char **argv) {
   auto start = std::chrono::high_resolution_clock::now();
 
   try {
-    // Call the smart encryption function
+    // Call encryption function
     encrypt_image(image, password, params, verbose_arg, encrypt);
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During encryption process: " << e.what() << endl;
@@ -191,7 +190,7 @@ int main(int argc, char **argv) {
               cv::namedWindow("Cipher Result", cv::WINDOW_AUTOSIZE);
               cv::imshow("Cipher Result", image);
               if (verbose_arg) std::cout << "Displaying image. Press any key to close..." << std::endl;
-              cv::waitKey(0); // Espera infinita hasta pulsar tecla
+              cv::waitKey(0);
           } catch (const cv::Exception& e) {
               cerr << "[ERROR] GUI Call failed (No X11/Display?): " << e.what() << endl;
               return -1;

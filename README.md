@@ -39,7 +39,7 @@ Notes:
 The CLI expects exactly 12 arguments after the binary name (see `main.cu`):
 
 ```
-./bin/cipher.out <InputPath> <OutputPath|SHOW|STDOUT> <Password> <Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> <Precision> <AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>
+./bin/cipher.out <InputPath> <OutputPath|SHOW|STDOUT> <Password> <Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> <AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>
 ```
 
 **Arguments:**
@@ -49,7 +49,6 @@ The CLI expects exactly 12 arguments after the binary name (see `main.cu`):
 - `Rounds`: Number of encryption rounds (typically 1-5)
 - `Mode`: `1` for encryption, `0` for decryption
 - `BlockSize`: Size of square blocks for block permutations (e.g., 8, 16, 32)
-- `Precision`: Precision level for automata/password derivation (e.g., 2, 4, 8)
 - `AutoSteps`: Number of cellular automata evolution steps (e.g., 20, 50, 100)
 - `TransLen`: Transition sequence length for flow permutations (e.g., 10, 20, 50)
 - `chaosParam`: Chaos parameter for the logistic map (typically 3.57-4.0, e.g., 3.9 or 3.999)

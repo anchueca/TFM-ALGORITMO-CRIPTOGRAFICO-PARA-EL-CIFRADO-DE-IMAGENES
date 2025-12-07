@@ -76,7 +76,7 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
       calculate_password(password, num_blocks_permutations,
-                         params.precision_level, img_dimensions, verbose);
+                         img_dimensions, verbose);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
 
@@ -305,40 +305,5 @@ void permutation_encryption_process(D_pointers &d_pointers,
                                    d_pointers.d_permutation_blocks_inverse,
                                    img_dimensions, block_size);
     std::swap(d_pointers.d_flow, d_pointers.d_image_out);
-  }
-}
-
-cv::Mat unstack_channels(const cv::Mat &image, bool verbose) {
-  cv::Mat processed_image;
-  if (image.channels() == 3) {
-    if (verbose)
-      std::cout << "[INFO] 3-Channel image detected. Unstacking..."
-                << std::endl;
-    std::vector<cv::Mat> channels;
-    cv::split(image, channels);
-    cv::hconcat(channels, processed_image);
-  } else {
-    processed_image = image.clone();
-  }
-  return processed_image;
-}
-
-void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
-                    bool is_color, bool verbose) {
-  if (is_color) {
-    if (verbose)
-      std::cout << "[INFO] Restacking channels back to RGB..." << std::endl;
-
-    int w = processed_image.cols / 3;
-    int h = processed_image.rows;
-
-    cv::Mat b = processed_image(cv::Rect(0, 0, w, h));
-    cv::Mat g = processed_image(cv::Rect(w, 0, w, h));
-    cv::Mat r = processed_image(cv::Rect(2 * w, 0, w, h));
-
-    std::vector<cv::Mat> channels = {b, g, r};
-    cv::merge(channels, image);
-  } else {
-    image = processed_image;
   }
 }

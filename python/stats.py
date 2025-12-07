@@ -143,11 +143,15 @@ class CryptoMetrics:
 
 # --- 2. EXECUTION WRAPPER ---
 class ExternalCipherTester:
-    def __init__(self, exe_path, input_path, password, rounds):
+    def __init__(self, exe_path, input_path, password, rounds, chaos, block_size, automata_steps, transition):
         self.exe = exe_path
         self.input_path = input_path
         self.password = password
         self.rounds = str(rounds)
+        self.chaos = str(chaos)
+        self.block_size = str(block_size)
+        self.automata_steps = str(automata_steps)
+        self.transition = str(transition)
         self.original_img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
         if self.original_img is None: raise ValueError(f"Image not found: {input_path}")
 
@@ -161,7 +165,7 @@ class ExternalCipherTester:
         cmd = [
             self.exe, "STDIN", "STDOUT",
             password_to_use, self.rounds, mode_flag,
-            "8", "4", "20", "10", "3.999", "0"
+            self.block_size, self.automata_steps, self.transition, self.chaos, "0"
         ]
         try:
             res = subprocess.run(cmd, input=encoded_buffer.tobytes(), capture_output=True, check=True)
@@ -245,7 +249,7 @@ class ExternalCipherTester:
         return damaged, recovered
 
     def run_scalability_test(self, repeats=5):
-        scales = [0.5, 1.0, 2.0, 4.0] 
+        scales = [1.0, 2.0, 4.0] 
         pixel_counts = []
         enc_times_avg = []
         dec_times_avg = []
@@ -385,14 +389,26 @@ def main():
     parser.add_argument("input")
     parser.add_argument("password")
     parser.add_argument("exe")
-    parser.add_argument("--rounds", type=int, default=3)
+    
+    # Optional algorithm parameters
+    parser.add_argument("--rounds", type=int, default=3, help="Number of encryption rounds")
+    parser.add_argument("--chaos", type=float, default=3.999, help="Chaotic map parameter")
+    parser.add_argument("--block-size", type=int, default=8, help="Block size in pixels")
+    parser.add_argument("--steps", type=int, default=50, help="Automata evolution steps")
+    parser.add_argument("--trans", type=int, default=50, help="Transition length")
+    
     args = parser.parse_args()
 
     if not os.path.exists(args.input): return
 
     try:
-        tester = ExternalCipherTester(args.exe, args.input, args.password, args.rounds)
+        tester = ExternalCipherTester(
+            args.exe, args.input, args.password, 
+            args.rounds, args.chaos, 
+            args.block_size, args.steps, args.trans
+        )
         
+        print(f"[+] Config: Rounds={args.rounds}, Chaos={args.chaos}, Block={args.block_size}, Steps={args.steps}, Trans={args.trans}")
         print("[+] 1. Functional Test (Enc/Dec)...")
         ciphered = tester.encrypt_flow()
         decrypted = tester.decrypt_flow(ciphered)

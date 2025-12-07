@@ -30,14 +30,6 @@
  * automatically)
  *   - Recommended: 8-16 for most images
  *
- * - @b precision_level: Precision parameter for key derivation and automata
- * initialization.
- *   - Valid range: 1-16
- *   - Typical values: 2, 4, 8
- *   - Higher precision = more secure key derivation
- *   - Affects the granularity of password-to-key transformation
- *   - Recommended: 4 for balanced security
- *
  * - @b automata_steps: Number of evolution steps for elementary cellular
  * automata.
  *   - Valid range: 1-1000
@@ -93,7 +85,6 @@ using Real = float;
 struct EncryptionParams {
   size_t rounds;
   size_t block_size;
-  size_t precision_level;
   size_t automata_steps;
   size_t transition_length;
   Real chaos_parameter;

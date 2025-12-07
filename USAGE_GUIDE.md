@@ -74,7 +74,6 @@ cd /path/to/TFM-ALGORITMO-CRIPTOGRAFICO-PARA-EL-CIFRADO-DE-IMAGENES
 - `3` - Number of rounds
 - `1` - Mode: 1 = encrypt
 - `8` - Block size
-- `4` - Precision level
 - `20` - Automata steps
 - `10` - Transition length
 - `3.9` - Chaos parameter
@@ -190,7 +189,6 @@ ncu --set full ./bin/cipher.out ../repositorio/set3/lena3.jpg output.tif passwor
 |-----------|---------------------|----------|---------------------|
 | `Rounds` | 1 | 3 | 5 |
 | `BlockSize` | 32 | 8-16 | 8 |
-| `Precision` | 2 | 4 | 8 |
 | `AutoSteps` | 10 | 20-50 | 100 |
 | `TransLen` | 5 | 10-20 | 50 |
 

@@ -46,13 +46,13 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input, size
 // Calculate password segments from a master password (implementation)
 __host__ std::vector<std::vector<unsigned char>>
 calculate_password(const std::string &input, size_t num_blocks,
-                   size_t precision_level, Image_dimensions img_dimensions, bool verbose) {
+                   Image_dimensions img_dimensions, bool verbose) {
 
   // Required lengths
   int bytes_for_rows = img_dimensions.rows * 2;
   int bytes_for_columns = img_dimensions.cols * 2;
-  int bytes_for_blocks = num_blocks * precision_level;
-  int bytes_for_flow = img_dimensions.cols * precision_level;
+  int bytes_for_blocks = num_blocks * 4;
+  int bytes_for_flow = img_dimensions.cols * 4;
 
   // Total length
   int length_bytes =
@@ -82,4 +82,39 @@ calculate_password(const std::string &input, size_t num_blocks,
       password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks,
       password.end());
   return password_segments;
+}
+
+cv::Mat unstack_channels(const cv::Mat &image, bool verbose) {
+  cv::Mat processed_image;
+  if (image.channels() == 3) {
+    if (verbose)
+      std::cout << "[INFO] 3-Channel image detected. Unstacking..."
+                << std::endl;
+    std::vector<cv::Mat> channels;
+    cv::split(image, channels);
+    cv::hconcat(channels, processed_image);
+  } else {
+    processed_image = image.clone();
+  }
+  return processed_image;
+}
+
+void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
+                    bool is_color, bool verbose) {
+  if (is_color) {
+    if (verbose)
+      std::cout << "[INFO] Restacking channels back to RGB..." << std::endl;
+
+    int w = processed_image.cols / 3;
+    int h = processed_image.rows;
+
+    cv::Mat b = processed_image(cv::Rect(0, 0, w, h));
+    cv::Mat g = processed_image(cv::Rect(w, 0, w, h));
+    cv::Mat r = processed_image(cv::Rect(2 * w, 0, w, h));
+
+    std::vector<cv::Mat> channels = {b, g, r};
+    cv::merge(channels, image);
+  } else {
+    image = processed_image;
+  }
 }

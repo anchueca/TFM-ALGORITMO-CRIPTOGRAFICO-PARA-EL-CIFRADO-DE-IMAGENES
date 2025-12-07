@@ -298,9 +298,6 @@ Defined in `EncryptionParams` struct:
 - **`block_size`:** Block dimension for block permutations (8, 16, 32 typical)
   - Larger blocks = faster but coarser mixing
   
-- **`precision_level`:** Key derivation precision (2, 4, 8 typical)
-  - Higher = more secure key derivation
-  
 - **`automata_steps`:** Cellular automata evolution steps (20-100 typical)
   - More steps = more random permutations
   

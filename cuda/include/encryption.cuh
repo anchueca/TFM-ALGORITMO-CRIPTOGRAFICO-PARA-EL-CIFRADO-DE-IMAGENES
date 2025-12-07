@@ -131,25 +131,4 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
                                           Image_dimensions img_dimensions,
                                           size_t block_size);
 
-/**
- * @brief Unstacks a 3-channel image into a single-channel wide image.
- *
- * @param image Input image.
- * @param verbose Enable verbose logging.
- * @return cv::Mat Single-channel image.
- */
-cv::Mat unstack_channels(const cv::Mat &image, bool verbose);
-
-/**
- * @brief Stacks a single-channel wide image back into a 3-channel image if
- * needed.
- *
- * @param image Output image (modified in place).
- * @param processed_image Input single-channel wide image.
- * @param is_color Whether the original image was color.
- * @param verbose Enable verbose logging.
- */
-void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
-                    bool is_color, bool verbose);
-
 #endif // ENCRYPTION_CUH
