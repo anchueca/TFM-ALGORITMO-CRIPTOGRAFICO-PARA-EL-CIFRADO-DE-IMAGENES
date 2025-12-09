@@ -12,20 +12,18 @@
 
 using namespace std;
 
-enum class OutputMode {
-    FILE_SAVE,
-    DISPLAY_WINDOW,
-    STDOUT_STREAM
-};
+enum class OutputMode { FILE_SAVE, DISPLAY_WINDOW, STDOUT_STREAM };
 
 void print_usage(const char *prog_name) {
-  cout << "Usage: " << prog_name << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
+  cout << "Usage: " << prog_name
+       << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
        << "<Rounds <Mode(1=Enc/0=Dec)> <BlockSize> "
        << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>" << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
   cout << "  SHOW     : Opens a window with the result (Requires GUI)" << endl;
-  cout << "  STDOUT   : Pipes binary image data (TIFF) to standard output" << endl;
+  cout << "  STDOUT   : Pipes binary image data (TIFF) to standard output"
+       << endl;
 }
 
 int main(int argc, char **argv) {
@@ -46,6 +44,8 @@ int main(int argc, char **argv) {
   bool encrypt = true;
   OutputMode output_mode = OutputMode::FILE_SAVE;
 
+  params.num_blocks_permutations = 1;
+
   // --- 1. Parse Arguments ---
   try {
     input_image_path = argv[1];
@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
     params.rounds = stoi(argv[4]);
 
     encrypt = (strcmp(argv[5], "1") == 0);
-    
+
     params.block_size = stoi(argv[6]);
     params.automata_steps = stoi(argv[7]);
     params.transition_length = stoi(argv[8]);
@@ -66,11 +66,11 @@ int main(int argc, char **argv) {
     verbose_arg = (strcmp(argv[10], "1") == 0);
 
     if (output_arg == "SHOW" || output_arg == "NULL") {
-        output_mode = OutputMode::DISPLAY_WINDOW;
+      output_mode = OutputMode::DISPLAY_WINDOW;
     } else if (output_arg == "STDOUT") {
-        output_mode = OutputMode::STDOUT_STREAM;
+      output_mode = OutputMode::STDOUT_STREAM;
     } else {
-        output_mode = OutputMode::FILE_SAVE;
+      output_mode = OutputMode::FILE_SAVE;
     }
 
   } catch (const std::exception &e) {
@@ -80,45 +80,43 @@ int main(int argc, char **argv) {
   }
 
   if (output_arg == "SHOW" || output_arg == "NULL") {
-        output_mode = OutputMode::DISPLAY_WINDOW;
-    } else if (output_arg == "STDOUT") {
-        output_mode = OutputMode::STDOUT_STREAM;
-        verbose_arg = false;
-    } else {
-        output_mode = OutputMode::FILE_SAVE;
-    }
+    output_mode = OutputMode::DISPLAY_WINDOW;
+  } else if (output_arg == "STDOUT") {
+    output_mode = OutputMode::STDOUT_STREAM;
+    verbose_arg = false;
+  } else {
+    output_mode = OutputMode::FILE_SAVE;
+  }
 
   // --- 2. Load Image ---
   cv::Mat image;
   if (input_image_path == "STDIN") {
-      // MEMORY MODE 
-      std::ios::sync_with_stdio(false);
-      
-      std::vector<uchar> input_buffer(
-          (std::istreambuf_iterator<char>(std::cin)),
-          (std::istreambuf_iterator<char>())
-      );
+    // MEMORY MODE
+    std::ios::sync_with_stdio(false);
 
-      if (input_buffer.empty()) {
-          cerr << "[ERROR] STDIN mode selected but no data received." << endl;
-          return -1;
-      }
+    std::vector<uchar> input_buffer((std::istreambuf_iterator<char>(std::cin)),
+                                    (std::istreambuf_iterator<char>()));
 
-      try {
-          image = cv::imdecode(input_buffer, cv::IMREAD_UNCHANGED);
-      } catch (const cv::Exception& e) {
-          cerr << "[ERROR] Failed to decode image from STDIN: " << e.what() << endl;
-          return -1;
-      }
+    if (input_buffer.empty()) {
+      cerr << "[ERROR] STDIN mode selected but no data received." << endl;
+      return -1;
+    }
+
+    try {
+      image = cv::imdecode(input_buffer, cv::IMREAD_UNCHANGED);
+    } catch (const cv::Exception &e) {
+      cerr << "[ERROR] Failed to decode image from STDIN: " << e.what() << endl;
+      return -1;
+    }
 
   } else {
-      // DISK MODE
-      image = cv::imread(input_image_path, cv::IMREAD_UNCHANGED);
+    // DISK MODE
+    image = cv::imread(input_image_path, cv::IMREAD_UNCHANGED);
   }
 
   if (image.empty()) {
-      cerr << "[ERROR] Image data is empty or corrupted." << endl;
-      return -1;
+    cerr << "[ERROR] Image data is empty or corrupted." << endl;
+    return -1;
   }
 
   // --- 3. Initial Report ---
@@ -126,8 +124,9 @@ int main(int argc, char **argv) {
     std::cout
         << "\n============================================================"
         << std::endl;
-    std::cout << "                     CLI EXECUTION START                      "
-              << std::endl;
+    std::cout
+        << "                     CLI EXECUTION START                      "
+        << std::endl;
     std::cout << "============================================================"
               << std::endl;
     std::cout << "  Input File:    " << input_image_path << std::endl;
@@ -140,9 +139,11 @@ int main(int argc, char **argv) {
         << std::endl;
 
 #ifdef USE_DOUBLE_PRECISION
-    std::cout << " [PRECISION INFO]:       DOUBLE (High Precision)" << std::endl;
+    std::cout << " [PRECISION INFO]:       DOUBLE (High Precision)"
+              << std::endl;
 #else
-    std::cout << " [PRECISION INFO]:       FLOAT (Standard Precision)" << std::endl;
+    std::cout << " [PRECISION INFO]:       FLOAT (Standard Precision)"
+              << std::endl;
 #endif
   }
 
@@ -162,7 +163,8 @@ int main(int argc, char **argv) {
   std::chrono::duration<double> time = end - start;
 
   if (verbose_arg) {
-    std::cout << "Total Pipeline Time: " << time.count() * 1000.0f << " ms" << std::endl;
+    std::cout << "Total Pipeline Time: " << time.count() * 1000.0f << " ms"
+              << std::endl;
   }
   // Always print time to stderr for Python parsing (excludes overhead)
   std::cerr << "EXEC_TIME:" << time.count() << std::endl;
@@ -175,48 +177,49 @@ int main(int argc, char **argv) {
   }
 
   switch (output_mode) {
-      case OutputMode::FILE_SAVE: {
-          if (!cv::imwrite(output_arg, image)) {
-            cerr << "[ERROR] Failed to write output image to: " << output_arg
-                 << endl;
-            return -1;
-          }
-          if (verbose_arg) std::cout << "Image saved successfully to " << output_arg << std::endl;
-          break;
-      }
+  case OutputMode::FILE_SAVE: {
+    if (!cv::imwrite(output_arg, image)) {
+      cerr << "[ERROR] Failed to write output image to: " << output_arg << endl;
+      return -1;
+    }
+    if (verbose_arg)
+      std::cout << "Image saved successfully to " << output_arg << std::endl;
+    break;
+  }
 
-      case OutputMode::DISPLAY_WINDOW: {
-          try {
-              cv::namedWindow("Cipher Result", cv::WINDOW_AUTOSIZE);
-              cv::imshow("Cipher Result", image);
-              if (verbose_arg) std::cout << "Displaying image. Press any key to close..." << std::endl;
-              cv::waitKey(0);
-          } catch (const cv::Exception& e) {
-              cerr << "[ERROR] GUI Call failed (No X11/Display?): " << e.what() << endl;
-              return -1;
-          }
-          break;
-      }
+  case OutputMode::DISPLAY_WINDOW: {
+    try {
+      cv::namedWindow("Cipher Result", cv::WINDOW_AUTOSIZE);
+      cv::imshow("Cipher Result", image);
+      if (verbose_arg)
+        std::cout << "Displaying image. Press any key to close..." << std::endl;
+      cv::waitKey(0);
+    } catch (const cv::Exception &e) {
+      cerr << "[ERROR] GUI Call failed (No X11/Display?): " << e.what() << endl;
+      return -1;
+    }
+    break;
+  }
 
-      case OutputMode::STDOUT_STREAM: {
-          std::vector<uchar> buf;
-          bool success = false;
-          try {
-             success = cv::imencode(".tif", image, buf);
-          } catch (const cv::Exception& e) {
-             cerr << "[ERROR] Encoding for stream failed: " << e.what() << endl;
-             return -1;
-          }
+  case OutputMode::STDOUT_STREAM: {
+    std::vector<uchar> buf;
+    bool success = false;
+    try {
+      success = cv::imencode(".tif", image, buf);
+    } catch (const cv::Exception &e) {
+      cerr << "[ERROR] Encoding for stream failed: " << e.what() << endl;
+      return -1;
+    }
 
-          if (success) {
-              std::cout.write(reinterpret_cast<const char*>(buf.data()), buf.size());
-              std::cout.flush();
-          } else {
-              cerr << "[ERROR] Failed to encode image for streaming." << endl;
-              return -1;
-          }
-          break;
-      }
+    if (success) {
+      std::cout.write(reinterpret_cast<const char *>(buf.data()), buf.size());
+      std::cout.flush();
+    } else {
+      cerr << "[ERROR] Failed to encode image for streaming." << endl;
+      return -1;
+    }
+    break;
+  }
   }
 
   return 0;

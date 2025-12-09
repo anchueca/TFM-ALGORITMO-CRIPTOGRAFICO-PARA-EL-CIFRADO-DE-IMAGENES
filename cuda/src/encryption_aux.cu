@@ -9,7 +9,7 @@
 
 __host__ unsigned int *generate_automata_permutations(
     const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
-    const size_t block_length,bool verbose) {
+    const size_t block_length, bool verbose) {
 
   size_t num_blocks = automatas.size();
   size_t total_size = num_blocks * block_length;
@@ -76,7 +76,8 @@ __host__ unsigned int *generate_automata_permutations(
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
-    std::cout << "\t\tAutomata & Gen time: " << time.count() * 1000.0f << " ms" << std::endl;
+    std::cout << "\t\tAutomata & Gen time: " << time.count() * 1000.0f << " ms"
+              << std::endl;
 
   // Short
   start = std::chrono::high_resolution_clock::now();
@@ -91,28 +92,13 @@ __host__ unsigned int *generate_automata_permutations(
   end = std::chrono::high_resolution_clock::now();
   time = end - start;
   if (verbose)
-    std::cout << "\t\tBatched Sort time: " << time.count() * 1000.0f << " ms" << std::endl;
+    std::cout << "\t\tBatched Sort time: " << time.count() * 1000.0f << " ms"
+              << std::endl;
 
   cudaFree(d_automatas);
   cudaFree(d_chaotic_values);
 
   return d_indices;
-}
-
-__host__ void block_phase_permutation(unsigned char *d_image,
-                                      unsigned char *d_image_out,
-                                      unsigned int *block_permutations,
-                                      Image_dimensions img_dimensions,
-                                      size_t block_size) {
-  dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks(
-      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-  permute_blocks_kernel<<<numBlocks, threadsPerBlock>>>(
-      d_image, d_image_out, block_permutations, block_size, img_dimensions);
-
-  cudaDeviceSynchronize();
 }
 
 __host__ void block_phase_permutation_simple(unsigned char *d_image,
@@ -121,14 +107,14 @@ __host__ void block_phase_permutation_simple(unsigned char *d_image,
                                              unsigned int *permutation_inverse,
                                              Image_dimensions img_dimensions,
                                              size_t block_size) {
-    dim3 threadsPerBlock(16, 16);
-    dim3 numBlocks(
-        (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-        (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+  dim3 threadsPerBlock(16, 16);
+  dim3 numBlocks(
+      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
-    permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, permutation, permutation_inverse, block_size,
-        img_dimensions);
+  permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
+      d_image, d_image_out, permutation, permutation_inverse, block_size,
+      img_dimensions);
   cudaDeviceSynchronize();
 }
 
@@ -191,32 +177,28 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 __host__ void flow_encrypt(D_pointers &d_pointers,
                            Image_dimensions img_dimensions) {
 
-    dim3 threadsPerBlock(16, 16);
+  dim3 threadsPerBlock(16, 16);
 
-    dim3 numBlocks(
-        (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-        (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y
-    );
+  dim3 numBlocks(
+      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
-    image_xor<<<numBlocks, threadsPerBlock>>>(
-        d_pointers.d_flow, 
-        d_pointers.d_image, 
-        img_dimensions
-    );
+  image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,
+                                            d_pointers.d_image, img_dimensions);
 
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        std::string errorMsg = "Flow encryption kernel launch error: ";
-        errorMsg += cudaGetErrorString(err);
-        throw std::runtime_error(errorMsg);
-    }
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    std::string errorMsg = "Flow encryption kernel launch error: ";
+    errorMsg += cudaGetErrorString(err);
+    throw std::runtime_error(errorMsg);
+  }
 
-    err = cudaDeviceSynchronize();
-    if (err != cudaSuccess) {
-        std::string errorMsg = "Flow encryption execution error: ";
-        errorMsg += cudaGetErrorString(err);
-        throw std::runtime_error(errorMsg);
-    }
+  err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) {
+    std::string errorMsg = "Flow encryption execution error: ";
+    errorMsg += cudaGetErrorString(err);
+    throw std::runtime_error(errorMsg);
+  }
 }
 
 __host__ void inverse_permutations(unsigned int *d_permutations,
@@ -238,8 +220,12 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
   invert_permutations_kernel<<<gridOfBlocks, threadsPerBlock>>>(
       d_permutations, *d_permutations_inverse, block_length, num_permutations);
 
-  if (cudaGetLastError() != cudaSuccess) {
-    throw std::runtime_error("Invert permutation error");
+  cudaError_t err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    cudaFree(*d_permutations_inverse);
+    throw std::runtime_error(
+        std::string("Kernel launch error in inverse_permutations: ") +
+        cudaGetErrorString(err));
   }
   cudaDeviceSynchronize();
 }
@@ -278,29 +264,31 @@ __host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(
 }
 
 __host__ void unstack_channels_gpu(unsigned char *d_interleaved,
-                                   unsigned char *d_planar,
-                                   int width, int height) {
+                                   unsigned char *d_planar, int width,
+                                   int height) {
   dim3 block(32, 32);
   dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
-  
-  deinterleave_channels_kernel<<<grid, block>>>(d_interleaved, d_planar, width, height);
-  
+
+  deinterleave_channels_kernel<<<grid, block>>>(d_interleaved, d_planar, width,
+                                                height);
+
   if (cudaPeekAtLastError() != cudaSuccess) {
-     throw std::runtime_error("Launch error: deinterleave_channels_kernel");
+    throw std::runtime_error("Launch error: deinterleave_channels_kernel");
   }
   cudaDeviceSynchronize();
 }
 
 __host__ void stack_channels_gpu(unsigned char *d_planar,
-                                 unsigned char *d_interleaved,
-                                 int width, int height) {
+                                 unsigned char *d_interleaved, int width,
+                                 int height) {
   dim3 block(32, 32);
   dim3 grid((width + block.x - 1) / block.x, (height + block.y - 1) / block.y);
-  
-  interleave_channels_kernel<<<grid, block>>>(d_planar, d_interleaved, width, height);
-  
+
+  interleave_channels_kernel<<<grid, block>>>(d_planar, d_interleaved, width,
+                                              height);
+
   if (cudaPeekAtLastError() != cudaSuccess) {
-     throw std::runtime_error("Launch error: interleave_channels_kernel");
+    throw std::runtime_error("Launch error: interleave_channels_kernel");
   }
   cudaDeviceSynchronize();
 }

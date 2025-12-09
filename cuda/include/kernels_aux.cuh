@@ -5,6 +5,7 @@
 #include <cuda_runtime.h>
 
 // Standard headers
+#include <stdio.h>
 #include <type_traits>
 
 #include "structs.cuh"
@@ -35,7 +36,7 @@ __device__ void sort_indices_by_chaotic_values(int base_idx, T *chaotic_vals,
   unsigned int local_indices[MAX_BLOCK_SIZE];
 
   if (block_length > MAX_BLOCK_SIZE)
-    return;
+    printf("Length too large");
 
   for (size_t i = 0; i < block_length; i++) {
     local_vals[i] = chaotic_vals[base_idx + i];
@@ -105,6 +106,10 @@ __global__ void sort_indices_by_chaotic_values_global(T *d_chaotic_values,
   if (idx >= (int)num_blocks)
     return;
   int base_idx = idx * (int)block_length;
+
+  for (int i = 0; i < block_length; i++) { // Create indices
+    indices[base_idx + i] = i;
+  }
 
   sort_indices_by_chaotic_values<T>(base_idx, d_chaotic_values, indices,
                                     block_length);

@@ -87,6 +87,7 @@ struct EncryptionParams {
   size_t block_size;
   size_t automata_steps;
   size_t transition_length;
+  size_t num_blocks_permutations;
   Real chaos_parameter;
 };
 
@@ -139,16 +140,19 @@ struct Image_dimensions {
  *       accelerate decryption.
  */
 struct D_pointers {
-  unsigned char *d_image;                   ///< Current image data on device
-  unsigned char *d_image_out;               ///< Output buffer for operations
-  unsigned char *d_flow;                    ///< Chaotic flow sequence
-  Real *d_seeds;                            ///< Random seeds for initialization
-  unsigned int *d_permutation_rows;         ///< Forward row permutation
-  unsigned int *d_permutation_cols;         ///< Forward column permutation
-  unsigned int *d_permutation_blocks;       ///< Forward block permutation
-  unsigned int *d_permutation_rows_inverse; ///< Inverse row permutation
-  unsigned int *d_permutation_cols_inverse; ///< Inverse column permutation
-  unsigned int *d_permutation_blocks_inverse; ///< Inverse block permutation
+  unsigned char *d_image = nullptr;     ///< Current image data on device
+  unsigned char *d_image_out = nullptr; ///< Output buffer for operations
+  unsigned char *d_flow = nullptr;      ///< Chaotic flow sequence
+  Real *d_seeds = nullptr;              ///< Random seeds for initialization
+  unsigned int *d_permutation_rows = nullptr;   ///< Forward row permutation
+  unsigned int *d_permutation_cols = nullptr;   ///< Forward column permutation
+  unsigned int *d_permutation_blocks = nullptr; ///< Forward block permutation
+  unsigned int *d_permutation_rows_inverse =
+      nullptr; ///< Inverse row permutation
+  unsigned int *d_permutation_cols_inverse =
+      nullptr; ///< Inverse column permutation
+  unsigned int *d_permutation_blocks_inverse =
+      nullptr; ///< Inverse block permutation
 };
 
 #endif // STRUCT_CUH

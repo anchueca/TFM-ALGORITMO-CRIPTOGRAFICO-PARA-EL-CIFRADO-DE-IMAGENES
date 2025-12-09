@@ -67,20 +67,17 @@ calculate_password(const std::string &input, size_t num_blocks,
 
   std::vector<unsigned char> password = generate_hash(input, length_bytes);
 
-  std::vector<std::vector<unsigned char>> password_segments(4);
+  std::vector<std::vector<unsigned char>> password_segments(3);
 
   // construct segments (all sizes in bytes)
   password_segments[0] = std::vector<unsigned char>(
-      password.begin(), password.begin() + bytes_for_rows);
+      password.begin(), password.begin() + bytes_for_rows); //Rows  
   password_segments[1] = std::vector<unsigned char>(
       password.begin() + bytes_for_rows,
-      password.begin() + bytes_for_rows + bytes_for_columns);
+      password.begin() + bytes_for_rows + bytes_for_columns); //Columns
   password_segments[2] = std::vector<unsigned char>(
       password.begin() + bytes_for_rows + bytes_for_columns,
-      password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks);
-  password_segments[3] = std::vector<unsigned char>(
-      password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks,
-      password.end());
+      password.end()); //Blocks and flow
   return password_segments;
 }
 

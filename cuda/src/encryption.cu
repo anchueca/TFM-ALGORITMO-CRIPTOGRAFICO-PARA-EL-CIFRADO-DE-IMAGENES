@@ -10,13 +10,12 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 
   // --- 1. PRE-PROCESSING (GPU Side Optimization) ---
   bool is_color = (image.channels() == 3);
-  
+
   // Calculate dimensions locally without CPU unstacking
   // If color, the "processed" width is cols * 3.
   const Image_dimensions img_dimensions = {
       static_cast<size_t>(is_color ? image.cols * 3 : image.cols),
-      static_cast<size_t>(image.rows)
-  };
+      static_cast<size_t>(image.rows)};
 
   D_pointers d_pointers;
 
@@ -28,8 +27,6 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
       img_dimensions.cols / params.block_size +
       (img_dimensions.cols % params.block_size != 0);
   const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
-  const size_t num_blocks_permutations = 1;
-  const size_t block_data_length = params.block_size * params.block_size;
 
   // --- 2. VERBOSE REPORTING ---
   if (verbose) {
@@ -75,14 +72,14 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   // --- 3. KEY GENERATION (Host heavy) ---
   auto start = std::chrono::high_resolution_clock::now();
   const std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(password, num_blocks_permutations,
+      calculate_password(password, params.num_blocks_permutations,
                          img_dimensions, verbose);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
 
   if (verbose)
-    std::cout << " > Password hashing & expansion: " << time.count() * 1000.0f << " ms"
-              << std::endl;
+    std::cout << " > Password hashing & expansion: " << time.count() * 1000.0f
+              << " ms" << std::endl;
 
   // --- 4. PERMUTATION GENERATION (GPU) ---
   if (verbose)
@@ -102,11 +99,6 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   d_pointers.d_permutation_rows = generate_automata_permutations(
       rows_automata, params.automata_steps, img_dimensions.rows, verbose);
 
-  // C. Blocks (Chaotic Map)
-  d_pointers.d_permutation_blocks = generate_flow_permutations(
-      password_segments[2], block_data_length, num_blocks_permutations,
-      params.transition_length, params.chaos_parameter);
-
   // --- 5. INVERSE PERMUTATIONS ---
   if (verbose)
     std::cout << " > Calculating Inverse Permutations..." << std::endl;
@@ -116,31 +108,31 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   inverse_permutations(d_pointers.d_permutation_rows,
                        &d_pointers.d_permutation_rows_inverse,
                        img_dimensions.rows, 1);
-  inverse_permutations(d_pointers.d_permutation_blocks,
-                       &d_pointers.d_permutation_blocks_inverse,
-                       block_data_length, num_blocks_permutations);
 
   // --- 6. MEMORY ALLOCATION & DATA TRANSFER ---
-  
+
   // Total size is same as original interleaved image.
   const size_t img_size = image.total() * image.elemSize();
 
   cudaMalloc(&d_pointers.d_image, img_size);
   cudaMalloc(&d_pointers.d_image_out, img_size);
-  cudaMalloc(&d_pointers.d_flow, img_size);
+  cudaMalloc(&d_pointers.d_flow, img_size + params.num_blocks_permutations);
 
   if (is_color) {
-      // 1. Upload Interleaved data to d_image_out (as temp buffer)
-      cudaMemcpy(d_pointers.d_image_out, image.data, img_size, cudaMemcpyHostToDevice);
-      
-      // 2. GPU Unstack: d_image_out (Interleaved) -> d_image (Planar)
-      unstack_channels_gpu(d_pointers.d_image_out, d_pointers.d_image, image.cols, image.rows);
+    // 1. Upload Interleaved data to d_image_out (as temp buffer)
+    cudaMemcpy(d_pointers.d_image_out, image.data, img_size,
+               cudaMemcpyHostToDevice);
+
+    // 2. GPU Unstack: d_image_out (Interleaved) -> d_image (Planar)
+    unstack_channels_gpu(d_pointers.d_image_out, d_pointers.d_image, image.cols,
+                         image.rows);
   } else {
-      // Grayscale: Direct copy
-      cudaMemcpy(d_pointers.d_image, image.data, img_size, cudaMemcpyHostToDevice);
+    // Grayscale: Direct copy
+    cudaMemcpy(d_pointers.d_image, image.data, img_size,
+               cudaMemcpyHostToDevice);
   }
 
-  convert_bits_to_real(password_segments[3], &d_pointers.d_seeds);
+  convert_bits_to_real(password_segments[2], &d_pointers.d_seeds);
 
   // --- 7. EXECUTION ---
   if (encrypt) {
@@ -156,15 +148,18 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 
   // --- 8. POST-PROCESSING ---
   if (is_color) {
-      // We need to Interleave back.
-      // d_image (Planar) -> d_image_out (Interleaved)
-      
-      stack_channels_gpu(d_pointers.d_image, d_pointers.d_image_out, image.cols, image.rows);
-      
-      // Download from d_image_out
-      cudaMemcpy(image.data, d_pointers.d_image_out, img_size, cudaMemcpyDeviceToHost);
+    // We need to Interleave back.
+    // d_image (Planar) -> d_image_out (Interleaved)
+
+    stack_channels_gpu(d_pointers.d_image, d_pointers.d_image_out, image.cols,
+                       image.rows);
+
+    // Download from d_image_out
+    cudaMemcpy(image.data, d_pointers.d_image_out, img_size,
+               cudaMemcpyDeviceToHost);
   } else {
-      cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(image.data, d_pointers.d_image, img_size,
+               cudaMemcpyDeviceToHost);
   }
 
   // --- CLEANUP ---
@@ -191,14 +186,24 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  // 1. Initial Confusion
-  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+#ifdef USE_DOUBLE_PRECISION
+    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params,true);
+#else
+    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,true);
+#endif
 
+  // 1. Initial Confusion
+  image_permutation_encryption_process(
+      d_pointers, img_dimensions,
+      block_size); // TENGO QUE GUARDAR LA EPRMUTACION PARA LAS DE IMAGEN
   // 2. Diffusion + Confusion Rounds
   for (size_t i = 0; i < params.rounds; i++) {
-    // A. Generate Chaotic Stream
-    generate_flow_stream_parallel(d_pointers, img_dimensions, params.chaos_parameter,
-                         params.transition_length);
+// A. Generate Chaotic Stream
+#ifdef USE_DOUBLE_PRECISION
+    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params, false);
+#else
+    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,false);
+#endif
 
     // B. Permute the Stream (not the image)
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
@@ -210,14 +215,14 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
       std::cout << "\tRound " << i + 1 << "/" << params.rounds << " complete."
                 << std::endl;
   }
-
   // 3. Final Confusion
   image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
-    std::cout << " > Total Loop Time: " << time.count() * 1000.0f << " ms" << std::endl;
+    std::cout << " > Total Loop Time: " << time.count() * 1000.0f << " ms"
+              << std::endl;
 }
 
 void unencryption_process(D_pointers &d_pointers,
@@ -226,24 +231,30 @@ void unencryption_process(D_pointers &d_pointers,
   if (verbose)
     std::cout << " > Starting Decryption Loop..." << std::endl;
 
-  // 1. Reverse Final Confusion
-  image_permutation_unencryption_process(d_pointers, img_dimensions,
-                                         block_size);
-
+#ifdef USE_DOUBLE_PRECISION
+  generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params,true);
+#else
+  generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,true);
+#endif
+  // 1. Initial Confusion
+  image_permutation_unencryption_process(d_pointers, img_dimensions, block_size);
   // 2. Reverse Rounds
   for (size_t i = 0; i < params.rounds; i++) {
     // Regenerate exact same flow
-    generate_flow_stream_parallel(d_pointers, img_dimensions, params.chaos_parameter,
-                         params.transition_length);
+#ifdef USE_DOUBLE_PRECISION
+    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params,false);
+#else
+    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,false);
+#endif
+
+    // B. Permute the Stream (not the image)
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
     // Inverse XOR (Identical to forward XOR)
     flow_encrypt(d_pointers, img_dimensions);
   }
-
-  // 3. Reverse Initial Confusion
-  image_permutation_unencryption_process(d_pointers, img_dimensions,
-                                         block_size);
+  // 3. Final Confusion
+  image_permutation_unencryption_process(d_pointers, img_dimensions, block_size);
 }
 
 // =================================================================================

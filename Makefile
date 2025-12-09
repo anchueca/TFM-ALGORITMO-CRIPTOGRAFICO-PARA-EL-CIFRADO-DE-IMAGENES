@@ -1,27 +1,27 @@
 # Variables
 NVCC = nvcc
 
-# Flags normales
+# Normal flags
 NVCCFLAGS_NORMAL = -O3 -rdc=true #-use_fast_math
 
-# Flags de depuración
-NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
+# Debug fags
+NVCCFLAGS_lDEBUG = -G -g -O0 -rdc=true
 
-# Librerías e includes
+# Libraries and includes
 LDFLAGS = $(shell pkg-config --libs opencv4) -lssl -lcrypto -lcudart 
-CXXINCLUDES = $(shell pkg-config --cflags opencv4) -I./include -I/usr/local/cuda/include
+CXXINCLUDES = $(shell pkg-config --cflags opencv4) -I./cuda/include -I/usr/local/cuda/include
 
-# Directorios
+# Directories
 SRC_DIR = ./cuda/src
 BIN_DIR = ./cuda/bin
 INCLUDE_DIR = ./cuda/include
 
-# Archivos
+# Files
 SRCS_CU = $(wildcard $(SRC_DIR)/*.cu)
 OBJS_CU = $(SRCS_CU:.cu=.o)
 TARGET = $(BIN_DIR)/cipher.out
 
-# Selección de modo: normal o debug
+# Mode selection: normal o debug
 MODE ?= normal
 ifeq ($(MODE),debug)
     CXXFLAGS = $(CXXFLAGS_DEBUG)
@@ -30,7 +30,7 @@ else
     NVCCFLAGS = $(NVCCFLAGS_NORMAL)
 endif
 
-# Precision selection (new)
+# Precission selection (new)
 PRECISION ?= float
 ifeq ($(PRECISION),double)
     NVCCFLAGS += -DUSE_DOUBLE_PRECISION
@@ -38,16 +38,16 @@ endif
 
 NVCCFLAGS += -ccbin g++-12
 
-# Regla principal
+# main rule
 $(TARGET):  $(OBJS_CU)
 	@mkdir -p $(BIN_DIR)
 	$(NVCC) $(NVCCFLAGS) $(OBJS_CU) -o $@ $(LDFLAGS)
 
-# Compilación de .cu
+# .cu compilation
 $(SRC_DIR)/%.o: $(SRC_DIR)/%.cu
 	$(NVCC) $(NVCCFLAGS) $(CXXINCLUDES) -dc $< -o $@
 
-# Limpieza
+# clean
 clean:
 	rm -rf $(BIN_DIR) $(SRC_DIR)/*.o
 
