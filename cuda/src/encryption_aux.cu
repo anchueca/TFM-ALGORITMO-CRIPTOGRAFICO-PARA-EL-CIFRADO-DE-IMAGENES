@@ -118,6 +118,30 @@ __host__ void block_phase_permutation_simple(unsigned char *d_image,
   cudaDeviceSynchronize();
 }
 
+__host__ void generate_permutation_block(D_pointers &d_pointers,
+                                         Image_dimensions img_dimensions,
+                                         EncryptionParams params) {
+size_t block_size = params.block_size * params.block_size;
+  if (d_pointers.d_permutation_blocks == nullptr) {
+    cudaError_t err = cudaMalloc(&d_pointers.d_permutation_blocks,
+                                 block_size * params.num_blocks_permutations *
+                                     sizeof(unsigned int));
+    if (err != cudaSuccess) {
+      throw std::runtime_error("Failed to allocate device memory for indices");
+    }
+  }
+  dim3 threadsPerBlock(256);
+  dim3 numBlocks((img_dimensions.cols + params.num_blocks_permutations +
+                  threadsPerBlock.x - 1) /
+                 threadsPerBlock.x);
+  sort_indices_by_chaotic_values_global<<<params.num_blocks_permutations, 1>>>(
+      d_pointers.d_chaotic_values, params.num_blocks_permutations,
+      d_pointers.d_permutation_blocks, block_size);
+  inverse_permutations(d_pointers.d_permutation_blocks,
+                       &d_pointers.d_permutation_blocks_inverse, block_size,
+                       params.num_blocks_permutations);
+}
+
 __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
                                            unsigned int *d_row_permutations,

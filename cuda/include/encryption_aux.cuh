@@ -159,7 +159,7 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
 template <typename T>
 __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
-                                            EncryptionParams params, bool do_permutations) {
+                                            EncryptionParams params) {
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
@@ -169,32 +169,20 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
 
   // For permutations
   size_t block_size = params.block_size * params.block_size;
-  T *d_chaotic_values = nullptr;
-
-  if (d_pointers.d_permutation_blocks == nullptr) {
-    cudaError_t err = cudaMalloc(&d_pointers.d_permutation_blocks,
-                                 block_size * params.num_blocks_permutations *
-                                     sizeof(unsigned int));
-    if (err != cudaSuccess) {
-      throw std::runtime_error("Failed to allocate device memory for indices");
-    }
-  }
 
   cudaError_t err;
-  if(do_permutations){
-    err = cudaMalloc(&d_chaotic_values, block_size * sizeof(T));
-    if (err != cudaSuccess) {
-      cudaFree(d_pointers.d_permutation_blocks);
-      throw std::runtime_error(
-          "Failed to allocate device memory for chaotic values");
-    }
+  err = cudaMalloc(&d_pointers.d_chaotic_values, block_size * sizeof(T));
+  if (err != cudaSuccess) {
+    cudaFree(d_pointers.d_permutation_blocks);
+    throw std::runtime_error(
+        "Failed to allocate device memory for chaotic values");
   }
 
   // Transition
   for (size_t i = 0; i < params.transition_length; i++) {
     keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
         nullptr, d_pointers.d_seeds, img_dimensions, params.chaos_parameter, i,
-        params.num_blocks_permutations, d_chaotic_values, block_size);
+        params.num_blocks_permutations, d_pointers.d_chaotic_values, block_size);
   }
 
   // Stream
@@ -202,7 +190,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
     keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
         d_pointers.d_flow, d_pointers.d_seeds, img_dimensions,
         params.chaos_parameter, i, params.num_blocks_permutations,
-        d_chaotic_values, block_size);
+        d_pointers.d_chaotic_values, block_size);
   }
 
   // Final synchronization to ensure all stream generation is done before
@@ -213,20 +201,12 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
         "generate_flow_stream_parallel: Kernel launch error");
   }
 
-  // Generate premutations
-
-  if(do_permutations)sort_indices_by_chaotic_values_global<<<params.num_blocks_permutations, 1>>>(
-      d_chaotic_values, params.num_blocks_permutations,
-      d_pointers.d_permutation_blocks, block_size);
-
   cudaDeviceSynchronize();
-
-  if(d_chaotic_values != nullptr)cudaFree(d_chaotic_values);
-
-  if(do_permutations)inverse_permutations(d_pointers.d_permutation_blocks,
-                       &d_pointers.d_permutation_blocks_inverse, block_size,
-                       params.num_blocks_permutations);
 }
+
+__host__ void generate_permutation_block(D_pointers &d_pointers,
+                                         Image_dimensions img_dimensions,
+                                         EncryptionParams params);
 
 /**
  * @brief Generate permutations from cellular automata instances.

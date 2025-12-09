@@ -187,11 +187,11 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
   auto start = std::chrono::high_resolution_clock::now();
 
 #ifdef USE_DOUBLE_PRECISION
-    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params,true);
+  generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
-    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,true);
+  generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
-
+  generate_permutation_block(d_pointers, img_dimensions, params);
   // 1. Initial Confusion
   image_permutation_encryption_process(
       d_pointers, img_dimensions,
@@ -200,9 +200,9 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
   for (size_t i = 0; i < params.rounds; i++) {
 // A. Generate Chaotic Stream
 #ifdef USE_DOUBLE_PRECISION
-    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params, false);
+    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
-    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,false);
+    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
 
     // B. Permute the Stream (not the image)
@@ -232,19 +232,21 @@ void unencryption_process(D_pointers &d_pointers,
     std::cout << " > Starting Decryption Loop..." << std::endl;
 
 #ifdef USE_DOUBLE_PRECISION
-  generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params,true);
+  generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
-  generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,true);
+  generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
+  generate_permutation_block(d_pointers, img_dimensions, params);
   // 1. Initial Confusion
-  image_permutation_unencryption_process(d_pointers, img_dimensions, block_size);
+  image_permutation_unencryption_process(d_pointers, img_dimensions,
+                                         block_size);
   // 2. Reverse Rounds
   for (size_t i = 0; i < params.rounds; i++) {
     // Regenerate exact same flow
 #ifdef USE_DOUBLE_PRECISION
-    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params,false);
+    generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
-    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params,false);
+    generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
 
     // B. Permute the Stream (not the image)
@@ -254,7 +256,8 @@ void unencryption_process(D_pointers &d_pointers,
     flow_encrypt(d_pointers, img_dimensions);
   }
   // 3. Final Confusion
-  image_permutation_unencryption_process(d_pointers, img_dimensions, block_size);
+  image_permutation_unencryption_process(d_pointers, img_dimensions,
+                                         block_size);
 }
 
 // =================================================================================

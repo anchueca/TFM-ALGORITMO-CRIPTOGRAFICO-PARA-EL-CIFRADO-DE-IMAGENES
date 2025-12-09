@@ -153,6 +153,7 @@ struct D_pointers {
       nullptr; ///< Inverse column permutation
   unsigned int *d_permutation_blocks_inverse =
       nullptr; ///< Inverse block permutation
+  Real *d_chaotic_values = nullptr;
 };
 
 #endif // STRUCT_CUH
