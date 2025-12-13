@@ -139,6 +139,25 @@ void ElementalCelularAutomata::iterate(int num_steps) {
   cudaDeviceSynchronize();
 }
 
+// Block-level iteration implementation
+void ElementalCelularAutomata::iterate_block_level(int num_steps) {
+  if (size == 0)
+    return;
+
+  int num_blocks = (this->size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+  // Shared memory: double buffering within shared memory for ping-pong
+  // We need 2 buffers, each holding (uints per block) unsigned ints
+  int uints_per_block = (BLOCK_SIZE + 31) / 32;
+  size_t shared_mem_size = 2 * uints_per_block * sizeof(unsigned int);
+
+  // Launch single kernel that performs all iterations internally
+  evolve_block_level<<<num_blocks, BLOCK_SIZE, shared_mem_size>>>(
+      this->d_state[0], this->d_state[1], this->rule, num_steps);
+
+  cudaDeviceSynchronize();
+}
+
 // Print the automaton state (implementation; see header for docs)
 void ElementalCelularAutomata::print_state() const {
   if (size == 0)
@@ -313,5 +332,105 @@ __global__ void evolve_shared(const unsigned int *current_state,
     // If the rule dictates this cell should be alive, set its bit to 1
     unsigned int mask = (1U << (31 - (idx % 32)));
     atomicOr(&next_state[idx / 32], mask);
+  }
+}
+
+/**
+ * @brief Block-level evolution kernel with internal iteration loop.
+ *
+ * This kernel implements a cellular automaton where each thread block operates
+ * as an independent automaton. Key features for performance:
+ * - Block-level boundary wrapping (no inter-block dependencies)
+ * - All iterations executed in a single kernel launch
+ * - Double buffering in shared memory (ping-pong)
+ * - Minimized global memory access (only initial load and final write)
+ * - No atomic operations needed (each thread writes to its own bit)
+ *
+ * @param state Global state buffer (input and final output)
+ * @param temp_state Temporary global buffer (unused in this implementation)
+ * @param rule Rule number (0-255)
+ * @param num_steps Number of iterations to perform
+ */
+__global__ void evolve_block_level(unsigned int *state,
+                                   unsigned int *temp_state, int rule,
+                                   int num_steps) {
+  extern __shared__ unsigned int s_mem[];
+
+  int tid = threadIdx.x;
+  int block_offset = blockIdx.x * blockDim.x;
+  int global_idx = block_offset + tid;
+
+  // Calculate number of uints needed for this block
+  int uints_per_block = (blockDim.x + 31) / 32;
+
+  // Set up double buffering pointers in shared memory
+  unsigned int *s_current = s_mem;
+  unsigned int *s_next = s_mem + uints_per_block;
+
+  // --- 1. Load initial state from global to shared memory ---
+  int uint_idx_in_block = tid / 32;
+  int bit_idx_in_uint = tid % 32;
+
+  // Cooperative loading: each warp loads one uint
+  if (uint_idx_in_block < uints_per_block && tid < blockDim.x) {
+    int global_uint_idx = (block_offset / 32) + uint_idx_in_block;
+    if (bit_idx_in_uint == 0) {
+      s_current[uint_idx_in_block] = state[global_uint_idx];
+    }
+  }
+
+  __syncthreads();
+
+  // --- 2. Perform iterations with block-level wrapping ---
+  for (int iter = 0; iter < num_steps; iter++) {
+    // Clear next buffer
+    if (uint_idx_in_block < uints_per_block && bit_idx_in_uint == 0) {
+      s_next[uint_idx_in_block] = 0;
+    }
+    __syncthreads();
+
+    // Each thread processes one cell
+    if (tid < blockDim.x) {
+      unsigned int left_val, center_val, right_val;
+
+      // Get center value
+      int center_uint = tid / 32;
+      int center_bit = tid % 32;
+      center_val = (s_current[center_uint] >> (31 - center_bit)) & 1;
+
+      // Get left neighbor with block-level wrapping
+      int left_tid = (tid == 0) ? (blockDim.x - 1) : (tid - 1);
+      int left_uint = left_tid / 32;
+      int left_bit = left_tid % 32;
+      left_val = (s_current[left_uint] >> (31 - left_bit)) & 1;
+
+      // Get right neighbor with block-level wrapping
+      int right_tid = (tid == blockDim.x - 1) ? 0 : (tid + 1);
+      int right_uint = right_tid / 32;
+      int right_bit = right_tid % 32;
+      right_val = (s_current[right_uint] >> (31 - right_bit)) & 1;
+
+      // Apply rule
+      int neighborhood = (left_val << 2) | (center_val << 1) | right_val;
+      if ((rule >> neighborhood) & 1) {
+        // Set bit in next state - no atomics needed since each thread writes
+        // to its own bit position
+        unsigned int mask = (1U << (31 - center_bit));
+        atomicOr(&s_next[center_uint], mask);
+      }
+    }
+
+    __syncthreads();
+
+    // Swap buffers (ping-pong)
+    unsigned int *temp = s_current;
+    s_current = s_next;
+    s_next = temp;
+  }
+
+  // --- 3. Write final result back to global memory ---
+  if (uint_idx_in_block < uints_per_block && bit_idx_in_uint == 0) {
+    int global_uint_idx = (block_offset / 32) + uint_idx_in_block;
+    state[global_uint_idx] = s_current[uint_idx_in_block];
   }
 }

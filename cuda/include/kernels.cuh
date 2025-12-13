@@ -29,12 +29,14 @@
  * @param r Chaotic parameter.
  * @return The next chaotic value.
  */
-template <typename T> __device__ __forceinline__ T uno(T x, T r) {
+template <typename T> __device__ __forceinline__ T chaotic_functio(T x, T r) {
   T t = r + 3.0 * x * x;
   return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
 }
 
-template <> __device__ __forceinline__ float uno<float>(float x, float r) {
+template <>
+__device__ __forceinline__ float chaotic_functio<float>(float x, float r) {
+
   float t = r + 3.0f * x * x;
   return fabsf(cosf(3.14159265f * r * cosf(3.14159265f * t) * t));
 }
@@ -73,7 +75,7 @@ __global__ void keystream_generation_parallel(
 
   T coupled_xn = (previous_xn + left_xn + right_xn) / 3;
 
-  coupled_xn = uno<T>(coupled_xn, r);
+  coupled_xn = chaotic_functio<T>(coupled_xn, r);
 
   if (d_flow != nullptr) {
     if (x < img_dimensions.cols) {
@@ -83,8 +85,12 @@ __global__ void keystream_generation_parallel(
     } else {
       // Permutation generation: extra columns
       size_t perm_col_idx = x - img_dimensions.cols;
-      if (position < block_size && d_chaotic_values != nullptr) {
-        d_chaotic_values[perm_col_idx * block_size + position] = coupled_xn;
+      // Uses last values
+      size_t first_chaotic_value_position = img_dimensions.rows - block_size;
+      if (position >= first_chaotic_value_position &&
+          d_chaotic_values != nullptr) {
+        d_chaotic_values[perm_col_idx * block_size + position -
+                         first_chaotic_value_position] = coupled_xn;
       }
     }
   }

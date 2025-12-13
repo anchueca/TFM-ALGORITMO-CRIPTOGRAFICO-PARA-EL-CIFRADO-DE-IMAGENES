@@ -73,6 +73,19 @@ public:
   void iterate(int num_steps = 1);
 
   /**
+   * @brief Evolves the automata at block level where each block operates
+   * independently.
+   *
+   * Each thread block functions as an independent elementary cellular
+   * automaton. Edge cells wrap around within block boundaries (not across
+   * blocks). The iteration loop is executed inside the kernel for maximum
+   * performance.
+   *
+   * @param num_steps The number of iterations to perform.
+   */
+  void iterate_block_level(int num_steps = 1);
+
+  /**
    * @brief Prints the current state of the automata to the console.
    * '#' represents a live cell, a blank space ' ' a dead cell.
    */
@@ -112,5 +125,21 @@ private:
 // --- CUDA Kernel Declaration ---
 __global__ void evolve_shared(const unsigned int *current_state,
                               unsigned int *next_state, int rule, int size);
+
+/**
+ * @brief Block-level evolution kernel where each block operates independently.
+ *
+ * This kernel performs multiple iterations of cellular automaton evolution
+ * with block-level boundary conditions. Each thread block operates as an
+ * independent automaton where edge cells wrap around within the block.
+ *
+ * @param state Device pointer to the state buffer (input and output)
+ * @param temp_state Device pointer to temporary state buffer for ping-pong
+ * @param rule Rule number (0-255) defining the elementary automaton
+ * @param num_steps Number of iterations to perform inside the kernel
+ */
+__global__ void evolve_block_level(unsigned int *state,
+                                   unsigned int *temp_state, int rule,
+                                   int num_steps);
 
 #endif // AUTOMATA_CUH

@@ -22,7 +22,7 @@ __host__ unsigned int *generate_automata_permutations(
 
   auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < num_blocks; i++) {
-    automatas[i]->iterate(steps);
+    automatas[i]->iterate_block_level(steps);
   }
 
   // Allocations
@@ -121,7 +121,7 @@ __host__ void block_phase_permutation_simple(unsigned char *d_image,
 __host__ void generate_permutation_block(D_pointers &d_pointers,
                                          Image_dimensions img_dimensions,
                                          EncryptionParams params) {
-size_t block_size = params.block_size * params.block_size;
+  size_t block_size = params.block_size * params.block_size;
   if (d_pointers.d_permutation_blocks == nullptr) {
     cudaError_t err = cudaMalloc(&d_pointers.d_permutation_blocks,
                                  block_size * params.num_blocks_permutations *
