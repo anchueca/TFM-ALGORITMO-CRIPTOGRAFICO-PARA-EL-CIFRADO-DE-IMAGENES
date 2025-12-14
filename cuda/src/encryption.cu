@@ -70,34 +70,45 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   }
 
   // --- 3. KEY GENERATION (Host heavy) ---
+
   auto start = std::chrono::high_resolution_clock::now();
-  const std::vector<std::vector<unsigned char>> password_segments =
+
+  // --- 2. PASSWORD PROCESSING ---
+  if (verbose)
+    std::cout << " > Password hashing & expansion: ";
+
+  std::vector<std::vector<unsigned char>> password_segments =
       calculate_password(password, params.num_blocks_permutations,
                          img_dimensions, verbose);
+
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
 
   if (verbose)
-    std::cout << " > Password hashing & expansion: " << time.count() * 1000.0f
-              << " ms" << std::endl;
+    std::cout << time.count() * 1000.0f << " ms" << std::endl;
+
+  // --- 3. MEMORY ALLOCATION & DATA TRANSFER ---
+  // (Moved up to grouping allocations, logic unchanged)
 
   // --- 4. PERMUTATION GENERATION (GPU) ---
   if (verbose)
     std::cout << " > Generating Permutations..." << std::endl;
 
-  // A. Columns
-  ElementalCelularAutomata automata(password_segments[1],
-                                    img_dimensions.cols * 2 * 8, 30);
-  const std::vector<ElementalCelularAutomata *> cols_automata = {&automata};
+  // A. Columns - Create automata from password segment for columns
+  if (verbose)
+    std::cout << "\t(Processing Cols Automata...)" << std::endl;
+  ElementalCelularAutomata cols_automata(password_segments[1],
+                                         img_dimensions.cols * 2 * 8, 30);
   d_pointers.d_permutation_cols = generate_automata_permutations(
-      cols_automata, params.automata_steps, img_dimensions.cols, verbose);
+      &cols_automata, params.automata_steps, img_dimensions.cols, verbose);
 
-  // B. Rows
-  ElementalCelularAutomata automata1(password_segments[0],
-                                     img_dimensions.rows * 2 * 8, 30);
-  const std::vector<ElementalCelularAutomata *> rows_automata = {&automata1};
+  // B. Rows - Create automata from password segment for rows
+  if (verbose)
+    std::cout << "\t(Processing Rows Automata...)" << std::endl;
+  ElementalCelularAutomata rows_automata(password_segments[0],
+                                         img_dimensions.rows * 2 * 8, 30);
   d_pointers.d_permutation_rows = generate_automata_permutations(
-      rows_automata, params.automata_steps, img_dimensions.rows, verbose);
+      &rows_automata, params.automata_steps, img_dimensions.rows, verbose);
 
   // --- 5. INVERSE PERMUTATIONS ---
   if (verbose)
@@ -173,89 +184,124 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
 }
 
 // =================================================================================
-//                            PROCESS FLOW LOGIC
+//                       ENCRYPTION & DECRYPTION PROCESSES
 // =================================================================================
 
+/**
+ * @brief Main encryption process implementing confusion-diffusion rounds.
+ *
+ * Encryption Flow:
+ *  1. Initial Confusion: Permute image (rows/cols/blocks)
+ *  2. Rounds Loop:
+ *     a) Generate chaotic keystream
+ *     b) Permute keystream
+ *     c) XOR image with permuted keystream (diffusion)
+ *  3. Final Confusion: Permute image again
+ */
 void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
                         size_t block_size, const EncryptionParams &params,
                         bool verbose) {
 
   if (verbose)
-    std::cout << " > Starting Encryption Loop (" << params.rounds << " rounds)"
+    std::cout << " > Starting Encryption (" << params.rounds << " rounds)..."
               << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
 
+  // Generate initial stream and block permutations
 #ifdef USE_DOUBLE_PRECISION
   generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
   generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
   generate_permutation_block(d_pointers, img_dimensions, params);
-  // 1. Initial Confusion
-  image_permutation_encryption_process(
-      d_pointers, img_dimensions,
-      block_size); // TENGO QUE GUARDAR LA EPRMUTACION PARA LAS DE IMAGEN
-  // 2. Diffusion + Confusion Rounds
-  for (size_t i = 0; i < params.rounds; i++) {
-// A. Generate Chaotic Stream
+
+  // === PHASE 1: Initial Confusion ===
+  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+
+  // === PHASE 2: Confusion-Diffusion Rounds ===
+  for (size_t round = 0; round < params.rounds; round++) {
+    auto round_start = std::chrono::high_resolution_clock::now();
+
+    // Step A: Generate chaotic keystream
 #ifdef USE_DOUBLE_PRECISION
     generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
     generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
 
-    // B. Permute the Stream (not the image)
+    // Step B: Permute the keystream
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
-    // C. Diffusion (Image XOR Stream)
+    // Step C: Diffusion - XOR image with permuted keystream
     flow_encrypt(d_pointers, img_dimensions);
 
+    auto round_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> round_time = round_end - round_start;
+
     if (verbose)
-      std::cout << "\tRound " << i + 1 << "/" << params.rounds << " complete."
+      std::cout << "\tRound " << round + 1 << "/" << params.rounds
+                << " complete. Time: " << round_time.count() * 1000.0f << " ms"
                 << std::endl;
   }
-  // 3. Final Confusion
+
+  // === PHASE 3: Final Confusion ===
   image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
   if (verbose)
-    std::cout << " > Total Loop Time: " << time.count() * 1000.0f << " ms"
+    std::cout << " > Encryption Complete: " << time.count() * 1000.0f << " ms"
               << std::endl;
 }
 
+/**
+ * @brief Main decryption process - reverses the encryption operations.
+ *
+ * Decryption Flow (reverse of encryption):
+ *  1. Reverse Final Confusion: Inverse permutation
+ *  2. Rounds Loop (same count as encryption):
+ *     a) Regenerate same chaotic keystream
+ *     b) Permute keystream (same way)
+ *     c) XOR to reverse diffusion
+ *  3. Reverse Initial Confusion: Inverse permutation
+ */
 void unencryption_process(D_pointers &d_pointers,
                           Image_dimensions img_dimensions, size_t block_size,
                           const EncryptionParams &params, bool verbose) {
   if (verbose)
-    std::cout << " > Starting Decryption Loop..." << std::endl;
+    std::cout << " > Starting Decryption (" << params.rounds << " rounds)..."
+              << std::endl;
 
+  // Generate stream and block permutations (same as encryption)
 #ifdef USE_DOUBLE_PRECISION
   generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
   generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
   generate_permutation_block(d_pointers, img_dimensions, params);
-  // 1. Initial Confusion
+
+  // === PHASE 1: Reverse Final Confusion ===
   image_permutation_unencryption_process(d_pointers, img_dimensions,
                                          block_size);
-  // 2. Reverse Rounds
-  for (size_t i = 0; i < params.rounds; i++) {
-    // Regenerate exact same flow
+
+  // === PHASE 2: Reverse Diffusion-Confusion Rounds ===
+  for (size_t round = 0; round < params.rounds; round++) {
+    // Step A: Regenerate exact same chaotic keystream
 #ifdef USE_DOUBLE_PRECISION
     generate_flow_stream_parallel<double>(d_pointers, img_dimensions, params);
 #else
     generate_flow_stream_parallel<float>(d_pointers, img_dimensions, params);
 #endif
 
-    // B. Permute the Stream (not the image)
+    // Step B: Permute keystream (same as encryption)
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
 
-    // Inverse XOR (Identical to forward XOR)
+    // Step C: Reverse diffusion via XOR (XOR is its own inverse)
     flow_encrypt(d_pointers, img_dimensions);
   }
-  // 3. Final Confusion
+
+  // === PHASE 3: Reverse Initial Confusion ===
   image_permutation_unencryption_process(d_pointers, img_dimensions,
                                          block_size);
 }

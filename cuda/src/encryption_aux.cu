@@ -7,95 +7,118 @@
 #include "../include/encryption_aux.cuh"
 #include <cstddef>
 
-__host__ unsigned int *generate_automata_permutations(
-    const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
-    const size_t block_length, bool verbose) {
+__host__ unsigned int *
+generate_automata_permutations(ElementalCelularAutomata *automata,
+                               const size_t steps, const size_t block_length,
+                               bool verbose) {
 
-  size_t num_blocks = automatas.size();
-  size_t total_size = num_blocks * block_length;
-
-  if (automatas[0]->get_size() * num_blocks != total_size * 16)
+  // Validate automata size
+  if (automata->get_size() != block_length * 16)
     throw std::runtime_error(
-        "Incompatible automata size (" +
-        std::to_string(automatas[0]->get_size() * num_blocks) +
-        ") and block length (" + std::to_string(total_size * 16) + ")");
+        "Incompatible automata size (" + std::to_string(automata->get_size()) +
+        ") and block length (" + std::to_string(block_length * 16) + ")");
 
-  auto start = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < num_blocks; i++) {
-    automatas[i]->iterate_block_level(steps);
-  }
+  // === TIMING 1: Automata Iteration ===
+  auto start_iterate = std::chrono::high_resolution_clock::now();
+  automata->iterate_block_level(steps);
+  cudaDeviceSynchronize();
+  auto end_iterate = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time_iterate = end_iterate - start_iterate;
 
-  // Allocations
-  unsigned int **d_automatas = nullptr;
+  // Allocate device memory
   unsigned int *d_indices = nullptr;
   unsigned short *d_chaotic_values = nullptr;
 
-  cudaError_t err =
-      cudaMalloc(&d_automatas, num_blocks * sizeof(unsigned int *));
+  cudaError_t err = cudaMalloc(&d_indices, block_length * sizeof(unsigned int));
   if (err != cudaSuccess)
-    throw std::runtime_error("Alloc failed: d_automatas");
-
-  err = cudaMalloc(&d_indices, total_size * sizeof(unsigned int));
-  if (err != cudaSuccess) {
-    cudaFree(d_automatas);
     throw std::runtime_error("Alloc failed: d_indices");
-  }
 
-  err = cudaMalloc(&d_chaotic_values, total_size * sizeof(unsigned short));
+  err = cudaMalloc(&d_chaotic_values, block_length * sizeof(unsigned short));
   if (err != cudaSuccess) {
-    cudaFree(d_automatas);
     cudaFree(d_indices);
     throw std::runtime_error("Alloc failed: d_chaotic_values");
   }
 
-  const unsigned int **pointers_to_automata_states =
-      new const unsigned int *[num_blocks];
-  for (int i = 0; i < num_blocks; i++) {
-    pointers_to_automata_states[i] = automatas[i]->get_cuda_state();
+  // === TIMING 2: Chaotic Generation ===
+  auto start_chaotic = std::chrono::high_resolution_clock::now();
+
+  // Optimize thread/block configuration based on block_length
+  int threadsPerBlock;
+  if (block_length <= 256) {
+    // For small sizes, use nearest power of 2
+    threadsPerBlock = 1 << (32 - __builtin_clz(block_length - 1));
+    threadsPerBlock = std::min(threadsPerBlock, 256);
+  } else if (block_length <= 1024) {
+    threadsPerBlock = 512; // Better occupancy for medium sizes
+  } else {
+    threadsPerBlock = 1024; // Maximum for large sizes
+  }
+  const int numBlocks = (block_length + threadsPerBlock - 1) / threadsPerBlock;
+
+  // Allocate single-element array for pointer to automata state
+  unsigned int **d_automata_ptr = nullptr;
+  unsigned int *h_automata_state =
+      const_cast<unsigned int *>(automata->get_cuda_state());
+
+  err = cudaMalloc(&d_automata_ptr, sizeof(unsigned int *));
+  if (err != cudaSuccess) {
+    cudaFree(d_indices);
+    cudaFree(d_chaotic_values);
+    throw std::runtime_error("Alloc failed: d_automata_ptr");
   }
 
-  err = cudaMemcpy(d_automatas, pointers_to_automata_states,
-                   num_blocks * sizeof(unsigned int *), cudaMemcpyHostToDevice);
-  delete[] pointers_to_automata_states;
-  if (err != cudaSuccess)
-    throw std::runtime_error("Memcpy failed: automata pointers");
+  err = cudaMemcpy(d_automata_ptr, &h_automata_state, sizeof(unsigned int *),
+                   cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) {
+    cudaFree(d_indices);
+    cudaFree(d_chaotic_values);
+    cudaFree(d_automata_ptr);
+    throw std::runtime_error("Memcpy failed: automata pointer");
+  }
 
-  // Generate chaotic values
-  const int threadsPerBlock = 256;
-  const int numKerBlocksChaotic =
-      (total_size + threadsPerBlock - 1) / threadsPerBlock;
-
-  generate_automata_chaotic<<<numKerBlocksChaotic, threadsPerBlock>>>(
-      d_automatas, d_chaotic_values, num_blocks, d_indices, block_length);
+  generate_automata_chaotic<<<numBlocks, threadsPerBlock>>>(
+      d_automata_ptr, d_chaotic_values, 1, d_indices, block_length);
 
   err = cudaGetLastError();
-  if (err != cudaSuccess)
+  if (err != cudaSuccess) {
+    cudaFree(d_indices);
+    cudaFree(d_chaotic_values);
+    cudaFree(d_automata_ptr);
     throw std::runtime_error("Kernel fail: generate_automata_chaotic");
+  }
+
+  cudaFree(d_automata_ptr); // No longer needed after kernel execution
 
   cudaDeviceSynchronize();
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> time = end - start;
-  if (verbose)
-    std::cout << "\t\tAutomata & Gen time: " << time.count() * 1000.0f << " ms"
-              << std::endl;
+  auto end_chaotic = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time_chaotic = end_chaotic - start_chaotic;
 
-  // Short
-  start = std::chrono::high_resolution_clock::now();
-
-  batched_gpu_argsort(d_chaotic_values, d_indices, num_blocks, block_length);
+  // === TIMING 3: Batched Sort ===
+  auto start_sort = std::chrono::high_resolution_clock::now();
+  batched_gpu_argsort(d_chaotic_values, d_indices, 1, block_length);
 
   err = cudaGetLastError();
-  if (err != cudaSuccess)
+  if (err != cudaSuccess) {
+    cudaFree(d_indices);
+    cudaFree(d_chaotic_values);
     throw std::runtime_error("Kernel fail: batched_gpu_argsort");
+  }
 
   cudaDeviceSynchronize();
-  end = std::chrono::high_resolution_clock::now();
-  time = end - start;
-  if (verbose)
-    std::cout << "\t\tBatched Sort time: " << time.count() * 1000.0f << " ms"
-              << std::endl;
+  auto end_sort = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time_sort = end_sort - start_sort;
 
-  cudaFree(d_automatas);
+  // Print detailed timing if verbose
+  if (verbose) {
+    std::cout << "\t\tAutomata Iteration: " << time_iterate.count() * 1000.0f
+              << " ms" << std::endl;
+    std::cout << "\t\tChaotic Generation: " << time_chaotic.count() * 1000.0f
+              << " ms (blocks=" << numBlocks << ", threads=" << threadsPerBlock
+              << ")" << std::endl;
+    std::cout << "\t\tBatched Sort: " << time_sort.count() * 1000.0f << " ms"
+              << std::endl;
+  }
+
   cudaFree(d_chaotic_values);
 
   return d_indices;
@@ -252,39 +275,6 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
         cudaGetErrorString(err));
   }
   cudaDeviceSynchronize();
-}
-
-__host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(
-    const std::vector<std::vector<unsigned char>> &password_segments,
-    size_t num_blocks, size_t block_size, size_t precision_level) {
-
-  // Create automata instances from password segments (implementation)
-  std::vector<ElementalCelularAutomata *> container(num_blocks);
-
-  const size_t byte_size = block_size * precision_level;
-
-  for (size_t i = 0; i < num_blocks; ++i) {
-    unsigned int *cuda_pointer = nullptr;
-
-    cudaError_t err = cudaMalloc(&cuda_pointer, byte_size);
-    if (err != cudaSuccess) {
-      std::cerr << "CUDA memory allocation error: " << cudaGetErrorString(err)
-                << std::endl;
-      return {};
-    }
-
-    const unsigned char *src_ptr = password_segments[2].data() + i * byte_size;
-    err = cudaMemcpy(cuda_pointer, src_ptr, byte_size, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-      std::cerr << "CUDA memcpy error when copying initial automata state: "
-                << cudaGetErrorString(err) << std::endl;
-      return {};
-    }
-
-    container[i] =
-        new ElementalCelularAutomata(cuda_pointer, byte_size * 8, 30);
-  }
-  return container;
 }
 
 __host__ void unstack_channels_gpu(unsigned char *d_interleaved,

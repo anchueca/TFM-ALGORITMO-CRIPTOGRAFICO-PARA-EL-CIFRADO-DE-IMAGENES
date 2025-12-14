@@ -182,7 +182,8 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   for (size_t i = 0; i < params.transition_length; i++) {
     keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
         nullptr, d_pointers.d_seeds, img_dimensions, params.chaos_parameter, i,
-        params.num_blocks_permutations, d_pointers.d_chaotic_values, block_size);
+        params.num_blocks_permutations, d_pointers.d_chaotic_values,
+        block_size);
   }
 
   // Stream
@@ -209,39 +210,21 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
                                          EncryptionParams params);
 
 /**
- * @brief Generate permutations from cellular automata instances.
+ * @brief Generate permutation from a cellular automaton.
  *
- * For each provided automaton, this function extracts a packed state and
- * computes a permutation suitable for block reordering.
+ * This function evolves the automaton for the specified number of steps,
+ * extracts its state, and computes a permutation suitable for reordering.
  *
- * @param automatas Vector of pointers to ElementalCelularAutomata instances.
- * @param steps Number of automata evolution steps used to derive permutations.
- * @param block_length Length of each permutation block.
- * @return Device pointer to the flattened permutations array (caller must
- * free).
+ * @param automata Pointer to ElementalCelularAutomata instance.
+ * @param steps Number of automata evolution steps used to derive permutation.
+ * @param block_length Length of the permutation.
+ * @param verbose Enable verbose output for timing information.
+ * @return Device pointer to the permutation array (caller must free).
  */
-__host__ unsigned int *generate_automata_permutations(
-    const std::vector<ElementalCelularAutomata *> automatas, const size_t steps,
-    const size_t block_length, bool verbose);
-
-/**
- * @brief Creates a set of ElementalCelularAutomata instances from password
- * segments.
- *
- * Each password segment initializes the automaton state. Precision level
- * determines how much of the password is used or how states are interpreted.
- *
- * @param password_segments Vector of password byte segments (one per
- * automaton).
- * @param num_blocks Number of automata to create.
- * @param block_size Block size related to the automata cell count.
- * @param precision_level Precision level used when initializing automata
- * states.
- * @return A vector of pointers to created ElementalCelularAutomata instances.
- */
-__host__ const std::vector<ElementalCelularAutomata *> createElementalAutomata(
-    const std::vector<std::vector<unsigned char>> &password_segments,
-    size_t num_blocks, size_t block_size, size_t precision_level);
+__host__ unsigned int *
+generate_automata_permutations(ElementalCelularAutomata *automata,
+                               const size_t steps, const size_t block_length,
+                               bool verbose);
 
 /**
  * @brief Unstacks an interleaved (BGR) image on the device into a planar

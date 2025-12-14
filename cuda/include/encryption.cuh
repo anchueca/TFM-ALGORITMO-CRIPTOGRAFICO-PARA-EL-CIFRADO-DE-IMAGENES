@@ -100,6 +100,8 @@ void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimensions img_dimensions,
                                     size_t block_size);
 
+void warmup_gpu();
+
 /**
  * @brief Executes the inverse permutation process for decryption.
  *
