@@ -4,176 +4,74 @@
 //                                  MAIN ORCHESTRATOR
 // =================================================================================
 
-__host__ void encrypt_image(cv::Mat &image, const std::string &password,
-                            const EncryptionParams &params, bool verbose,
-                            bool encrypt) {
+// =================================================================================
+//                                  HELPER FUNCTIONS
+// =================================================================================
 
-  // --- 1. PRE-PROCESSING (GPU Side Optimization) ---
-  bool is_color = (image.channels() == 3);
-
-  // Calculate dimensions locally without CPU unstacking
-  // If color, the "processed" width is cols * 3.
-  const Image_dimensions img_dimensions = {
-      static_cast<size_t>(is_color ? image.cols * 3 : image.cols),
-      static_cast<size_t>(image.rows)};
-
-  D_pointers d_pointers;
-
-  // Calculate grid block distribution
-  const size_t num_blocks_per_row =
-      img_dimensions.rows / params.block_size +
-      (img_dimensions.rows % params.block_size != 0);
-  const size_t num_blocks_per_col =
-      img_dimensions.cols / params.block_size +
-      (img_dimensions.cols % params.block_size != 0);
+void print_encryption_report(const cv::Mat &image, const Image_dimensions &img_dimensions,
+                              const EncryptionParams &params, bool encrypt) {
+  const size_t num_blocks_per_row = img_dimensions.rows / params.block_size + (img_dimensions.rows % params.block_size != 0);
+  const size_t num_blocks_per_col = img_dimensions.cols / params.block_size + (img_dimensions.cols % params.block_size != 0);
   const size_t num_blocks = num_blocks_per_row * num_blocks_per_col;
 
-  // --- 2. VERBOSE REPORTING ---
-  if (verbose) {
-    std::cout
-        << "\n============================================================"
-        << std::endl;
-    std::cout << "               ENCRYPTION CONFIGURATION REPORT              "
-              << std::endl;
-    std::cout << "============================================================"
-              << std::endl;
+  std::cout << "\n============================================================" << std::endl;
+  std::cout << "               ENCRYPTION CONFIGURATION REPORT              " << std::endl;
+  std::cout << "============================================================" << std::endl;
+  std::cout << " [IMAGE PROPERTIES]" << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Operation Mode:" << (encrypt ? "ENCRYPTION" : "DECRYPTION") << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Original Format:" << (image.channels() == 3 ? "Color (RGB)" : "Grayscale (1-CH)") << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Processing Dims:" << img_dimensions.cols << " x " << img_dimensions.rows << " px" << std::endl;
+  std::cout << "\n [ALGORITHM SETTINGS]" << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Rounds:" << params.rounds << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Block Size:" << params.block_size << " px" << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Automata Steps:" << params.automata_steps << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Transition Length:" << params.transition_length << std::endl;
+  std::cout << "\n [GRID ARCHITECTURE]" << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Grid Layout:" << num_blocks_per_col << " (cols) x " << num_blocks_per_row << " (rows)" << std::endl;
+  std::cout << "  " << std::left << std::setw(25) << "Total Blocks:" << num_blocks << std::endl;
+  std::cout << "============================================================\n" << std::endl;
+}
 
-    std::cout << " [IMAGE PROPERTIES]" << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Operation Mode:" << (encrypt ? "ENCRYPTION" : "DECRYPTION")
-              << std::endl;
-    std::cout << "  " << std::left << std::setw(25) << "Original Format:"
-              << (is_color ? "Color (RGB)" : "Grayscale (1-CH)") << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Processing Dims:" << img_dimensions.cols << " x "
-              << img_dimensions.rows << " px" << std::endl;
+void setup_permutations(D_pointers &d_pointers, std::vector<std::vector<unsigned char>> &password,
+                        const Image_dimensions &img_dimensions, const EncryptionParams &params, bool verbose) {
+  if (verbose) std::cout << " > Generating Permutations..." << std::endl;
 
-    std::cout << "\n [ALGORITHM SETTINGS]" << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Rounds:" << params.rounds << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Block Size:" << params.block_size << " px" << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Automata Steps:" << params.automata_steps << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Transition Length:" << params.transition_length << std::endl;
+  if (verbose) std::cout << "\t(Processing Cols Automata...)" << std::endl;
+  ElementalCelularAutomata cols_automata(password[1], img_dimensions.cols * 2 * 8, 30);
+  d_pointers.d_permutation_cols = generate_automata_permutations(&cols_automata, params.automata_steps, img_dimensions.cols, verbose);
 
-    std::cout << "\n [GRID ARCHITECTURE]" << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Grid Layout:" << num_blocks_per_col << " (cols) x "
-              << num_blocks_per_row << " (rows)" << std::endl;
-    std::cout << "  " << std::left << std::setw(25)
-              << "Total Blocks:" << num_blocks << std::endl;
-    std::cout
-        << "============================================================\n"
-        << std::endl;
-  }
+  if (verbose) std::cout << "\t(Processing Rows Automata...)" << std::endl;
+  ElementalCelularAutomata rows_automata(password[0], img_dimensions.rows * 2 * 8, 30);
+  d_pointers.d_permutation_rows = generate_automata_permutations(&rows_automata, params.automata_steps, img_dimensions.rows, verbose);
 
-  // --- 3. KEY GENERATION (Host heavy) ---
+  if (verbose) std::cout << " > Calculating Inverse Permutations..." << std::endl;
+  inverse_permutations(d_pointers.d_permutation_cols, &d_pointers.d_permutation_cols_inverse, img_dimensions.cols, 1);
+  inverse_permutations(d_pointers.d_permutation_rows, &d_pointers.d_permutation_rows_inverse, img_dimensions.rows, 1);
+}
 
-  auto start = std::chrono::high_resolution_clock::now();
-
-  // --- 2. PASSWORD PROCESSING ---
-  if (verbose)
-    std::cout << " > Password hashing & expansion: ";
-
-  std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(password, params.num_blocks_permutations,
-                         img_dimensions, verbose);
-
-  auto end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> time = end - start;
-
-  if (verbose)
-    std::cout << time.count() * 1000.0f << " ms" << std::endl;
-
-  // --- 3. MEMORY ALLOCATION & DATA TRANSFER ---
-  // (Moved up to grouping allocations, logic unchanged)
-
-  // --- 4. PERMUTATION GENERATION (GPU) ---
-  if (verbose)
-    std::cout << " > Generating Permutations..." << std::endl;
-
-  // A. Columns - Create automata from password segment for columns
-  if (verbose)
-    std::cout << "\t(Processing Cols Automata...)" << std::endl;
-  ElementalCelularAutomata cols_automata(password_segments[1],
-                                         img_dimensions.cols * 2 * 8, 30);
-  d_pointers.d_permutation_cols = generate_automata_permutations(
-      &cols_automata, params.automata_steps, img_dimensions.cols, verbose);
-
-  // B. Rows - Create automata from password segment for rows
-  if (verbose)
-    std::cout << "\t(Processing Rows Automata...)" << std::endl;
-  ElementalCelularAutomata rows_automata(password_segments[0],
-                                         img_dimensions.rows * 2 * 8, 30);
-  d_pointers.d_permutation_rows = generate_automata_permutations(
-      &rows_automata, params.automata_steps, img_dimensions.rows, verbose);
-
-  // --- 5. INVERSE PERMUTATIONS ---
-  if (verbose)
-    std::cout << " > Calculating Inverse Permutations..." << std::endl;
-  inverse_permutations(d_pointers.d_permutation_cols,
-                       &d_pointers.d_permutation_cols_inverse,
-                       img_dimensions.cols, 1);
-  inverse_permutations(d_pointers.d_permutation_rows,
-                       &d_pointers.d_permutation_rows_inverse,
-                       img_dimensions.rows, 1);
-
-  // --- 6. MEMORY ALLOCATION & DATA TRANSFER ---
-
-  // Total size is same as original interleaved image.
+void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image, const EncryptionParams &params) {
   const size_t img_size = image.total() * image.elemSize();
-
   cudaMalloc(&d_pointers.d_image, img_size);
   cudaMalloc(&d_pointers.d_image_out, img_size);
   cudaMalloc(&d_pointers.d_flow, img_size + params.num_blocks_permutations);
 
-  if (is_color) {
-    // 1. Upload Interleaved data to d_image_out (as temp buffer)
-    cudaMemcpy(d_pointers.d_image_out, image.data, img_size,
-               cudaMemcpyHostToDevice);
-
-    // 2. GPU Unstack: d_image_out (Interleaved) -> d_image (Planar)
-    unstack_channels_gpu(d_pointers.d_image_out, d_pointers.d_image, image.cols,
-                         image.rows);
+  if (image.channels() == 3) {
+    cudaMemcpy(d_pointers.d_image_out, image.data, img_size, cudaMemcpyHostToDevice);
+    unstack_channels_gpu(d_pointers.d_image_out, d_pointers.d_image, image.cols, image.rows);
   } else {
-    // Grayscale: Direct copy
-    cudaMemcpy(d_pointers.d_image, image.data, img_size,
-               cudaMemcpyHostToDevice);
+    cudaMemcpy(d_pointers.d_image, image.data, img_size, cudaMemcpyHostToDevice);
+  }
+}
+
+void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
+  const size_t img_size = image.total() * image.elemSize();
+  if (image.channels() == 3) {
+    stack_channels_gpu(d_pointers.d_image, d_pointers.d_image_out, image.cols, image.rows);
+    cudaMemcpy(image.data, d_pointers.d_image_out, img_size, cudaMemcpyDeviceToHost);
+  } else {
+    cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
   }
 
-  convert_bits_to_real(password_segments[2], &d_pointers.d_seeds);
-
-  // --- 7. EXECUTION ---
-  if (encrypt) {
-    encryption_process(d_pointers, img_dimensions, params.block_size, params,
-                       verbose);
-  } else {
-    unencryption_process(d_pointers, img_dimensions, params.block_size, params,
-                         verbose);
-  }
-
-  if (verbose)
-    std::cout << " > GPU Execution Completed." << std::endl;
-
-  // --- 8. POST-PROCESSING ---
-  if (is_color) {
-    // We need to Interleave back.
-    // d_image (Planar) -> d_image_out (Interleaved)
-
-    stack_channels_gpu(d_pointers.d_image, d_pointers.d_image_out, image.cols,
-                       image.rows);
-
-    // Download from d_image_out
-    cudaMemcpy(image.data, d_pointers.d_image_out, img_size,
-               cudaMemcpyDeviceToHost);
-  } else {
-    cudaMemcpy(image.data, d_pointers.d_image, img_size,
-               cudaMemcpyDeviceToHost);
-  }
-
-  // --- CLEANUP ---
   cudaFree(d_pointers.d_permutation_cols);
   cudaFree(d_pointers.d_permutation_rows);
   cudaFree(d_pointers.d_permutation_blocks);
@@ -181,6 +79,35 @@ __host__ void encrypt_image(cv::Mat &image, const std::string &password,
   cudaFree(d_pointers.d_flow);
   cudaFree(d_pointers.d_image);
   cudaFree(d_pointers.d_image_out);
+}
+
+// =================================================================================
+//                                  MAIN ORCHESTRATOR
+// =================================================================================
+
+__host__ void encrypt_image(cv::Mat &image, std::vector<std::vector<unsigned char>> &password,
+                            const Image_dimensions &img_dimensions,
+                            const EncryptionParams &params, bool verbose,
+                            bool encrypt) {
+  D_pointers d_pointers;
+
+  if(verbose)print_encryption_report(image, img_dimensions, params, encrypt);
+
+  setup_permutations(d_pointers, password, img_dimensions, params, verbose);
+
+  allocate_and_transfer_image(d_pointers, image, params);
+
+  convert_bits_to_real(password[2], &d_pointers.d_seeds);
+
+  if (encrypt) {
+    encryption_process(d_pointers, img_dimensions, params.block_size, params, verbose);
+  } else {
+    unencryption_process(d_pointers, img_dimensions, params.block_size, params, verbose);
+  }
+
+  if (verbose) std::cout << " > GPU Execution Completed." << std::endl;
+
+  transfer_back_and_cleanup(d_pointers, image);
 }
 
 // =================================================================================

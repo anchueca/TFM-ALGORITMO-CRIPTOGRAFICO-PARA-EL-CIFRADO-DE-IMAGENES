@@ -41,8 +41,8 @@ using namespace std;
  * @param verbose Flag to enable console logging for performance metrics.
  * @param encrypt True to encrypt, False to decrypt.
  */
-__host__ void encrypt_image(cv::Mat &image, const std::string &password,
-                            const EncryptionParams &params, bool verbose,
+__host__ void encrypt_image(cv::Mat &image, std::vector<std::vector<unsigned char>> &password,
+                            const Image_dimensions &img_dimensions, const EncryptionParams &params, bool verbose,
                             bool encrypt);
 
 /**
@@ -132,5 +132,18 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
 void image_permutation_encryption_process(D_pointers &d_pointers,
                                           Image_dimensions img_dimensions,
                                           size_t block_size);
+
+/**
+ * @brief Helper functions for the encryption pipeline.
+ */
+void print_encryption_report(const cv::Mat &image, const Image_dimensions &img_dimensions,
+                              const EncryptionParams &params, bool encrypt);
+
+void setup_permutations(D_pointers &d_pointers, std::vector<std::vector<unsigned char>> &password,
+                        const Image_dimensions &img_dimensions, const EncryptionParams &params, bool verbose);
+
+void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image, const EncryptionParams &params);
+
+void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image);
 
 #endif // ENCRYPTION_CUH
