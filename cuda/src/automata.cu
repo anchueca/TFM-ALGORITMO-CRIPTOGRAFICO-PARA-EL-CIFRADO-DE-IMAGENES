@@ -228,15 +228,3 @@ size_t ElementalCelularAutomata::get_size() const { return this->size; }
 size_t ElementalCelularAutomata::get_size_in_bytes() const {
   return this->size_in_bytes;
 }
-
-void ElementalCelularAutomata::iterate_isolated_16(int num_steps) {
-  // Total shorts = size / 16
-  // size is in bits.
-  size_t num_shorts = size / 16;
-  int threads = 256;
-  int blocks = (num_shorts + threads - 1) / threads;
-
-  evolve_16bit_isolated<<<blocks, threads>>>((unsigned short *)d_state[0], rule,
-                                             num_steps);
-  cudaDeviceSynchronize();
-}

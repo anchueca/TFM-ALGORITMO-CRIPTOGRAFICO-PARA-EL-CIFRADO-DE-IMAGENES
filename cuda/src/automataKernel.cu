@@ -216,84 +216,31 @@ __global__ void evolve_block_level(unsigned int *state,
   }
 }
 
-__global__ void evolve_16bit_isolated(unsigned short *state,
-                                      int rule, // TODO: POR HACER
+__device__ void evolve_16bit_isolated(unsigned short *state, int rule,
                                       int num_steps) {
-  extern __shared__ unsigned int s_mem[];
+  unsigned short current = *state;
 
-  int tid = threadIdx.x;
-  int block_offset = blockIdx.x * blockDim.x;
-
-  // Calculate number of uints needed for this block
-  int uints_per_block = (blockDim.x + 31) / 32;
-
-  // Set up double buffering pointers in shared memory
-  unsigned int *s_current = s_mem;
-  unsigned int *s_next = s_mem + uints_per_block;
-
-  // --- 1. Load initial state from global to shared memory ---
-  int uint_idx_in_block = tid / 32;
-  int bit_idx_in_uint = tid % 32;
-
-  // Cooperative loading: each warp loads one uint
-  if (uint_idx_in_block < uints_per_block && tid < blockDim.x) {
-    int global_uint_idx = (block_offset / 32) + uint_idx_in_block;
-    if (bit_idx_in_uint == 0) {
-      s_current[uint_idx_in_block] = state[global_uint_idx];
-    }
-  }
-
-  __syncthreads();
-
-  // --- 2. Perform iterations with block-level wrapping ---
   for (int iter = 0; iter < num_steps; iter++) {
-    // Clear next buffer
-    if (uint_idx_in_block < uints_per_block && bit_idx_in_uint == 0) {
-      s_next[uint_idx_in_block] = 0;
-    }
-    __syncthreads();
+    unsigned short next = 0;
+    for (int i = 0; i < 16; i++) {
+      // Periodic boundary indices
+      // In this project: bit 15 is left, bit 0 is right.
+      int left_idx = (i == 15) ? 0 : i + 1;
+      int center_idx = i;
+      int right_idx = (i == 0) ? 15 : i - 1;
 
-    // Each thread processes one cell
-    if (tid < blockDim.x) {
-      unsigned int left_val, center_val, right_val;
+      // Extract neighbor bits
+      int left_val = (current >> left_idx) & 1;
+      int center_val = (current >> center_idx) & 1;
+      int right_val = (current >> right_idx) & 1;
 
-      // Get center value
-      int center_uint = tid / 32;
-      int center_bit = tid % 32;
-      center_val = (s_current[center_uint] >> (31 - center_bit)) & 1;
-
-      // Get left neighbor with 16 bits-level wrapping
-      int left_tid = (tid == 0) ? (blockDim.x - 1) : (tid - 1);
-      int left_uint = left_tid / 32;
-      int left_bit = left_tid % 32;
-      left_val = (s_current[left_uint] >> (31 - left_bit)) & 1;
-
-      // Get right neighbor with 16 bits-level wrapping
-      int right_tid = (tid == blockDim.x - 1) ? 0 : (tid + 1);
-      int right_uint = right_tid / 32;
-      int right_bit = right_tid % 32;
-      right_val = (s_current[right_uint] >> (31 - right_bit)) & 1;
-
-      // Apply rule
       int neighborhood = (left_val << 2) | (center_val << 1) | right_val;
+
       if ((rule >> neighborhood) & 1) {
-        // Set bit in next state
-        unsigned int mask = (1U << (31 - center_bit));
-        atomicOr(&s_next[center_uint], mask);
+        next |= (1 << center_idx);
       }
     }
-
-    __syncthreads();
-
-    // Swap buffers (ping-pong)
-    unsigned int *temp = s_current;
-    s_current = s_next;
-    s_next = temp;
+    current = next;
   }
-
-  // --- 3. Write final result back to global memory ---
-  if (uint_idx_in_block < uints_per_block && bit_idx_in_uint == 0) {
-    int global_uint_idx = (block_offset / 32) + uint_idx_in_block;
-    state[global_uint_idx] = s_current[uint_idx_in_block];
-  }
+  *state = current;
 }

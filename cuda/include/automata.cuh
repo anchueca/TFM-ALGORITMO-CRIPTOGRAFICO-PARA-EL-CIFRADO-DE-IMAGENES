@@ -87,14 +87,6 @@ public:
   void iterate_block_level(int num_steps = 1);
 
   /**
-   * @brief Evolves the automata treating every 16-bit chunk as an isolated
-   * universe.
-   *
-   * @param num_steps Number of iterations.
-   */
-  void iterate_isolated_16(int num_steps = 1);
-
-  /**
    * @brief Prints the current state of the automata to the console.
    * '#' represents a live cell, a blank space ' ' a dead cell.
    */

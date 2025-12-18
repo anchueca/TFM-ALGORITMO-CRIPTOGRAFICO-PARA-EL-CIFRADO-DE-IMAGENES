@@ -24,16 +24,15 @@ __global__ void evolve_block_level(unsigned int *state,
                                    int num_steps);
 
 /**
- * @brief Kernel for 16-bit isolated block evolution.
+ * @brief Kernel for 16-bit isolated CA evolution.
  *
  * Each thread handles a 16-bit block exclusively using registers.
- * No shared memory or global synchronization required.
  *
  * @param state Device pointer to state (viewed as unsigned short*)
  * @param rule Rule number (0-255)
  * @param num_steps Number of iterations
  */
-__global__ void evolve_16bit_isolated(unsigned short *state, int rule,
+__device__ void evolve_16bit_isolated(unsigned short *state, int rule,
                                       int num_steps);
 
 #endif // AUTOMATAKERNEL_CUH
