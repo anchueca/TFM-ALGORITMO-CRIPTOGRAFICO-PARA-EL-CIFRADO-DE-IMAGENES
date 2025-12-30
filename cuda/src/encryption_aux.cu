@@ -5,7 +5,6 @@
  */
 
 #include "../include/encryption_aux.cuh"
-#include <cstddef>
 
 __host__ unsigned int *
 generate_automata_permutations(ElementalCelularAutomata *automata,
@@ -124,12 +123,12 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
   return d_indices;
 }
 
-__host__ void block_phase_permutation_simple(unsigned char *d_image,
-                                             unsigned char *d_image_out,
-                                             unsigned int *permutation,
-                                             unsigned int *permutation_inverse,
-                                             Image_dimensions img_dimensions,
-                                             size_t block_size) {
+__host__ void block_phase_permutation(unsigned char *d_image,
+                                      unsigned char *d_image_out,
+                                      unsigned int *permutation,
+                                      unsigned int *permutation_inverse,
+                                      Image_dimensions img_dimensions,
+                                      size_t block_size) {
   dim3 threadsPerBlock(16, 16);
   dim3 numBlocks(
       (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
@@ -145,24 +144,21 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
                                          Image_dimensions img_dimensions,
                                          EncryptionParams params) {
   size_t block_size = params.block_size * params.block_size;
+
   if (d_pointers.d_permutation_blocks == nullptr) {
     cudaError_t err = cudaMalloc(&d_pointers.d_permutation_blocks,
-                                 block_size * params.num_blocks_permutations *
-                                     sizeof(unsigned int));
+                                 block_size * sizeof(unsigned int));
     if (err != cudaSuccess) {
       throw std::runtime_error("Failed to allocate device memory for indices");
     }
   }
   dim3 threadsPerBlock(256);
-  dim3 numBlocks((img_dimensions.cols + params.num_blocks_permutations +
-                  threadsPerBlock.x - 1) /
-                 threadsPerBlock.x);
-  sort_indices_by_chaotic_values_global<<<params.num_blocks_permutations, 1>>>(
-      d_pointers.d_chaotic_values, params.num_blocks_permutations,
-      d_pointers.d_permutation_blocks, block_size);
+  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x) / threadsPerBlock.x);
+  sort_indices_by_chaotic_values_global<<<1, 1>>>(
+      d_pointers.d_chaotic_values, 1, d_pointers.d_permutation_blocks,
+      block_size);
   inverse_permutations(d_pointers.d_permutation_blocks,
-                       &d_pointers.d_permutation_blocks_inverse, block_size,
-                       params.num_blocks_permutations);
+                       &d_pointers.d_permutation_blocks_inverse, block_size, 1);
 }
 
 __host__ void rows_and_columns_permutation(unsigned char *d_image,
@@ -305,4 +301,117 @@ __host__ void stack_channels_gpu(unsigned char *d_planar,
     throw std::runtime_error("Launch error: interleave_channels_kernel");
   }
   cudaDeviceSynchronize();
+}
+
+__host__ void
+convert_bits_to_real(const std::vector<unsigned char> &password_segment,
+                     Real **d_seeds) {
+
+  size_t total_bytes = password_segment.size();
+  size_t element_size = sizeof(unsigned int);
+
+  if (total_bytes % element_size != 0) {
+    throw std::runtime_error("Invalid length.");
+  }
+
+  size_t num_elements = total_bytes / element_size;
+
+  cudaError_t err = cudaMalloc((void **)d_seeds, total_bytes);
+  if (err != cudaSuccess)
+    throw std::runtime_error("Error cudaMalloc");
+
+  err = cudaMemcpy(*d_seeds, password_segment.data(), total_bytes,
+                   cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) {
+    cudaFree(*d_seeds);
+    throw std::runtime_error("Error cudaMemcpy");
+  }
+
+  const int threadsPerBlock = 256;
+  const int gridOfBlocks =
+      (num_elements + threadsPerBlock - 1) / threadsPerBlock;
+
+  convert_bits_to_real_kernel<<<gridOfBlocks, threadsPerBlock>>>(*d_seeds,
+                                                                 num_elements);
+
+  if (cudaGetLastError() != cudaSuccess) {
+    cudaFree(*d_seeds);
+    throw std::runtime_error("Error en kernel convert_bits_to_real");
+  }
+
+  cudaDeviceSynchronize();
+}
+
+__host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
+                                            Image_dimensions img_dimensions,
+                                            EncryptionParams params) {
+
+  // Launch flow stream kernel
+  dim3 threadsPerBlock(256);
+  dim3 numBlocks(
+      (img_dimensions.cols + params.num_extra_seeds + threadsPerBlock.x - 1) /
+      threadsPerBlock.x);
+
+  // For permutations
+  size_t block_size = params.block_size * params.block_size;
+
+  size_t transition_length;
+  Real *chaotic_values;
+
+  cudaError_t err;
+  if (d_pointers.d_chaotic_values == nullptr) {
+    err = cudaMalloc(&d_pointers.d_chaotic_values, block_size * sizeof(Real));
+    if (err != cudaSuccess) {
+      cudaFree(d_pointers.d_permutation_blocks);
+      throw std::runtime_error(
+          "Failed to allocate device memory for chaotic values");
+    }
+    // First time only transition is computed
+    transition_length = params.transition_length;
+    chaotic_values = d_pointers.d_chaotic_values;
+  } else {
+    // First transition is already computed
+    transition_length = 0;
+    chaotic_values = nullptr;
+  }
+
+  // Shared memory needs to hold the block's seeds plus extra seeds
+  size_t shared_mem_size = threadsPerBlock.x * sizeof(Real);
+
+  // Single kernel launch for transition + stream generation
+  keystream_generation_parallel<<<numBlocks, threadsPerBlock,
+                                  shared_mem_size>>>(
+      d_pointers.d_flow, d_pointers.d_seeds,
+      reinterpret_cast<unsigned short *>(d_pointers.d_permutation_cols),
+      img_dimensions, params.chaos_parameter,
+      img_dimensions.rows + transition_length, chaotic_values, block_size,
+      transition_length, params.num_extra_seeds, numBlocks.x);
+
+  // Final synchronization to ensure all stream generation is done before
+  // proceeding
+  err = cudaGetLastError();
+  if (err != cudaSuccess) {
+    throw std::runtime_error(
+        "generate_flow_stream_parallel: Kernel launch error");
+  }
+
+  cudaDeviceSynchronize();
+}
+
+__global__ void sort_indices_by_chaotic_values_global(Real *d_chaotic_values,
+                                                      size_t num_blocks,
+                                                      unsigned int *indices,
+                                                      size_t block_length) {
+
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+  if (idx >= (int)num_blocks)
+    return;
+  int base_idx = idx * (int)block_length;
+
+  for (int i = 0; i < block_length; i++) { // Create indices
+    indices[base_idx + i] = i;
+  }
+
+  sort_indices_by_chaotic_values(base_idx, d_chaotic_values, indices,
+                                 block_length);
 }

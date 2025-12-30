@@ -1,11 +1,9 @@
-#include "../include/encryption.cuh"
 #include "../include/cli_config.cuh"
+#include "../include/encryption.cuh"
 
 #include <chrono>
 #include <cstring>
 #include <iostream>
-
-#include <string>
 
 using namespace std;
 
@@ -33,29 +31,36 @@ int main(int argc, char **argv) {
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  if (config.verbose) std::cout << " > Password hashing & expansion: ";
+  if (config.verbose)
+    std::cout << " > Password hashing & expansion: ";
 
   std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(config.password, config.params.num_blocks_permutations,
-                         img_dimensions, config.verbose);
+      calculate_password(config.password, img_dimensions, config.verbose);
 
   auto end = std::chrono::high_resolution_clock::now();
-  if (config.verbose) std::cout << std::chrono::duration<double>(end - start).count() * 1000.0f << " ms" << std::endl;
+  if (config.verbose)
+    std::cout << std::chrono::duration<double>(end - start).count() * 1000.0f
+              << " ms" << std::endl;
 
   start = std::chrono::high_resolution_clock::now();
   try {
-    encrypt_image(image, password_segments, img_dimensions, config.params, config.verbose, config.encrypt);
+    encrypt_image(image, password_segments, img_dimensions, config.params,
+                  config.verbose, config.encrypt);
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During encryption process: " << e.what() << endl;
     return -1;
   }
   end = std::chrono::high_resolution_clock::now();
-  
+
   std::chrono::duration<double> total_time = end - start;
   if (config.verbose) {
-    std::cout << "Total Pipeline Time: " << total_time.count() * 1000.0f << " ms" << std::endl;
+    std::cout << "Total Pipeline Time: " << total_time.count() * 1000.0f
+              << " ms" << std::endl;
   }
   std::cerr << "EXEC_TIME:" << total_time.count() << std::endl;
 
-  return handle_output(config.output_mode, config.output_arg, image, config.verbose) ? 0 : -1;
+  return handle_output(config.output_mode, config.output_arg, image,
+                       config.verbose)
+             ? 0
+             : -1;
 }

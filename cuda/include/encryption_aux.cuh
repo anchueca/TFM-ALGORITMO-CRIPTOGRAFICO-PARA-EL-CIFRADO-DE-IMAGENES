@@ -26,12 +26,12 @@
  * @param img_dimensions Struct containing the image dimensions.
  * @param block_size The size of the blocks used for permutation.
  */
-__host__ void block_phase_permutation_simple(unsigned char *d_image,
-                                             unsigned char *d_image_out,
-                                             unsigned int *permutation,
-                                             unsigned int *permutation_inverse,
-                                             Image_dimensions img_dimensions,
-                                             size_t block_size);
+__host__ void block_phase_permutation(unsigned char *d_image,
+                                      unsigned char *d_image_out,
+                                      unsigned int *permutation,
+                                      unsigned int *permutation_inverse,
+                                      Image_dimensions img_dimensions,
+                                      size_t block_size);
 
 /**
  * @brief Executes row and column permutations on the GPU.
@@ -80,50 +80,13 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
  * floating-point seeds (normalized to [0, 1]) that are used to initialize
  * the chaotic maps.
  *
- * @tparam T The floating-point type for the seeds (float or double).
  * @param password_segment A vector of bytes representing the password segment.
  * @param d_seeds Pointer to the device memory where the generated seeds will be
  * stored. The function allocates this memory.
  */
-template <typename T>
 __host__ void
 convert_bits_to_real(const std::vector<unsigned char> &password_segment,
-                     T **d_seeds) {
-
-  size_t total_bytes = password_segment.size();
-  size_t element_size = sizeof(unsigned int);
-
-  if (total_bytes % element_size != 0) {
-    throw std::runtime_error("Invalid length.");
-  }
-
-  size_t num_elements = total_bytes / element_size;
-
-  cudaError_t err = cudaMalloc((void **)d_seeds, total_bytes);
-  if (err != cudaSuccess)
-    throw std::runtime_error("Error cudaMalloc");
-
-  err = cudaMemcpy(*d_seeds, password_segment.data(), total_bytes,
-                   cudaMemcpyHostToDevice);
-  if (err != cudaSuccess) {
-    cudaFree(*d_seeds);
-    throw std::runtime_error("Error cudaMemcpy");
-  }
-
-  const int threadsPerBlock = 256;
-  const int gridOfBlocks =
-      (num_elements + threadsPerBlock - 1) / threadsPerBlock;
-
-  convert_bits_to_real_kernel<T>
-      <<<gridOfBlocks, threadsPerBlock>>>(*d_seeds, num_elements);
-
-  if (cudaGetLastError() != cudaSuccess) {
-    cudaFree(*d_seeds);
-    throw std::runtime_error("Error en kernel convert_bits_to_real");
-  }
-
-  cudaDeviceSynchronize();
-}
+                     Real **d_seeds);
 
 /**
  * @brief Applies the flow encryption stage using provided seeds and chaotic
@@ -140,71 +103,33 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
                            Image_dimensions img_dimensions);
 
 /**
- * @brief Generates the flow keystream in parallel using a Coupled Map Lattice
- * (CML).
+ * @brief Generates the flow keystream in parallel using a Block-Parallel CML.
  *
- * This function generates a keystream based on a chaotic map. It uses a
- * parallel approach where each row of the image is processed by a separate
- * thread block (or set of blocks), with coupling between adjacent cells to
- * ensure diffusion.
+ * This function oversees the generation of the chaotic keystream. It configures
+ * the kernel launch to process the entire image height in a single pass (using
+ * looping inside the kernel) and manages the shared memory allocation required
+ * for block-level coupling.
  *
- * @tparam T The floating-point type for the chaotic map (float or double).
- * @param d_pointers Struct containing device pointers, specifically d_flow
- * (output) and d_seeds (input/state).
+ * @param d_pointers Struct containing device pointers (d_flow, d_seeds).
  * @param img_dimensions Struct containing the image dimensions.
- * @param r The chaotic parameter for the map.
- * @param transition_length The number of transition iterations to perform
- * before generating the stream.
+ * @param params Encryption configuration parameters.
  */
-template <typename T>
 __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
-                                            EncryptionParams params) {
+                                            EncryptionParams params);
 
-  // Launch flow stream kernel
-  dim3 threadsPerBlock(256);
-  dim3 numBlocks((img_dimensions.cols + params.num_blocks_permutations +
-                  threadsPerBlock.x - 1) /
-                 threadsPerBlock.x);
-
-  // For permutations
-  size_t block_size = params.block_size * params.block_size;
-
-  cudaError_t err;
-  err = cudaMalloc(&d_pointers.d_chaotic_values, block_size * sizeof(T));
-  if (err != cudaSuccess) {
-    cudaFree(d_pointers.d_permutation_blocks);
-    throw std::runtime_error(
-        "Failed to allocate device memory for chaotic values");
-  }
-
-  // Transition
-  for (size_t i = 0; i < params.transition_length; i++) {
-    keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
-        nullptr, d_pointers.d_seeds, img_dimensions, params.chaos_parameter, i,
-        params.num_blocks_permutations, d_pointers.d_chaotic_values,
-        block_size);
-  }
-
-  // Stream
-  for (size_t i = 0; i < img_dimensions.rows; i++) {
-    keystream_generation_parallel<<<numBlocks, threadsPerBlock>>>(
-        d_pointers.d_flow, d_pointers.d_seeds, img_dimensions,
-        params.chaos_parameter, i, params.num_blocks_permutations,
-        d_pointers.d_chaotic_values, block_size);
-  }
-
-  // Final synchronization to ensure all stream generation is done before
-  // proceeding
-  err = cudaGetLastError();
-  if (err != cudaSuccess) {
-    throw std::runtime_error(
-        "generate_flow_stream_parallel: Kernel launch error");
-  }
-
-  cudaDeviceSynchronize();
-}
-
+/**
+ * @brief Generate permutation for blocks.
+ *
+ * This function generates a permutation for blocks based on the provided
+ * parameters.
+ *
+ * @param d_pointers Struct containing device pointers for image data and
+ * permutations.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param params Struct containing configuration for encryption (block size,
+ * rounds, etc.).
+ */
 __host__ void generate_permutation_block(D_pointers &d_pointers,
                                          Image_dimensions img_dimensions,
                                          EncryptionParams params);

@@ -40,8 +40,7 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
  * @return Vector of password byte vectors, one per block.
  */
 __host__ std::vector<std::vector<unsigned char>>
-calculate_password(const std::string &input, size_t num_blocks,
-                   Image_dimensions img_dimensions,
+calculate_password(const std::string &input, Image_dimensions img_dimensions,
                    bool verbose);
 
 /**

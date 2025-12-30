@@ -46,13 +46,18 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
 
 // Calculate password segments from a master password (implementation)
 __host__ std::vector<std::vector<unsigned char>>
-calculate_password(const std::string &input, size_t num_blocks,
-                   Image_dimensions img_dimensions, bool verbose) {
+
+calculate_password(const std::string &input, Image_dimensions img_dimensions,
+                   bool verbose) {
 
   // Required lengths
+  // Fixed to 1 as we only need one set of chaotic values for block
+  // permutations.
+  const size_t num_blocks_permutations = 1;
+
   int bytes_for_rows = img_dimensions.rows * 2;
   int bytes_for_columns = img_dimensions.cols * 2;
-  int bytes_for_blocks = num_blocks * 4;
+  int bytes_for_blocks = num_blocks_permutations * 4;
   int bytes_for_flow = img_dimensions.cols * 4;
 
   // Total length

@@ -7,6 +7,17 @@
 #include "../include/kernels.cuh"
 #include <climits>
 
+__device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,
+                                            Real l_seed, Real r,
+                                            unsigned short *celular_automata) {
+
+  Real r_next = chaotic_functio(r_seed, r);
+  Real c_next = chaotic_functio(c_seed, r);
+  Real l_next = chaotic_functio(l_seed, r);
+
+  return (r_next + c_next + l_next) / 3.0;
+}
+
 __global__ void permute_blocks_kernel_simple(unsigned char *image,
                                              unsigned char *image_out,
                                              unsigned int *permutation,
@@ -161,4 +172,119 @@ __global__ void interleave_channels_kernel(const unsigned char *input,
   output[output_idx_base + 0] = b;
   output[output_idx_base + 1] = g;
   output[output_idx_base + 2] = r;
+}
+
+__global__ void keystream_generation_parallel(
+    unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
+    unsigned short *celular_automata, Image_dimensions img_dimensions, Real r,
+    const size_t total_steps, Real *__restrict__ d_chaotic_values,
+    size_t permutation_block_size, size_t transition_length,
+    size_t num_extra_seeds, size_t numBlocks) {
+
+  // Shared size is determined at kernel launch
+  extern __shared__ char shared_mem[];
+  Real *s_seeds = reinterpret_cast<Real *>(shared_mem);
+
+  // Thread ID
+  int tid = threadIdx.x;
+  int block_offset = blockIdx.x * blockDim.x;
+  int x = block_offset + tid;
+
+  size_t cols_and_blocks = img_dimensions.cols + num_extra_seeds * numBlocks;
+  if (x >= cols_and_blocks)
+    return;
+
+  // Get neighbors
+
+  Real *c_seed = nullptr;
+  Real *r_seed = nullptr;
+  Real *l_seed = nullptr;
+  {
+    size_t block_length = blockIdx.x < numBlocks
+                              ? blockDim.x
+                              : cols_and_blocks - (numBlocks - 1) * blockDim.x;
+
+    c_seed = &s_seeds[tid];
+    r_seed = &s_seeds[tid == 0 ? block_length - 1 : tid - 1];
+    l_seed = &s_seeds[tid == block_length - 1 ? 0 : tid + 1];
+  }
+
+  // Get initial state
+  Real current_xn = 0.0;
+
+  if (tid < num_extra_seeds)
+    current_xn = d_seeds[tid];
+  else {
+    current_xn = d_seeds[x - (blockIdx.x + 1) * num_extra_seeds];
+  }
+  *c_seed = current_xn;
+
+  for (size_t step = 0; step < total_steps; ++step) {
+    __syncthreads(); // To avoid race conditions
+    current_xn = coupled_map(current_xn, *r_seed, *l_seed, r, celular_automata);
+    if (tid == 0 && d_chaotic_values != nullptr &&
+        step >= total_steps - permutation_block_size) {
+      *c_seed = current_xn;
+      d_chaotic_values[step - (total_steps - permutation_block_size)] =
+          current_xn;
+    } else if (tid >= num_extra_seeds && step >= transition_length) {
+      size_t col = x - (blockIdx.x + 1) * num_extra_seeds;
+      size_t row = step - transition_length;
+      d_flow[row * img_dimensions.cols + col] = convertToBitStream(current_xn);
+    }
+
+    __syncthreads();
+    *c_seed = current_xn;
+  }
+
+  // Store final state back to global memory
+  if (tid >= num_extra_seeds)
+    d_seeds[x - (blockIdx.x + 1) * num_extra_seeds] = current_xn;
+}
+
+__global__ void convert_bits_to_real_kernel(Real *d_seeds,
+                                            size_t num_elements) {
+  int idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  if (idx >= num_elements)
+    return;
+  d_seeds[idx] =
+      static_cast<Real>(reinterpret_cast<uint32_t *>(d_seeds)[idx]) / UINT_MAX;
+}
+
+__device__ void sort_indices_by_chaotic_values(int base_idx, Real *chaotic_vals,
+                                               unsigned int *indices,
+                                               size_t block_length) {
+
+  Real local_vals[MAX_BLOCK_SIZE];
+  unsigned int local_indices[MAX_BLOCK_SIZE];
+
+  if (block_length > MAX_BLOCK_SIZE)
+    printf("Length too large");
+
+  for (size_t i = 0; i < block_length; i++) {
+    local_vals[i] = chaotic_vals[base_idx + i];
+    local_indices[i] = indices[base_idx + i];
+  }
+
+  for (size_t i = 1; i < block_length; i++) {
+    Real key_val = local_vals[i];
+    unsigned int key_idx = local_indices[i];
+
+    int j = (int)i - 1;
+
+    while (j >= 0 && local_vals[j] > key_val) {
+      local_vals[j + 1] = local_vals[j];
+      local_indices[j + 1] = local_indices[j];
+      j = j - 1;
+    }
+
+    local_vals[j + 1] = key_val;
+    local_indices[j + 1] = key_idx;
+  }
+
+  for (size_t i = 0; i < block_length; i++) {
+    indices[base_idx + i] = local_indices[i];
+    chaotic_vals[base_idx + i] = local_vals[i];
+  }
 }

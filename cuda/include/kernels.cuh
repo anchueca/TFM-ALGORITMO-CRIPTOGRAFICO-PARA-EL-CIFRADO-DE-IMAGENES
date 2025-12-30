@@ -41,62 +41,38 @@ __device__ __forceinline__ float chaotic_functio<float>(float x, float r) {
   return fabsf(cosf(3.14159265f * r * cosf(3.14159265f * t) * t));
 }
 
+__device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,
+                                            Real l_seed, Real r,
+                                            unsigned short *celular_automata);
+
 /**
- * @brief Kernel to generate keystream using a Coupled Map Lattice (CML) in
- * parallel.
+ * @brief Kernel to generate keystream using a Block-Parallel Coupled Map
+ * Lattice (CML).
  *
- * This kernel implements the CML system where each cell's next state depends on
- * its current state and the states of its neighbors (coupling). This provides
- * spatial diffusion in the generated keystream.
+ * This kernel implements a parallel CML system where each thread block operates
+ * independently. The coupling is cyclic within the valid threads of the block.
+ * Uses shared memory to store the block's state ("seeds") to minimize global
+ * memory access.
  *
- * @tparam T The floating-point type for the chaotic map.
  * @param d_flow Output buffer for the generated keystream.
  * @param d_seeds Input/Output buffer for the seeds/state of the map.
+ * @param celular_automata Checksum/automata state (unused in this kernel logic
+ * but passed).
  * @param img_dimensions Struct containing the image dimensions.
  * @param r The chaotic parameter.
- * @param position The current row index being processed (used for coupling with
- * the previous row).
+ * @param total_steps Total number of evolution steps (transition + rows).
+ * @param d_chaotic_values Output buffer for chaotic values used in
+ * permutations.
+ * @param permutation_block_size Size of the block (squared) for permutation
+ * generation logic.
+ * @param transition_length Number of initial steps to discard (warmup).
  */
-template <typename T> // Coupled map lattice
 __global__ void keystream_generation_parallel(
-    unsigned char *__restrict__ d_flow, T *__restrict__ d_seeds,
-    Image_dimensions img_dimensions, T r, size_t position,
-    size_t num_blocks_permutations, T *__restrict__ d_chaotic_values,
-    size_t block_size) {
-
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  size_t cols_and_blocks = img_dimensions.cols + num_blocks_permutations;
-  if (x >= cols_and_blocks)
-    return;
-
-  T left_xn = (x > 0) ? d_seeds[x - 1] : d_seeds[cols_and_blocks - 1];
-  T previous_xn = d_seeds[x];
-  T right_xn = (x < cols_and_blocks - 1) ? d_seeds[x + 1] : d_seeds[0];
-
-  T coupled_xn = (previous_xn + left_xn + right_xn) / 3;
-
-  coupled_xn = chaotic_functio<T>(coupled_xn, r);
-
-  if (d_flow != nullptr) {
-    if (x < img_dimensions.cols) {
-      // Normal image flow: Map (row, col) -> linear index
-      size_t image_idx = position * img_dimensions.cols + x;
-      d_flow[image_idx] = convertToBitStream(coupled_xn);
-    } else {
-      // Permutation generation: extra columns
-      size_t perm_col_idx = x - img_dimensions.cols;
-      // Uses last values
-      size_t first_chaotic_value_position = img_dimensions.rows - block_size;
-      if (position >= first_chaotic_value_position &&
-          d_chaotic_values != nullptr) {
-        d_chaotic_values[perm_col_idx * block_size + position -
-                         first_chaotic_value_position] = coupled_xn;
-      }
-    }
-  }
-
-  d_seeds[x] = coupled_xn;
-}
+    unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
+    unsigned short *celular_automata, Image_dimensions img_dimensions, Real r,
+    const size_t total_steps, Real *__restrict__ d_chaotic_values,
+    size_t permutation_block_size, size_t transition_length,
+    size_t num_extra_seeds, size_t numBlocks);
 
 /**
  * @brief Kernel to convert raw bits (integers) into normalized floating-point
@@ -106,20 +82,11 @@ __global__ void keystream_generation_parallel(
  * bytes) and normalizes each element to the range [0, 1] to be used as initial
  * seeds for the chaotic maps.
  *
- * @tparam T The floating-point type (float or double).
  * @param d_seeds Pointer to the device memory containing the raw integers
  * (in-place conversion).
  * @param num_elements The total number of elements to convert.
  */
-template <typename T>
-__global__ void convert_bits_to_real_kernel(T *d_seeds, size_t num_elements) {
-  int idx = threadIdx.x + blockIdx.x * blockDim.x;
-
-  if (idx >= num_elements)
-    return;
-  d_seeds[idx] =
-      static_cast<T>(reinterpret_cast<uint32_t *>(d_seeds)[idx]) / UINT_MAX;
-}
+__global__ void convert_bits_to_real_kernel(Real *d_seeds, size_t num_elements);
 
 /**
  * @brief Performs intra-block pixel permutation using a checkerboard pattern
@@ -227,8 +194,7 @@ __global__ void interleave_channels_kernel(const unsigned char *input,
  * N is small (e.g. 64), so a simple serial sort per block is sufficient and
  * robust.
  */
-template <typename T>
-__global__ void sort_indices_by_chaotic_values_global(T *chaotic_values,
+__global__ void sort_indices_by_chaotic_values_global(Real *chaotic_values,
                                                       size_t num_permutations,
                                                       unsigned int *indices,
                                                       size_t block_area);

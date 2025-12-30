@@ -41,8 +41,10 @@ using namespace std;
  * @param verbose Flag to enable console logging for performance metrics.
  * @param encrypt True to encrypt, False to decrypt.
  */
-__host__ void encrypt_image(cv::Mat &image, std::vector<std::vector<unsigned char>> &password,
-                            const Image_dimensions &img_dimensions, const EncryptionParams &params, bool verbose,
+__host__ void encrypt_image(cv::Mat &image,
+                            std::vector<std::vector<unsigned char>> &password,
+                            const Image_dimensions &img_dimensions,
+                            const EncryptionParams &params, bool verbose,
                             bool encrypt);
 
 /**
@@ -136,13 +138,31 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
 /**
  * @brief Helper functions for the encryption pipeline.
  */
-void print_encryption_report(const cv::Mat &image, const Image_dimensions &img_dimensions,
-                              const EncryptionParams &params, bool encrypt);
+void print_encryption_report(const cv::Mat &image,
+                             const Image_dimensions &img_dimensions,
+                             const EncryptionParams &params, bool encrypt);
 
-void setup_permutations(D_pointers &d_pointers, std::vector<std::vector<unsigned char>> &password,
-                        const Image_dimensions &img_dimensions, const EncryptionParams &params, bool verbose);
+/**
+ * @brief Sets up the permutations for encryption or decryption.
+ *
+ * This function generates the row and column permutations based on the provided
+ * password and image dimensions.
+ *
+ * @param d_pointers Struct containing device pointers for image data and
+ * permutations.
+ * @param password The user-provided password for key generation.
+ * @param img_dimensions Struct containing the image dimensions.
+ * @param params Struct containing configuration for encryption (block size,
+ * rounds, etc.).
+ * @param verbose Print verbose info if true.
+ */
+void setup_permutations(D_pointers &d_pointers,
+                        std::vector<std::vector<unsigned char>> &password,
+                        const Image_dimensions &img_dimensions,
+                        const EncryptionParams &params, bool verbose);
 
-void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image, const EncryptionParams &params);
+void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
+                                 const EncryptionParams &params);
 
 void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image);
 
