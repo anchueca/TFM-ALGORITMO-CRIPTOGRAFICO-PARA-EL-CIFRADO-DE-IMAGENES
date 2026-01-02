@@ -41,7 +41,6 @@ bool parse_arguments(int argc, char **argv, AppConfig &config) {
     config.params.chaos_parameter = stof(argv[9]);
 #endif
     config.verbose = (strcmp(argv[10], "1") == 0);
-    config.params.num_extra_seeds = 1; // Const
 
     if (config.output_arg == "SHOW" || config.output_arg == "NULL") {
       config.output_mode = OutputMode::DISPLAY_WINDOW;

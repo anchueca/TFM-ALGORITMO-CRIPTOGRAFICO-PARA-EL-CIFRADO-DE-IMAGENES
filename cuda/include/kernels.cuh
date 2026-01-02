@@ -15,7 +15,7 @@
 #include <vector>
 
 // Project headers
-#include "automata.cuh"
+#include "automataKernel.cuh"
 #include "kernels_aux.cuh"
 #include "structs.cuh"
 
@@ -71,8 +71,7 @@ __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
     unsigned short *celular_automata, Image_dimensions img_dimensions, Real r,
     const size_t total_steps, Real *__restrict__ d_chaotic_values,
-    size_t permutation_block_size, size_t transition_length,
-    size_t num_extra_seeds, size_t numBlocks);
+    size_t permutation_block_size, size_t transition_length, size_t numBlocks);
 
 /**
  * @brief Kernel to convert raw bits (integers) into normalized floating-point

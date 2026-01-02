@@ -218,7 +218,7 @@ void ElementalCelularAutomata::print_state_int() const {
 }
 
 // --- Getters (implementations) ---
-const unsigned int *ElementalCelularAutomata::get_cuda_state() const {
+unsigned int *ElementalCelularAutomata::get_cuda_state() const {
   return this->d_state[0];
 }
 

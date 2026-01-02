@@ -15,7 +15,25 @@ __device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,
   Real c_next = chaotic_functio(c_seed, r);
   Real l_next = chaotic_functio(l_seed, r);
 
-  return (r_next + c_next + l_next) / 3.0;
+  evolve_16bit_isolated(celular_automata, 30, 1); // Evolution of the 16-bit CA
+
+  // Extract weights from the CA state
+  unsigned short ca_val = *celular_automata;
+  Real v1 = static_cast<Real>((ca_val >> 8) & 0xFF) /
+            255.0; // First 8 bits normalized (0, 1)
+  Real v2 =
+      static_cast<Real>(ca_val & 0xFF) / 255.0; // Last 8 bits normalized (0, 1)
+
+  // Distribution of influence:
+  // v1 determines the proportion of c_next.
+  // v2 determines the proportion of r_next and l_next of the rest (1 - v1).
+  Real c_influence = v1;
+  Real rest = (Real)1.0 - v1;
+  Real r_influence = rest * v2;
+  Real l_influence = rest * ((Real)1.0 - v2);
+
+  return (c_next * c_influence) + (r_next * r_influence) +
+         (l_next * l_influence);
 }
 
 __global__ void permute_blocks_kernel_simple(unsigned char *image,
@@ -178,19 +196,17 @@ __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
     unsigned short *celular_automata, Image_dimensions img_dimensions, Real r,
     const size_t total_steps, Real *__restrict__ d_chaotic_values,
-    size_t permutation_block_size, size_t transition_length,
-    size_t num_extra_seeds, size_t numBlocks) {
+    size_t permutation_block_size, size_t transition_length, size_t numBlocks) {
 
   // Shared size is determined at kernel launch
   extern __shared__ char shared_mem[];
   Real *s_seeds = reinterpret_cast<Real *>(shared_mem);
 
   // Thread ID
-  int tid = threadIdx.x;
-  int block_offset = blockIdx.x * blockDim.x;
-  int x = block_offset + tid;
+  const int tid = threadIdx.x;
+  const int x = blockIdx.x * blockDim.x + tid;
 
-  size_t cols_and_blocks = img_dimensions.cols + num_extra_seeds * numBlocks;
+  const size_t cols_and_blocks = img_dimensions.cols + numBlocks; // Extra seed
   if (x >= cols_and_blocks)
     return;
 
@@ -211,24 +227,29 @@ __global__ void keystream_generation_parallel(
 
   // Get initial state
   Real current_xn = 0.0;
+  unsigned short celular_automata_value;
 
-  if (tid < num_extra_seeds)
+  if (tid == 0) {
     current_xn = d_seeds[tid];
-  else {
-    current_xn = d_seeds[x - (blockIdx.x + 1) * num_extra_seeds];
+    celular_automata_value = celular_automata[0]; // Temporal
+  } else {
+    celular_automata_value = celular_automata[x - (blockIdx.x + 1)];
+    current_xn = d_seeds[x - (blockIdx.x + 1)];
   }
   *c_seed = current_xn;
 
+  const size_t col = x - (blockIdx.x + 1);
+
   for (size_t step = 0; step < total_steps; ++step) {
     __syncthreads(); // To avoid race conditions
-    current_xn = coupled_map(current_xn, *r_seed, *l_seed, r, celular_automata);
+    current_xn =
+        coupled_map(current_xn, *r_seed, *l_seed, r, &celular_automata_value);
     if (tid == 0 && d_chaotic_values != nullptr &&
         step >= total_steps - permutation_block_size) {
       *c_seed = current_xn;
       d_chaotic_values[step - (total_steps - permutation_block_size)] =
           current_xn;
-    } else if (tid >= num_extra_seeds && step >= transition_length) {
-      size_t col = x - (blockIdx.x + 1) * num_extra_seeds;
+    } else if (tid != 0 && step >= transition_length) {
       size_t row = step - transition_length;
       d_flow[row * img_dimensions.cols + col] = convertToBitStream(current_xn);
     }
@@ -238,8 +259,10 @@ __global__ void keystream_generation_parallel(
   }
 
   // Store final state back to global memory
-  if (tid >= num_extra_seeds)
-    d_seeds[x - (blockIdx.x + 1) * num_extra_seeds] = current_xn;
+  if (tid != 0) {
+    d_seeds[x - (blockIdx.x + 1)] = current_xn;
+    celular_automata[x - (blockIdx.x + 1)] = celular_automata_value;
+  }
 }
 
 __global__ void convert_bits_to_real_kernel(Real *d_seeds,

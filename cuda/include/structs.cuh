@@ -64,7 +64,6 @@ struct EncryptionParams {
   size_t automata_steps;
   size_t transition_length;
   Real chaos_parameter;
-  size_t num_extra_seeds = 1;
 };
 
 /**
@@ -129,6 +128,7 @@ struct D_pointers {
   unsigned int *d_permutation_blocks_inverse =
       nullptr;                      ///< Inverse block permutation
   Real *d_chaotic_values = nullptr; // For block permutation generation
+  unsigned int *d_automata_state;   // For aitomata iteration in flow generation
 };
 
 #endif // STRUCT_CUH

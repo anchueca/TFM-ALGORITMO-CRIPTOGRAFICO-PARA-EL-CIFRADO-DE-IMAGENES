@@ -348,9 +348,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
 
   // Launch flow stream kernel
   dim3 threadsPerBlock(256);
-  dim3 numBlocks(
-      (img_dimensions.cols + params.num_extra_seeds + threadsPerBlock.x - 1) /
-      threadsPerBlock.x);
+  dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x) / threadsPerBlock.x);
 
   // For permutations
   size_t block_size = params.block_size * params.block_size;
@@ -382,10 +380,10 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   keystream_generation_parallel<<<numBlocks, threadsPerBlock,
                                   shared_mem_size>>>(
       d_pointers.d_flow, d_pointers.d_seeds,
-      reinterpret_cast<unsigned short *>(d_pointers.d_permutation_cols),
+      reinterpret_cast<unsigned short *>(d_pointers.d_automata_state),
       img_dimensions, params.chaos_parameter,
       img_dimensions.rows + transition_length, chaotic_values, block_size,
-      transition_length, params.num_extra_seeds, numBlocks.x);
+      transition_length, numBlocks.x);
 
   // Final synchronization to ensure all stream generation is done before
   // proceeding

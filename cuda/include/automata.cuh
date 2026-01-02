@@ -106,7 +106,7 @@ public:
   void print_state_int() const;
 
   // --- Getters ---
-  const unsigned int *get_cuda_state() const;
+  unsigned int *get_cuda_state() const;
   size_t get_size() const;
   size_t get_size_in_bytes() const;
 

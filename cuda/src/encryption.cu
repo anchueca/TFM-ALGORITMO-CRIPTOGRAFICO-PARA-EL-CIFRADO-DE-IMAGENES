@@ -64,6 +64,12 @@ void setup_permutations(D_pointers &d_pointers,
   d_pointers.d_permutation_cols = generate_automata_permutations(
       &cols_automata, params.automata_steps, img_dimensions.cols, verbose);
 
+  // Copy CA state to a persistent buffer for use during flow generation
+  size_t state_size = cols_automata.get_size_in_bytes();
+  cudaMalloc(&d_pointers.d_automata_state, state_size);
+  cudaMemcpy(d_pointers.d_automata_state, cols_automata.get_cuda_state(),
+             state_size, cudaMemcpyDeviceToDevice);
+
   if (verbose)
     std::cout << "\t(Processing Rows Automata...)" << std::endl;
   ElementalCelularAutomata rows_automata(password[0],
@@ -119,6 +125,7 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   cudaFree(d_pointers.d_flow);
   cudaFree(d_pointers.d_image);
   cudaFree(d_pointers.d_image_out);
+  cudaFree(d_pointers.d_automata_state);
 }
 
 // =================================================================================
