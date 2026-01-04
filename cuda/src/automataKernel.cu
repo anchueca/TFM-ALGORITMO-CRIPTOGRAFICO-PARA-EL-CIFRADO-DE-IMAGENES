@@ -218,29 +218,27 @@ __global__ void evolve_block_level(unsigned int *state,
 
 __device__ void evolve_16bit_isolated(unsigned short *state, int rule,
                                       int num_steps) {
-  unsigned short current = *state;
+  unsigned int current = *state;
 
   for (int iter = 0; iter < num_steps; iter++) {
-    unsigned short next = 0;
-    for (int i = 0; i < 16; i++) {
-      // Periodic boundary indices
-      // In this project: bit 15 is left, bit 0 is right.
-      int left_idx = (i == 15) ? 0 : i + 1;
-      int center_idx = i;
-      int right_idx = (i == 0) ? 15 : i - 1;
+    // Current state bitwise: Left (p+1), Center (p), Right (p-1)
+    // Periodic boundary 15 -> 0, 0 -> 15
+    unsigned int L = ((current >> 1) | (current << 15)) & 0xFFFF;
+    unsigned int R = ((current << 1) | (current >> 15)) & 0xFFFF;
+    unsigned int C = current & 0xFFFF;
 
-      // Extract neighbor bits
-      int left_val = (current >> left_idx) & 1;
-      int center_val = (current >> center_idx) & 1;
-      int right_val = (current >> right_idx) & 1;
-
-      int neighborhood = (left_val << 2) | (center_val << 1) | right_val;
-
-      if ((rule >> neighborhood) & 1) {
-        next |= (1 << center_idx);
+    unsigned int next = 0;
+    // Apply rule bitwise (SOP form)
+    for (int p = 0; p < 8; p++) {
+      if ((rule >> p) & 1) {
+        unsigned int term = 0xFFFF;
+        term &= (p & 4) ? L : ~L;
+        term &= (p & 2) ? C : ~C;
+        term &= (p & 1) ? R : ~R;
+        next |= term;
       }
     }
-    current = next;
+    current = next & 0xFFFF;
   }
-  *state = current;
+  *state = (unsigned short)current;
 }
