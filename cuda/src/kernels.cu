@@ -229,39 +229,47 @@ __global__ void keystream_generation_parallel(
   Real current_xn = 0.0;
   unsigned short celular_automata_value;
 
+  size_t state_idx;
   if (tid == 0) {
-    current_xn = d_seeds[tid];
-    celular_automata_value = celular_automata[0]; // Temporal
+    state_idx = img_dimensions.cols +
+                blockIdx.x; // Unique index for extra seed to avoid race
+    current_xn = d_seeds[state_idx];
+    celular_automata_value = 0xAAAA; // Constant CA value as requested
   } else {
-    celular_automata_value = celular_automata[x - (blockIdx.x + 1)];
-    current_xn = d_seeds[x - (blockIdx.x + 1)];
+    state_idx = x - (blockIdx.x + 1);
+    current_xn = d_seeds[state_idx];
+    celular_automata_value = celular_automata[state_idx];
   }
   *c_seed = current_xn;
-
-  const size_t col = x - (blockIdx.x + 1);
 
   for (size_t step = 0; step < total_steps; ++step) {
     __syncthreads(); // To avoid race conditions
     current_xn =
         coupled_map(current_xn, *r_seed, *l_seed, r, &celular_automata_value);
-    if (tid == 0 && d_chaotic_values != nullptr &&
+    // Race condition fix: Only one block (Block 0) should write to
+    // d_chaotic_values
+    if (blockIdx.x == 0 && tid == 0 && d_chaotic_values != nullptr &&
         step >= total_steps - permutation_block_size) {
       *c_seed = current_xn;
       d_chaotic_values[step - (total_steps - permutation_block_size)] =
           current_xn;
     } else if (tid != 0 && step >= transition_length) {
       size_t row = step - transition_length;
-      d_flow[row * img_dimensions.cols + col] = convertToBitStream(current_xn);
+      d_flow[row * img_dimensions.cols + state_idx] =
+          convertToBitStream(current_xn);
     }
 
     __syncthreads();
     *c_seed = current_xn;
   }
 
-  // Store final state back to global memory
+  // Store final state back to global memory (Include tid=0 to persist extra
+  // seeds)
+  d_seeds[state_idx] = current_xn;
+  // For normal threads, persist CA. For tid=0, we use a constant so no need to
+  // save back
   if (tid != 0) {
-    d_seeds[x - (blockIdx.x + 1)] = current_xn;
-    celular_automata[x - (blockIdx.x + 1)] = celular_automata_value;
+    celular_automata[state_idx] = celular_automata_value;
   }
 }
 

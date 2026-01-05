@@ -1,9 +1,9 @@
 #ifndef CLI_CONFIG_CUH
 #define CLI_CONFIG_CUH
 
-#include <string>
-#include <opencv2/core.hpp>
 #include "structs.cuh"
+#include <opencv2/core.hpp>
+#include <string>
 
 enum class OutputMode { FILE_SAVE, DISPLAY_WINDOW, STDOUT_STREAM };
 
@@ -14,6 +14,7 @@ struct AppConfig {
   std::string password;
   bool verbose;
   bool encrypt;
+  bool use_raw_key;
   OutputMode output_mode;
 };
 
@@ -25,6 +26,7 @@ cv::Mat load_image(const std::string &path);
 
 void print_initial_report(const AppConfig &config, const cv::Mat &image);
 
-bool handle_output(OutputMode mode, const std::string &output_arg, const cv::Mat &image, bool verbose);
+bool handle_output(OutputMode mode, const std::string &output_arg,
+                   const cv::Mat &image, bool verbose);
 
 #endif // CLI_CONFIG_CUH

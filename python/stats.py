@@ -9,6 +9,8 @@ from tabulate import tabulate
 import subprocess
 import os
 import time
+import random
+import string
 
 # Use 'Agg' backend if headless (no screen), otherwise 'TkAgg'
 try:
@@ -139,11 +141,21 @@ class CryptoMetrics:
         chi2, p_val = chisquare(hist, expected)
         return chi2, p_val
 
+    @staticmethod
+    def calculate_psnr_mae(img1, img2):
+        mse = np.mean((img1.astype(float) - img2.astype(float))**2)
+        if mse == 0:
+            psnr = 100.0  # Lossless
+        else:
+            psnr = 20 * np.log10(255.0 / np.sqrt(mse))
+        mae = np.mean(np.abs(img1.astype(float) - img2.astype(float)))
+        return psnr, mae
+
 
 
 # --- 2. EXECUTION WRAPPER ---
 class ExternalCipherTester:
-    def __init__(self, exe_path, input_path, password, rounds, chaos, block_size, automata_steps, transition):
+    def __init__(self, exe_path, input_path, password, rounds, chaos, block_size, automata_steps, transition, is_binary=False):
         self.exe = exe_path
         self.input_path = input_path
         self.password = password
@@ -152,6 +164,7 @@ class ExternalCipherTester:
         self.block_size = str(block_size)
         self.automata_steps = str(automata_steps)
         self.transition = str(transition)
+        self.is_binary = is_binary
         self.original_img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
         if self.original_img is None: raise ValueError(f"Image not found: {input_path}")
 
@@ -162,10 +175,13 @@ class ExternalCipherTester:
         success, encoded_buffer = cv2.imencode(".tif", image_matrix)
         if not success: raise ValueError("Python encoding error.")
         
+        binary_flag = '1' if self.is_binary else '0'
+        
         cmd = [
             self.exe, "STDIN", "STDOUT",
             password_to_use, self.rounds, mode_flag,
-            self.block_size, self.automata_steps, self.transition, self.chaos, "0"
+            self.block_size, self.automata_steps, self.transition, self.chaos, "0",
+            binary_flag
         ]
         try:
             res = subprocess.run(cmd, input=encoded_buffer.tobytes(), capture_output=True, check=True)
@@ -187,11 +203,11 @@ class ExternalCipherTester:
             raise RuntimeError(f"C++ Error: {e.stderr.decode('utf-8', errors='ignore')}")
 
     def encrypt_flow(self): 
-        img, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
-        return img
+        img, t_enc = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True)
+        return img, t_enc
     def decrypt_flow(self, img): 
-        res, _ = self.run_cipher_ram_to_ram(img, mode_enc=False)
-        return res
+        res, t_dec = self.run_cipher_ram_to_ram(img, mode_enc=False)
+        return res, t_dec
     
     def diff_attack_plaintext(self):
         """
@@ -208,25 +224,47 @@ class ExternalCipherTester:
             return CryptoMetrics.calculate_npcr_uaci(c1, c2)
         return (0,0)
 
-    def diff_attack_key_sensitivity(self):
+    def diff_attack_key_sensitivity(self, segment='any'):
         """
         Key Sensitivity Test: Encrypt SAME image with slightly different PASSWORD.
+        Can target specific segments: 'rows', 'cols', 'seeds', or 'any'.
         """
-        # Create modified password (flip last char)
         original_pw = self.password
-        if len(original_pw) > 0:
-            last_char_code = ord(original_pw[-1])
-            new_last_char = chr(last_char_code ^ 1) # Flip 1 bit of last char
+        is_binary = all(c in '01' for c in original_pw) and len(original_pw) > 100
+        
+        if not is_binary:
+            # Fallback for old alphanumeric passwords
+            last_char_code = ord(original_pw[-1]) if original_pw else 97
+            new_last_char = chr(last_char_code ^ 1)
             mod_pw = original_pw[:-1] + new_last_char
+            print(f"   [Debug] Key Sensitivity (Alpha): '{original_pw[:8]}...' vs '{mod_pw[:8]}...'")
         else:
-            mod_pw = "a" # Fallback
+            # Binary key segments
+            # 1. Row CA (rows * 2 bytes)
+            # 2. Col CA (cols * 2 bytes)
+            # 3. Chaotic Seeds (the rest)
+            h, w = self.original_img.shape[:2]
+            bits_rows = (h * 2) * 8
+            bits_cols = (w * 2) * 8
             
-        print(f"   [Debug] Key Sensitivity: '{original_pw}' vs '{mod_pw}'")
+            if segment == 'rows':
+                range_start, range_end = 0, bits_rows
+            elif segment == 'cols':
+                range_start, range_end = bits_rows, bits_rows + bits_cols
+            elif segment == 'seeds':
+                range_start, range_end = bits_rows + bits_cols, len(original_pw)
+            else: # 'any'
+                range_start, range_end = 0, len(original_pw)
+            
+            idx = random.randint(range_start, range_end - 1)
+            flipped = '1' if original_pw[idx] == '0' else '0'
+            mod_pw = original_pw[:idx] + flipped + original_pw[idx+1:]
+            print(f"   [Debug] Key Sensitivity ({segment}): Flipped bit {idx} in {segment} segment.")
             
         c1, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=original_pw)
         c2, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=mod_pw)
         
-        # Calculate visual difference for plotting
+        # Calculate visual difference for plotting (only for the last call usually)
         diff_img = cv2.absdiff(c1, c2)
         
         return CryptoMetrics.calculate_npcr_uaci(c1, c2), diff_img
@@ -245,7 +283,7 @@ class ExternalCipherTester:
         
         damaged[y1:y2, x1:x2] = 0 
         
-        recovered = self.decrypt_flow(damaged)
+        recovered, _ = self.decrypt_flow(damaged)
         return damaged, recovered
 
     def run_scalability_test(self, repeats=5):
@@ -379,89 +417,234 @@ def plot_dashboard(original, ciphered, decrypted,
     plt.tight_layout()
     plt.subplots_adjust(top=0.95, hspace=0.4)
     
+
     out_file = "full_report.jpg"
     print(f"\n[+] Saving Dashboard to: {out_file}")
     plt.savefig(out_file, dpi=150)
 
 # --- 4. MAIN ---
+def generate_random_password(length=16, binary=False):
+    """Generates a random alphanumeric password or a bitstring."""
+    if binary:
+        return ''.join(random.choices('01', k=length))
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+# --- 4. MAIN ---
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input")
-    parser.add_argument("password")
     parser.add_argument("exe")
-    
+    parser.add_argument("--password", help="Use this password instead of random ones")
+
     # Optional algorithm parameters
     parser.add_argument("--rounds", type=int, default=3, help="Number of encryption rounds")
     parser.add_argument("--chaos", type=float, default=3.999, help="Chaotic map parameter")
     parser.add_argument("--block-size", type=int, default=8, help="Block size in pixels")
     parser.add_argument("--steps", type=int, default=50, help="Automata evolution steps")
     parser.add_argument("--trans", type=int, default=50, help="Transition length")
-    
+
+    # New analysis parameters
+    parser.add_argument("--seed", help="Seed for random password generation")
+    parser.add_argument("--runs", type=int, default=5, help="Number of runs with different passwords")
+
     args = parser.parse_args()
 
-    if not os.path.exists(args.input): return
+    if not os.path.exists(args.input):
+        print(f"[!] Input file {args.input} not found.")
+        return
+
+    # Seed the random generator
+    if args.seed is not None:
+        random.seed(args.seed)
 
     try:
-        tester = ExternalCipherTester(
-            args.exe, args.input, args.password, 
+        results = []
+
+        # Get image dimensions to calculate required bit length
+        # We need a temporary tester to load the image
+        temp_tester = ExternalCipherTester(
+            args.exe, args.input, "dummy",
             args.rounds, args.chaos, 
-            args.block_size, args.steps, args.trans
+            args.block_size, args.steps, args.trans,
+            is_binary=False
         )
+        # Check if the user-provided password is binary (if any)
+        user_pw_is_binary = False
+        if args.password:
+            user_pw_is_binary = all(c in '01' for c in args.password) and len(args.password) > 100
+        rows, base_cols = temp_tester.original_img.shape[:2]
+        channels = temp_tester.original_img.shape[2] if len(temp_tester.original_img.shape) > 2 else 1
+        cols = base_cols * channels
+        num_blocks = (cols + 256) // 256
+        total_bytes = (rows * 2) + (cols * 2) + 4 + (cols + num_blocks) * 4
+        required_bits = total_bytes * 8
         
-        print(f"[+] Config: Rounds={args.rounds}, Chaos={args.chaos}, Block={args.block_size}, Steps={args.steps}, Trans={args.trans}")
-        print("[+] 1. Functional Test (Enc/Dec)...")
-        ciphered = tester.encrypt_flow()
-        decrypted = tester.decrypt_flow(ciphered)
-        if ciphered is None or decrypted is None: return
+        print(f"[+] Required Key Length: {required_bits} bits ({total_bytes} bytes)")
+        print(f"[+] Starting analysis across {args.runs} runs...")
 
-        print("[+] 2. Analyzing Statistics (Entropy, Correlation, GLCM, Chi-Square)...")
-        ent_orig = CryptoMetrics.calculate_global_entropy(tester.original_img)
-        ent_ciph = CryptoMetrics.calculate_global_entropy(ciphered)
-        corr_orig = CryptoMetrics.calculate_correlations_full(tester.original_img)
-        corr_ciph = CryptoMetrics.calculate_correlations_full(ciphered)
+        for r in range(args.runs):
+            if args.password:
+                run_pw = args.password
+            else:
+                run_pw = generate_random_password(length=required_bits, binary=True)
+            
+            print(f"\n[>] Run {r+1}/{args.runs} | Key: {run_pw[:16]}...{run_pw[-16:]} ({len(run_pw)} bits)")
+
+            tester = ExternalCipherTester(
+                args.exe, args.input, run_pw,
+                args.rounds, args.chaos,
+                args.block_size, args.steps, args.trans,
+                is_binary=(user_pw_is_binary if args.password else True)
+            )
+
+            # Encrypt/Decrypt
+            ciph, t_enc = tester.encrypt_flow()
+            dec, t_dec = tester.decrypt_flow(ciph)
+
+            if ciph is None or dec is None:
+                print(f" [!] Run {r+1} failed.")
+                continue
+
+            # Core Metrics
+            ent_orig = CryptoMetrics.calculate_global_entropy(tester.original_img)
+            ent_ciph = CryptoMetrics.calculate_global_entropy(ciph)
+            corr_ciph = CryptoMetrics.calculate_correlations_full(ciph)
+            chi2, p_val = CryptoMetrics.calculate_chi_square(ciph)
+            cont, hom, ene = CryptoMetrics.calculate_glcm_properties(ciph)
+
+            # Sensitivity Test (Differential)
+            npcr_p, uaci_p = tester.diff_attack_plaintext()
+            
+            # Key Sensitivity per Segment
+            (n_rows, u_rows), _ = tester.diff_attack_key_sensitivity(segment='rows')
+            (n_cols, u_cols), _ = tester.diff_attack_key_sensitivity(segment='cols')
+            (n_seeds, u_seeds), _ = tester.diff_attack_key_sensitivity(segment='seeds')
+            
+            results.append({
+                'entropy': ent_ciph,
+                'corr_h': corr_ciph[0],
+                'corr_v': corr_ciph[1],
+                'corr_d': corr_ciph[2],
+                'chi2': chi2,
+                'p_val': p_val,
+                'glcm_contrast': cont,
+                'glcm_homogeneity': hom,
+                'glcm_energy': ene,
+                'npcr_p': npcr_p,
+                'uaci_p': uaci_p,
+                'npcr_rows': n_rows,
+                'uaci_rows': u_rows,
+                'npcr_cols': n_cols,
+                'uaci_cols': u_cols,
+                'npcr_seeds': n_seeds,
+                'uaci_seeds': u_seeds,
+                't_enc': t_enc * 1000.0, 
+                't_dec': t_dec * 1000.0,
+                'psnr': CryptoMetrics.calculate_psnr_mae(tester.original_img, dec)[0],
+                'mae': CryptoMetrics.calculate_psnr_mae(tester.original_img, dec)[1]
+            })
+
+            # For visual dashboard, keep the last results
+            if r == args.runs - 1:
+                last_original = tester.original_img
+                last_ciph = ciph
+                last_dec = dec
+
+        if not results:
+            print("[!] No results collected.")
+            return
+
+        # --- STATISTICAL ANALYSIS ---
+        def get_stats(key):
+            vals = [res[key] for res in results]
+            return np.mean(vals), np.var(vals)
+
+        m_ent, v_ent = get_stats('entropy')
+        m_ch, v_ch = get_stats('corr_h')
+        m_cv, v_cv = get_stats('corr_v')
+        m_cd, v_cd = get_stats('corr_d')
+        m_chi, v_chi = get_stats('chi2')
+        m_pval, v_pval = get_stats('p_val')
+        m_cont, v_cont = get_stats('glcm_contrast')
+        m_hom, v_hom = get_stats('glcm_homogeneity')
+        m_npcr_p, v_npcr_p = get_stats('npcr_p')
+        m_uaci_p, v_uaci_p = get_stats('uaci_p')
         
-        # Chi-Square Test
-        chi2, p_val = CryptoMetrics.calculate_chi_square(ciphered)
-        chi_res = "PASS (Uniform)" if p_val > 0.05 else "FAIL (Reject H0)"
+        m_np_rows, v_np_rows = get_stats('npcr_rows')
+        m_ua_rows, v_ua_rows = get_stats('uaci_rows')
+        m_np_cols, v_np_cols = get_stats('npcr_cols')
+        m_ua_cols, v_ua_cols = get_stats('uaci_cols')
+        m_np_seeds, v_np_seeds = get_stats('npcr_seeds')
+        m_ua_seeds, v_ua_seeds = get_stats('uaci_seeds')
+
+        m_t_enc, v_t_enc = get_stats('t_enc')
+        m_t_dec, v_t_dec = get_stats('t_dec')
         
-        # GLCM Metrics
-        cont_orig, hom_orig, ene_orig = CryptoMetrics.calculate_glcm_properties(tester.original_img)
-        cont_ciph, hom_ciph, ene_ciph = CryptoMetrics.calculate_glcm_properties(ciphered)
-        
-        print("[+] 3. Differential Attacks...")
-        # Plaintext Sensitivity
-        npcr_p, uaci_p = tester.diff_attack_plaintext()
-        # Key Sensitivity
-        (npcr_k, uaci_k), key_diff_img = tester.diff_attack_key_sensitivity()
+        m_psnr, v_psnr = get_stats('psnr')
+        m_mae, v_mae = get_stats('mae')
 
-        print("[+] 4. Occlusion Attack...")
-        occ_input, occ_output = tester.occlusion_attack(ciphered)
+        # One set of data for non-stochastic metrics (original)
+        # Use a dummy password as it's not used for original image metrics
+        tester_final = ExternalCipherTester(
+            args.exe, args.input, "dummy",
+            args.rounds, args.chaos,
+            args.block_size, args.steps, args.trans,
+            is_binary=False
+        )
+        ent_orig = CryptoMetrics.calculate_global_entropy(tester_final.original_img)
+        corr_orig = CryptoMetrics.calculate_correlations_full(tester_final.original_img)
+        cont_orig, hom_orig, ene_orig = CryptoMetrics.calculate_glcm_properties(tester_final.original_img)
 
-        print("[+] 5. Scalability Benchmark (up to 10x)...")
-        benchmark_data = tester.run_scalability_test(repeats=1)
+        # Performance (Using one final run for bench or using average of Runs)
+        print("\n[+] Running Performance Scalability Test (1x Repeats)...")
+        benchmark_data = tester_final.run_scalability_test(repeats=1)
 
-        # --- CONSOLE REPORT (ENGLISH) ---
-        print("\n" + "="*75)
-        print(" FINAL CRYPTOGRAPHIC REPORT ")
-        print("="*75)
+        # Key Sensitivity Diff Image (One final sample)
+        # Use a new random binary password of correct length
+        final_pw_for_key_sens = args.password if args.password else generate_random_password(length=required_bits, binary=True)
+        tester_final_key_sens = ExternalCipherTester(
+            args.exe, args.input, final_pw_for_key_sens,
+            args.rounds, args.chaos,
+            args.block_size, args.steps, args.trans,
+            is_binary=(user_pw_is_binary if args.password else True)
+        )
+        (npcr_k_sample, uaci_k_sample), key_diff_img = tester_final_key_sens.diff_attack_key_sensitivity()
 
-        headers = ["Metric", "Original", "Encrypted", "Ideal Ref"]
+        # Occlusion Attack (One final sample)
+        # Requires a ciphered image, use the last one from the runs
+        occ_input, occ_output = tester_final.occlusion_attack(last_ciph)
+
+        # --- CONSOLE REPORT ---
+        print("\n" + "="*85)
+        print(f" FINAL CRYPTOGRAPHIC REPORT (Across {args.runs} runs) ")
+        print("="*85)
+
+        headers = ["Metric", "Original", "Mean", "Variance", "Ideal Ref"]
         data = [
-            ["Global Entropy",  f"{ent_orig:.5f}",     f"{ent_ciph:.5f}",     "~7.999"],
-            ["Chi-Square Test", "-",                   f"{chi2:.2f} (P={p_val:.4f})", "P > 0.05"],
-            ["Correlation (H)", f"{corr_orig[0]:.5f}", f"{corr_ciph[0]:.5f}", "0.0"],
-            ["Correlation (V)", f"{corr_orig[1]:.5f}", f"{corr_ciph[1]:.5f}", "0.0"],
-            ["Correlation (D)", f"{corr_orig[2]:.5f}", f"{corr_ciph[2]:.5f}", "0.0"],
-            ["GLCM Contrast",   f"{cont_orig:.2f}",    f"{cont_ciph:.2f}",    "High (>1000)"],
-            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{hom_ciph:.4f}",     "Low (~0)"],
-            ["NPCR (Plaintext)", "-",                  f"{npcr_p:.4f}%",      ">99.6%"],
-            ["UACI (Plaintext)", "-",                  f"{uaci_p:.4f}%",      "~33.4%"],
-            ["NPCR (Key Sens)",  "-",                  f"{npcr_k:.4f}%",      ">99.6%"],
+            ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f}",  f"{v_ent:.4f}", "~7.999"],
+            ["Chi-Square Test", "-",                   f"{m_chi:.4f} (P={m_pval:.4f})",  f"{v_chi:.4f} (P={v_pval:.4f})", "P > 0.05"],
+            ["Correlation (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f}",   f"{v_ch:.4f}",  "0.0"],
+            ["Correlation (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f}",   f"{v_cv:.4f}",  "0.0"],
+            ["Correlation (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f}",   f"{v_cd:.4f}",  "0.0"],
+            ["GLCM Contrast",   f"{cont_orig:.4f}",    f"{m_cont:.4f}", f"{v_cont:.4f}", "High"],
+            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f}",  f"{v_hom:.4f}", "~0"],
+            ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{v_npcr_p:.4f}", ">99.6%"],
+            ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{v_uaci_p:.4f}", "~33.4%"],
+            ["NPCR (Key: Rows)", "-",                  f"{m_np_rows:.4f}%", f"{v_np_rows:.4f}", ">99.6%"],
+            ["UACI (Key: Rows)", "-",                  f"{m_ua_rows:.4f}%", f"{v_ua_rows:.4f}", "~33.4%"],
+            ["NPCR (Key: Cols)", "-",                  f"{m_np_cols:.4f}%", f"{v_np_cols:.4f}", ">99.6%"],
+            ["UACI (Key: Cols)", "-",                  f"{m_ua_cols:.4f}%", f"{v_ua_cols:.4f}", "~33.4%"],
+            ["NPCR (Key: Seeds)", "-",                 f"{m_np_seeds:.4f}%", f"{v_np_seeds:.4f}", ">99.6%"],
+            ["UACI (Key: Seeds)", "-",                 f"{m_ua_seeds:.4f}%", f"{v_ua_seeds:.4f}", "~33.4%"],
+            ["Enc. Time (ms)",    "-",                 f"{m_t_enc:.4f}", f"{v_t_enc:.4f}", "Min."],
+            ["Dec. Time (ms)",    "-",                 f"{m_t_dec:.4f}", f"{v_t_dec:.4f}", "Min."],
+            ["PSNR (Dec. Quality)", "-",               f"{m_psnr:.4f} dB", f"{v_psnr:.4f}", ">50dB"],
+            ["MAE (Dec. Error)",   "-",                f"{m_mae:.4f}", f"{v_mae:.4f}", "0.0"],
         ]
         print(tabulate(data, headers=headers, tablefmt="fancy_grid"))
 
-        plot_dashboard(tester.original_img, ciphered, decrypted, 
-                       occ_input, occ_output, 
+        plot_dashboard(tester_final.original_img, last_ciph, last_dec,
+                       occ_input, occ_output,
                        key_diff_img,
                        benchmark_data)
 

@@ -9,8 +9,9 @@ using namespace std;
 void print_usage(const char *prog_name) {
   cout << "Usage: " << prog_name
        << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
-       << "<Rounds <Mode(1=Enc/0=Dec)> <BlockSize> "
-       << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>" << endl;
+       << "<Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> "
+       << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)> <Bitstring(0/1)>"
+       << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
   cout << "  SHOW     : Opens a window with the result (Requires GUI)" << endl;
@@ -19,7 +20,7 @@ void print_usage(const char *prog_name) {
 }
 
 bool parse_arguments(int argc, char **argv, AppConfig &config) {
-  const size_t required_args = 11;
+  const size_t required_args = 12;
   if (argc != required_args) {
     cerr << "[ERROR] Invalid number of arguments! " << argc << " received, "
          << required_args << " required." << endl;
@@ -41,6 +42,7 @@ bool parse_arguments(int argc, char **argv, AppConfig &config) {
     config.params.chaos_parameter = stof(argv[9]);
 #endif
     config.verbose = (strcmp(argv[10], "1") == 0);
+    config.use_raw_key = (strcmp(argv[11], "1") == 0);
 
     if (config.output_arg == "SHOW" || config.output_arg == "NULL") {
       config.output_mode = OutputMode::DISPLAY_WINDOW;

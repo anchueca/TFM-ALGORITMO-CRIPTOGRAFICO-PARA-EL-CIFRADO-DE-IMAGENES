@@ -45,6 +45,6 @@ fi
 # Build the cipher
 eval $BUILD_CMD && \
 # Encrypt the test image
-./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $ROUNDS 1 8 50 50 3.9 1 && \
+./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $ROUNDS 1 8 50 50 3.9 1 0 && \
 # Decrypt the encrypted image (verbose=0 for cleaner output)
-./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $ROUNDS 0 8 50 50 3.9 0
+./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $ROUNDS 0 8 50 50 3.9 0 0

@@ -41,7 +41,7 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
  */
 __host__ std::vector<std::vector<unsigned char>>
 calculate_password(const std::string &input, Image_dimensions img_dimensions,
-                   bool verbose);
+                   bool verbose, bool use_raw_key);
 
 /**
  * @brief Unstacks a 3-channel image into a single-channel wide image.

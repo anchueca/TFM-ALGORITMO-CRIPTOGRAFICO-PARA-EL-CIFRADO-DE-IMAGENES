@@ -35,7 +35,8 @@ int main(int argc, char **argv) {
     std::cout << " > Password hashing & expansion: ";
 
   std::vector<std::vector<unsigned char>> password_segments =
-      calculate_password(config.password, img_dimensions, config.verbose);
+      calculate_password(config.password, img_dimensions, config.verbose,
+                         config.use_raw_key);
 
   auto end = std::chrono::high_resolution_clock::now();
   if (config.verbose)

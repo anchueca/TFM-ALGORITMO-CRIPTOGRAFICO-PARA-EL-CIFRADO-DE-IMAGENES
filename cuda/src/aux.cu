@@ -44,11 +44,36 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
   return output;
 }
 
+// Helper to check if a string is binary
+bool is_binary_string(const std::string &s) {
+  if (s.empty())
+    return false;
+  for (char c : s) {
+    if (c != '0' && c != '1')
+      return false;
+  }
+  return true;
+}
+
+// Helper to convert bitstring to bytes
+std::vector<unsigned char> bitstring_to_bytes(const std::string &bits) {
+  std::vector<unsigned char> bytes;
+  for (size_t i = 0; i < bits.length(); i += 8) {
+    unsigned char byte = 0;
+    for (size_t j = 0; j < 8 && (i + j) < bits.length(); ++j) {
+      if (bits[i + j] == '1') {
+        byte |= (1 << (7 - j));
+      }
+    }
+    bytes.push_back(byte);
+  }
+  return bytes;
+}
+
 // Calculate password segments from a master password (implementation)
 __host__ std::vector<std::vector<unsigned char>>
-
 calculate_password(const std::string &input, Image_dimensions img_dimensions,
-                   bool verbose) {
+                   bool verbose, bool use_raw_key) {
 
   // Required lengths
   // Fixed to 1 as we only need one set of chaotic values for block
@@ -58,21 +83,42 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   int bytes_for_rows = img_dimensions.rows * 2;
   int bytes_for_columns = img_dimensions.cols * 2;
   int bytes_for_blocks = num_blocks_permutations * 4;
-  int bytes_for_flow = img_dimensions.cols * 4;
+
+  // IMPORTANT: bytes_for_flow must match the allocation in
+  // generate_flow_stream_parallel numBlocks is (cols + 256) / 256
+  int numBlocks = (img_dimensions.cols + 256) / 256;
+  int bytes_for_flow = (img_dimensions.cols + numBlocks) * 4;
 
   // Total length
   int length_bytes =
       bytes_for_rows + bytes_for_columns + bytes_for_blocks + bytes_for_flow;
 
   if (verbose)
-    std::cout << "Password length" << std::endl
-              << "Row bytes: " << bytes_for_rows << std::endl
-              << "Columns bytes: " << bytes_for_columns << std::endl
-              << "Blocks bytes: " << bytes_for_blocks << std::endl
-              << "Flow bytes: " << bytes_for_flow << std::endl
-              << "Total bytes: " << length_bytes << std::endl;
+    std::cout << "[DEBUG] Key Requirements:" << std::endl
+              << "  Row bytes:     " << bytes_for_rows << std::endl
+              << "  Columns bytes: " << bytes_for_columns << std::endl
+              << "  Blocks bytes:  " << bytes_for_blocks << std::endl
+              << "  Flow bytes:    " << bytes_for_flow << std::endl
+              << "  Total bytes:   " << length_bytes << " (" << length_bytes * 8
+              << " bits)" << std::endl;
 
-  std::vector<unsigned char> password = generate_hash(input, length_bytes);
+  std::vector<unsigned char> password;
+
+  // Use raw bitstring if explicitly requested
+  if (use_raw_key) {
+    if (input.length() != (size_t)length_bytes * 8) {
+      throw std::runtime_error(
+          "Error: Raw bitstring length does not match requirements. Expected " +
+          std::to_string(length_bytes * 8) + " bits.");
+    }
+    if (verbose)
+      std::cout
+          << "[INFO] Raw bitstring key used as requested. Skipping SHAKE256."
+          << std::endl;
+    password = bitstring_to_bytes(input);
+  } else {
+    password = generate_hash(input, length_bytes);
+  }
 
   std::vector<std::vector<unsigned char>> password_segments(3);
 
