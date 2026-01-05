@@ -319,3 +319,23 @@ __device__ void sort_indices_by_chaotic_values(int base_idx, Real *chaotic_vals,
     chaotic_vals[base_idx + i] = local_vals[i];
   }
 }
+
+__global__ void global_seed_mix_kernel(Real *d_seeds, size_t offset,
+                                       size_t n_blocks) {
+  if (n_blocks == 0)
+    return;
+
+  Real sum = 0;
+  // Step 1: Accumulate all extra seeds
+  for (size_t i = 0; i < n_blocks; i++) {
+    sum += d_seeds[offset + i];
+  }
+
+  // Step 2: Calculate mean
+  Real mean = sum / (Real)n_blocks;
+
+  // Step 3: Apply iterative coupling: (S + Mean) / 2
+  for (size_t i = 0; i < n_blocks; i++) {
+    d_seeds[offset + i] = (d_seeds[offset + i] + mean) / 2.0;
+  }
+}

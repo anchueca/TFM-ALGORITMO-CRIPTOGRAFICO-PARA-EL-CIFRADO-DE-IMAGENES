@@ -395,6 +395,13 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   }
 
   cudaDeviceSynchronize();
+
+  // Global Diffusion Layer: Iterative Global Mean-Field Coupling
+  // This step ensures that changes in one block propagate to all blocks in the
+  // next round.
+  global_seed_mix_kernel<<<1, 1>>>(d_pointers.d_seeds, img_dimensions.cols,
+                                   numBlocks.x);
+  cudaDeviceSynchronize();
 }
 
 __global__ void sort_indices_by_chaotic_values_global(Real *d_chaotic_values,

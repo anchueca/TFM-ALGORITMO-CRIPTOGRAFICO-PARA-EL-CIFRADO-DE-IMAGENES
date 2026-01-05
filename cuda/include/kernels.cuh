@@ -198,4 +198,7 @@ __global__ void sort_indices_by_chaotic_values_global(Real *chaotic_values,
                                                       unsigned int *indices,
                                                       size_t block_area);
 
+__global__ void global_seed_mix_kernel(Real *d_seeds, size_t offset,
+                                       size_t n_blocks);
+
 #endif // KERNELS_CUH
