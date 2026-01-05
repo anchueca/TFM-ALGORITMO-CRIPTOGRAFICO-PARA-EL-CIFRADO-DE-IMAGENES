@@ -37,9 +37,12 @@ void print_encryption_report(const cv::Mat &image,
   std::cout << "  " << std::left << std::setw(25)
             << "Block Size:" << params.block_size << " px" << std::endl;
   std::cout << "  " << std::left << std::setw(25)
-            << "Automata Steps:" << params.automata_steps << std::endl;
+            << "CA Evolution Steps:" << params.automata_steps << std::endl;
   std::cout << "  " << std::left << std::setw(25)
-            << "Transition Length:" << params.transition_length << std::endl;
+            << "CML Transition Period:" << params.transition_length
+            << std::endl;
+  std::cout << "  " << std::left << std::setw(25)
+            << "Chaotic Parameter (r):" << params.chaos_parameter << std::endl;
   std::cout << "\n [GRID ARCHITECTURE]" << std::endl;
   std::cout << "  " << std::left << std::setw(25)
             << "Grid Layout:" << num_blocks_per_col << " (cols) x "

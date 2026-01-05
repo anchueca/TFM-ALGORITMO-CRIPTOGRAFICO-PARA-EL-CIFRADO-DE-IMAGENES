@@ -5,6 +5,7 @@
  */
 
 #include "../include/encryption_aux.cuh"
+#include <cstdio>
 
 __host__ unsigned int *
 generate_automata_permutations(ElementalCelularAutomata *automata,
@@ -369,7 +370,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
     chaotic_values = d_pointers.d_chaotic_values;
   } else {
     // First transition is already computed
-    transition_length = 0;
+    transition_length = threadsPerBlock.x / 2;
     chaotic_values = nullptr;
   }
 

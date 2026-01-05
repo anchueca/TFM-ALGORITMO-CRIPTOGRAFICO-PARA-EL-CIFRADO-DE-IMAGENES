@@ -440,8 +440,8 @@ def main():
     parser.add_argument("--rounds", type=int, default=3, help="Number of encryption rounds")
     parser.add_argument("--chaos", type=float, default=3.999, help="Chaotic map parameter")
     parser.add_argument("--block-size", type=int, default=8, help="Block size in pixels")
-    parser.add_argument("--steps", type=int, default=50, help="Automata evolution steps")
-    parser.add_argument("--trans", type=int, default=50, help="Transition length")
+    parser.add_argument("--steps", type=int, default=20, help="Automata evolution steps")
+    parser.add_argument("--trans", type=int, default=20, help="Transition length")
 
     # New analysis parameters
     parser.add_argument("--seed", help="Seed for random password generation")

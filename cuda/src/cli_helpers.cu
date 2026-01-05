@@ -104,6 +104,9 @@ void print_initial_report(const AppConfig &config, const cv::Mat &image) {
   std::cout << " [PRECISION INFO]:       FLOAT (Standard Precision)"
             << std::endl;
 #endif
+  std::cout << "  Key Type:      "
+            << (config.use_raw_key ? "Raw Bitstring" : "Password (SHAKE256)")
+            << std::endl;
 }
 
 bool handle_output(OutputMode mode, const string &output_arg,
