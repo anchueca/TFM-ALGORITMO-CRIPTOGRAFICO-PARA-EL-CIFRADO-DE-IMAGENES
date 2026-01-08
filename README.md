@@ -6,11 +6,22 @@ This repository contains the source code developed for the Master's Thesis:
 
 ## Description
 
-The algorithm implements a image encryption scheme using:
+The algorithm implements an image encryption scheme using:
+
+- **Chaotic dynamics** (cosine-cosine map): generates deterministic pseudo-random sequences
+- **Elementary cellular automata** (Rule 30): provides diffusion and permutation scheduling  
+- **Block-based permutations** (rows, columns, blocks) combined with pixel diffusion
+- **GPU acceleration via CUDA**: optimized kernels for high-performance encryption/decryption
 
 ## Overview
 
-The primary implementation is a high-performance C++/CUDA implementation located in the `cuda/` directory. The project focuses on a image cipher combining chaotic maps and elementary cellular automata, implemented and optimized for execution on NVIDIA GPUs.
+The primary implementation is a high-performance C++/CUDA implementation located in the `cuda/` directory. The project focuses on a block-based image cipher combining chaotic maps and elementary cellular automata, implemented and optimized for execution on NVIDIA GPUs.
+
+**Key components:**
+- **Encryption engine:** GPU-accelerated CUDA kernels with constant memory optimizations
+- **Steganography module:** Chaos-based LSB steganography with lossless recovery using EXIF metadata
+- **Cryptographic analysis tools:** Python utilities for statistical testing and performance evaluation
+- **CLI interface:** Command-line tool with flexible input/output modes (file, STDIN/STDOUT, display)
 
 
 ## Where the core logic lives
@@ -78,19 +89,6 @@ The order and count of arguments is strictly enforced by `main.cu`. Other script
 
 A small helper `compile_and_execute.bash` demonstrates a full encrypt+decrypt run using the compiled binary.
 
-## AES Benchmark Comparison
-
-To evaluate the performance of the proposed algorithm against a standard, an AES-256-CBC implementation is provided in `aes_comparison/`.
-
-**Build & Run:**
-```bash
-cd aes_comparison
-make
-./aes_tool <mode:enc/dec> <input_file> <output_file>
-```
-
-This tool uses OpenSSL's EVP API to provide a CPU-based baseline for comparing encryption/decryption throughput.
-
 ## Performance Optimizations
 
 The CUDA implementation includes several optimizations to ensure high throughput and accurate benchmarking:
@@ -98,6 +96,56 @@ The CUDA implementation includes several optimizations to ensure high throughput
 - **Constant Memory:** Block permutation tables are stored in GPU Constant Memory (`__constant__`) to minimize memory latency during the permutation phase.
 - **Initialization Overhead:** A dummy `cudaFree(0)` call is performed before timing starts to absorb the CUDA context initialization cost (~200ms), ensuring that reported metrics reflect the actual algorithm performance (~5-20ms).
 - **Accurate Timing:** The C++ binary reports precise execution times (in ms) to `stderr`, which are parsed by the Python analysis tools to exclude invalid process startup overheads.
+
+## Steganography Module
+
+The project includes a **chaos-based steganography module** with lossless recovery capabilities:
+
+### Features
+
+- **Same Chaotic Function:** Uses the identical cosine-cosine map (`chaotic_functio`) as the encryption engine for consistency
+- **LSB Embedding:** Hides messages in the least significant bits of image pixels using chaotic position generation
+- **EXIF Metadata Storage:** Recovery information is automatically stored in EXIF `UserComment` tag (0x8298) for lossless restoration
+- **Deterministic Positioning:** Message positions are derived from a chaotic sequence seeded by the encryption password
+
+### API Usage
+
+```cpp
+#include "steganography.hpp"
+
+// Embed message with automatic EXIF metadata storage
+std::vector<bool> recovery = embed_message_caos_with_exif(
+    image, message_bits, key_bits, "output.jpg");
+
+// Extract message with automatic EXIF recovery info reading
+std::vector<bool> extracted = extract_message_caos_with_exif(
+    image, key_bits, "input.jpg");
+```
+
+### How It Works
+
+1. **Embedding Phase:**
+   - Generate chaotic sequence using `chaotic_cosine(x, r=2.5)` with the password-derived key
+   - Calculate LSB positions based on chaotic values
+   - Replace LSBs with message bits
+   - Generate recovery information: `R[i] = original_LSB XOR message_bit`
+   - **Automatically save recovery info to EXIF metadata**
+
+2. **Extraction Phase:**
+   - **Read recovery information from EXIF metadata**
+   - Regenerate the same chaotic sequence using the password
+   - Extract bits from the same positions
+   - Restore original LSBs using recovery information: `original = current_LSB XOR recovery_bit`
+   - Return hidden message
+
+### Dependencies
+
+```bash
+# Required for EXIF metadata support
+apt-get install libexif-dev
+```
+
+The Makefile automatically includes libexif during compilation.
 
 ## Contact / Notes
 
@@ -168,49 +216,4 @@ Notes and recommendations:
 - When reporting entropy, compute the per-channel entropy for color images and report the average and per-channel values.
 
 If you would like, I can add a small, self-contained CLI utility (C++ or Python) to compute the standard NPCR/UACI/entropy/CC metrics automatically from two images and produce a concise report.
-
-## Python Analysis Tools
-
-The `python/` directory contains a comprehensive suite of cryptographic analysis tools:
-
-### stats.py - Comprehensive Cryptographic Analysis
-
-The main analysis tool that computes standard cryptographic metrics and generates visual reports:
-
-```bash
-cd python
-python stats.py <input_image> <password> <path_to_cipher_executable> [--rounds N]
-```
-
-**Example:**
-```bash
-python stats.py ../repositorio/set3/lena3.jpg mypassword ../cuda/bin/cipher.out --rounds 3
-```
-
-**Metrics computed:**
-- **Shannon Entropy**: Measures randomness (ideal ~7.999 for 8-bit images)
-- **Correlation Coefficients**: Horizontal, vertical, and diagonal pixel correlations (ideal ~0.0)
-- **NPCR/UACI**: Differential attack resistance metrics
-- **Chi-Square Test**: Histogram uniformity test
-- **GLCM Properties**: Texture analysis (contrast, homogeneity, energy)
-- **DFT Spectrum**: Frequency domain analysis
-- **Key Sensitivity**: Tests encryption with different keys
-- **Occlusion Attack**: Tests robustness to data loss
-- **Performance Benchmarking**: Scalability analysis at multiple image sizes
-
-**Output:** Generates `full_report.jpg` with a comprehensive visual dashboard containing all analysis results. The tool automatically parses the precise `EXEC_TIME` from the C++ binary to report accurate throughput (ms) excluding system overhead.
-
-### Other Python Tools
-
-- **`bifurcacion.py`**: Generates bifurcation diagrams for chaotic map analysis
-- **`lyapunov.py`**: Computes Lyapunov exponents to characterize chaotic behavior
-- **`Chaos_Generator.py`**: Utilities for generating chaotic sequences
-- **`TestNIST.py`**: Integration with NIST statistical test suite for randomness
-- **`plot.py`**: General plotting utilities
-
-**Installation:**
-```bash
-cd python
-pip install -r requirements.txt
-```
 
