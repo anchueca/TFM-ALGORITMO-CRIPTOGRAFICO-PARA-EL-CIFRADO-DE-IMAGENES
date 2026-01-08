@@ -207,13 +207,3 @@ UACI = 100.0 * np.sum(np.abs(a.astype(np.int32) - b.astype(np.int32))) / ((255.0
 print(f'NPCR: {NPCR:.4f}%  UACI: {UACI:.4f}%')
 PY
 ```
-
-Notes and recommendations:
-
-- Use representative images from `repositorio/` (e.g. `set3/lena3.jpg`) for reproducible comparisons.
-- For key-sensitivity tests, change exactly one bit in the key (or use two keys that differ by a single character/bit) and compute NPCR/UACI.
-- For plaintext-sensitivity tests, flip a single pixel or single bit in the plaintext and re-encrypt.
-- When reporting entropy, compute the per-channel entropy for color images and report the average and per-channel values.
-
-If you would like, I can add a small, self-contained CLI utility (C++ or Python) to compute the standard NPCR/UACI/entropy/CC metrics automatically from two images and produce a concise report.
-
