@@ -69,8 +69,9 @@ __device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,
  */
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
-    unsigned short *celular_automata, Image_dimensions img_dimensions, Real r,
-    const size_t total_steps, Real *__restrict__ d_chaotic_values,
+    unsigned short *celular_automata, unsigned short *d_image_automata_state,
+    Image_dimensions img_dimensions, Real r, const size_t total_steps,
+    Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks);
 
 /**

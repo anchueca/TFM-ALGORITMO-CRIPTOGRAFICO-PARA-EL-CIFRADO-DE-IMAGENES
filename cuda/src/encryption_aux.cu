@@ -156,8 +156,8 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x) / threadsPerBlock.x);
   sort_indices_by_chaotic_values_global<<<1, 1>>>(
-      d_pointers.d_chaotic_values, 1, d_pointers.d_permutation_blocks,
-      block_size);
+      d_pointers.d_chaotic_values_for_permutation, 1,
+      d_pointers.d_permutation_blocks, block_size);
   inverse_permutations(d_pointers.d_permutation_blocks,
                        &d_pointers.d_permutation_blocks_inverse, block_size, 1);
 }
@@ -358,18 +358,36 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   Real *chaotic_values;
 
   cudaError_t err;
-  if (d_pointers.d_chaotic_values == nullptr) {
-    err = cudaMalloc(&d_pointers.d_chaotic_values, block_size * sizeof(Real));
+  if (d_pointers.d_chaotic_values_for_permutation ==
+      nullptr) { // First time only transition is computed
+    transition_length = params.transition_length;
+    chaotic_values = d_pointers.d_chaotic_values_for_permutation;
+    err = cudaMalloc(&d_pointers.d_chaotic_values_for_permutation,
+                     block_size * sizeof(Real));
     if (err != cudaSuccess) {
       cudaFree(d_pointers.d_permutation_blocks);
       throw std::runtime_error(
           "Failed to allocate device memory for chaotic values");
     }
-    // First time only transition is computed
+    err = cudaMalloc(&d_pointers.d_image_automata_state,
+                     numBlocks.x * sizeof(unsigned short));
+    if (err != cudaSuccess) {
+      cudaFree(d_pointers.d_chaotic_values_for_permutation);
+      cudaFree(d_pointers.d_permutation_blocks);
+      throw std::runtime_error(
+          "Failed to allocate device memory for image automata state");
+    }
+    err = cudaMemcpy(d_pointers.d_image_automata_state, &params.image_hash,
+                     sizeof(unsigned short), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+      cudaFree(d_pointers.d_chaotic_values_for_permutation);
+      cudaFree(d_pointers.d_permutation_blocks);
+      cudaFree(d_pointers.d_image_automata_state);
+      throw std::runtime_error("Failed to copy hash to device memory");
+    }
     transition_length = params.transition_length;
-    chaotic_values = d_pointers.d_chaotic_values;
+    chaotic_values = d_pointers.d_chaotic_values_for_permutation;
   } else {
-    // First transition is already computed
     transition_length = threadsPerBlock.x / 2;
     chaotic_values = nullptr;
   }
@@ -382,7 +400,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                   shared_mem_size>>>(
       d_pointers.d_flow, d_pointers.d_seeds,
       reinterpret_cast<unsigned short *>(d_pointers.d_automata_state),
-      img_dimensions, params.chaos_parameter,
+      d_pointers.d_image_automata_state, img_dimensions, params.chaos_parameter,
       img_dimensions.rows + transition_length, chaotic_values, block_size,
       transition_length, numBlocks.x);
 

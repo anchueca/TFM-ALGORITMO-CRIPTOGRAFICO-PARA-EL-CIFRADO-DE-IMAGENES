@@ -7,9 +7,10 @@
 #include "../include/aux.cuh"
 
 // Generate SHA3-512-derived bytes (implementation; see header for API)
-__host__ std::vector<unsigned char> generate_hash(const std::string &input,
-                                                  size_t length) {
-
+// Generate hash from string (calls buffer version)
+// Generate hash from buffer (implementation)
+__host__ std::vector<unsigned char>
+generate_hash(const unsigned char *input, size_t input_len, size_t length) {
   // 1. Create OpenSSL context
   EVP_MD_CTX *ctx = EVP_MD_CTX_new();
   if (ctx == nullptr) {
@@ -17,14 +18,13 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
   }
 
   // 2. Initialize digest for SHAKE256
-  // Important: SHAKE is an XOF (Extendable Output Function)
   if (EVP_DigestInit_ex(ctx, EVP_shake256(), nullptr) != 1) {
     EVP_MD_CTX_free(ctx);
     throw std::runtime_error("Error: Failed to initialize SHAKE256");
   }
 
   // 3. Absorb (Feed data)
-  if (EVP_DigestUpdate(ctx, input.data(), input.size()) != 1) {
+  if (EVP_DigestUpdate(ctx, input, input_len) != 1) {
     EVP_MD_CTX_free(ctx);
     throw std::runtime_error("Error: Failed to update digest");
   }
@@ -33,7 +33,6 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
   std::vector<unsigned char> output(length);
 
   // 5. Squeeze (Extract data)
-  // For SHAKE use EVP_DigestFinalXOF, not EVP_DigestFinal_ex
   if (EVP_DigestFinalXOF(ctx, output.data(), length) != 1) {
     EVP_MD_CTX_free(ctx);
     throw std::runtime_error("Error: Failed to extract hash (FinalXOF)");
@@ -42,6 +41,13 @@ __host__ std::vector<unsigned char> generate_hash(const std::string &input,
   EVP_MD_CTX_free(ctx);
 
   return output;
+}
+
+// Generate hash from string (calls buffer version)
+__host__ std::vector<unsigned char> generate_hash(const std::string &input,
+                                                  size_t length) {
+  return generate_hash(reinterpret_cast<const unsigned char *>(input.data()),
+                       input.size(), length);
 }
 
 // Helper to check if a string is binary
@@ -74,7 +80,6 @@ std::vector<unsigned char> bitstring_to_bytes(const std::string &bits) {
 __host__ std::vector<std::vector<unsigned char>>
 calculate_password(const std::string &input, Image_dimensions img_dimensions,
                    bool verbose, bool use_raw_key) {
-
   // Required lengths
   // Fixed to 1 as we only need one set of chaotic values for block
   // permutations.
@@ -176,4 +181,11 @@ void warmup_gpu() {
   cudaFree(0); // Initialize context
   warmup_kernel<<<1, 1>>>();
   cudaDeviceSynchronize();
+}
+
+unsigned short calculate_image_hash(const cv::Mat &image, size_t length) {
+  cv::Mat temp = image.isContinuous() ? image : image.clone();
+  std::vector<unsigned char> h =
+      generate_hash(temp.data, temp.total() * temp.elemSize(), length);
+  return h.size() >= 2 ? (h[0] << 8 | h[1]) : (h.size() ? h[0] : 0);
 }

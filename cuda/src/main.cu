@@ -45,6 +45,23 @@ int main(int argc, char **argv) {
 
   start = std::chrono::high_resolution_clock::now();
   try {
+    if (config.encrypt) {
+      config.params.image_hash = calculate_image_hash(image, 2);
+      if (config.verbose)
+        std::cout << " [INFO] Calculated Image Hash: "
+                  << config.params.image_hash << std::endl;
+    } else {
+      // Recovery the ophuscated image hash
+    }
+    config.params.image_hash = 43243; // REMOVE
+  } catch (const std::exception &e) {
+    cerr << "\n[FATAL ERROR] During image hash process: " << e.what() << endl;
+    return -1;
+  }
+  end = std::chrono::high_resolution_clock::now();
+
+  start = std::chrono::high_resolution_clock::now();
+  try {
     encrypt_image(image, password_segments, img_dimensions, config.params,
                   config.verbose, config.encrypt);
   } catch (const std::exception &e) {

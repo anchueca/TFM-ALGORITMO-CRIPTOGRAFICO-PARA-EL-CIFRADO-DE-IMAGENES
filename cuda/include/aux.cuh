@@ -2,6 +2,7 @@
 #define AUX_CUH
 
 #include <istream>
+#include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <openssl/evp.h>
@@ -25,6 +26,17 @@
  */
 __host__ std::vector<unsigned char> generate_hash(const std::string &input,
                                                   size_t length);
+
+/**
+ * @brief Generates a SHA-3 (SHAKE256) hash of the input buffer.
+ *
+ * @param input Pointer to the input data.
+ * @param input_len Length of the input data in bytes.
+ * @param length The desired length of the output hash in bytes.
+ * @return A vector of unsigned characters containing the hash.
+ */
+__host__ std::vector<unsigned char>
+generate_hash(const unsigned char *input, size_t input_len, size_t length);
 
 /**
  * @brief Calculate password segments from a textual password.
@@ -63,5 +75,14 @@ cv::Mat unstack_channels(const cv::Mat &image, bool verbose);
  */
 void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
                     bool is_color, bool verbose);
+
+/**
+ * @brief Calculates a hash of the image data using SHAKE256.
+ *
+ * @param image Input image.
+ * @param length Desired hash length in bytes.
+ * @return unsigned short 16-bit hash (truncated if length > 2).
+ */
+unsigned short calculate_image_hash(const cv::Mat &image, size_t length);
 
 #endif // AUX_CUH

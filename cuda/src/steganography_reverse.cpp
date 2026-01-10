@@ -1,12 +1,12 @@
 #include "../include/steganography.hpp"
 #include <cmath>
-#include <iostream>
-#include <sstream>
 #include <iomanip>
+#include <iostream>
 #include <libexif/exif-data.h>
 #include <libexif/exif-entry.h>
-#include <libexif/exif-tag.h>
 #include <libexif/exif-ifd.h>
+#include <libexif/exif-tag.h>
+#include <sstream>
 
 static double bits_to_seed(const std::vector<bool> &bits) {
   if (bits.empty())
@@ -60,20 +60,23 @@ static std::vector<bool> hex_to_bits(const std::string &hex_str) {
 static std::vector<bool> read_recovery_metadata(const std::string &input_path) {
   ExifData *exif_data = exif_data_new_from_file(input_path.c_str());
   if (!exif_data) {
-    std::cerr << "Warning: Could not read EXIF data from " << input_path << "\n";
+    std::cerr << "Warning: Could not read EXIF data from " << input_path
+              << "\n";
     return std::vector<bool>();
   }
 
   std::vector<bool> recovery_bits;
-  ExifEntry *entry = 
-      exif_content_get_entry(exif_data->ifd[EXIF_IFD_EXIF], EXIF_TAG_USER_COMMENT);
-  
+  ExifEntry *entry = exif_content_get_entry(exif_data->ifd[EXIF_IFD_EXIF],
+                                            EXIF_TAG_USER_COMMENT);
+
   if (entry && entry->data) {
     std::string recovery_hex((char *)entry->data);
     recovery_bits = hex_to_bits(recovery_hex);
-    std::cout << "Read recovery metadata from EXIF (hex: " << recovery_hex << ")\n";
+    std::cout << "Read recovery metadata from EXIF (hex: " << recovery_hex
+              << ")\n";
   } else {
-    std::cerr << "Warning: UserComment (recovery metadata) not found in EXIF.\n";
+    std::cerr
+        << "Warning: UserComment (recovery metadata) not found in EXIF.\n";
   }
 
   exif_data_unref(exif_data);
@@ -145,19 +148,20 @@ std::vector<bool> extract_message_caos(cv::Mat &image,
 }
 
 /**
- * @brief Wrapper function that reads recovery info from EXIF and extracts message.
+ * @brief Wrapper function that reads recovery info from EXIF and extracts
+ * message.
  */
-std::vector<bool> extract_message_caos_with_exif(cv::Mat &image,
-                                                 const std::vector<bool> &key,
-                                                 const std::string &input_path) {
+std::vector<bool>
+extract_message_caos_with_exif(cv::Mat &image, const std::vector<bool> &key,
+                               const std::string &input_path) {
   // Read recovery information from EXIF metadata
   std::vector<bool> recovery_info = read_recovery_metadata(input_path);
-  
+
   if (recovery_info.empty()) {
     std::cerr << "Error: Could not read recovery metadata from EXIF.\n";
     return std::vector<bool>();
   }
-  
+
   // Extract the message using standard function
   return extract_message_caos(image, recovery_info, key);
 }

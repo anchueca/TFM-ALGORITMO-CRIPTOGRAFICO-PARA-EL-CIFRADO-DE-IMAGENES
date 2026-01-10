@@ -1,15 +1,15 @@
 #include "../include/steganography.hpp"
-#include <cmath>
-#include <iostream>
-#include <numeric>
 #include <bitset>
-#include <sstream>
+#include <cmath>
+#include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <libexif/exif-data.h>
 #include <libexif/exif-entry.h>
-#include <libexif/exif-tag.h>
 #include <libexif/exif-ifd.h>
-#include <fstream>
+#include <libexif/exif-tag.h>
+#include <numeric>
+#include <sstream>
 
 static double bits_to_seed(const std::vector<bool> &bits) {
   if (bits.empty())
@@ -49,8 +49,7 @@ static std::string bits_to_hex(const std::vector<bool> &bits) {
       if (bits[i + j])
         byte |= (1 << j);
     }
-    ss << std::hex << std::setw(2) << std::setfill('0')
-       << (int)byte;
+    ss << std::hex << std::setw(2) << std::setfill('0') << (int)byte;
   }
   return ss.str();
 }
@@ -80,7 +79,7 @@ static void write_recovery_metadata(const std::string &output_path,
                                     const std::vector<bool> &recovery_info) {
   // Convert recovery info to hex string
   std::string recovery_hex = bits_to_hex(recovery_info);
-  
+
   // Create EXIF data structure
   ExifData *exif_data = exif_data_new();
   if (!exif_data) {
@@ -108,13 +107,13 @@ static void write_recovery_metadata(const std::string &output_path,
   unsigned char *exif_buf = nullptr;
   unsigned int exif_size = 0;
   exif_data_save_data(exif_data, &exif_buf, &exif_size);
-  
+
   if (exif_buf && exif_size > 0) {
-    std::cout << "EXIF recovery metadata prepared (size: " << exif_size 
+    std::cout << "EXIF recovery metadata prepared (size: " << exif_size
               << " bytes). Recovery hex: " << recovery_hex << "\n";
     free(exif_buf);
   }
-  
+
   exif_data_unref(exif_data);
 }
 
@@ -124,20 +123,23 @@ static void write_recovery_metadata(const std::string &output_path,
 static std::vector<bool> read_recovery_metadata(const std::string &input_path) {
   ExifData *exif_data = exif_data_new_from_file(input_path.c_str());
   if (!exif_data) {
-    std::cerr << "Warning: Could not read EXIF data from " << input_path << "\n";
+    std::cerr << "Warning: Could not read EXIF data from " << input_path
+              << "\n";
     return std::vector<bool>();
   }
 
   std::vector<bool> recovery_bits;
-  ExifEntry *entry = 
-      exif_content_get_entry(exif_data->ifd[EXIF_IFD_EXIF], EXIF_TAG_USER_COMMENT);
-  
+  ExifEntry *entry = exif_content_get_entry(exif_data->ifd[EXIF_IFD_EXIF],
+                                            EXIF_TAG_USER_COMMENT);
+
   if (entry && entry->data) {
     std::string recovery_hex((char *)entry->data);
     recovery_bits = hex_to_bits(recovery_hex);
-    std::cout << "Read recovery metadata from EXIF (hex: " << recovery_hex << ")\n";
+    std::cout << "Read recovery metadata from EXIF (hex: " << recovery_hex
+              << ")\n";
   } else {
-    std::cerr << "Warning: UserComment (recovery metadata) not found in EXIF.\n";
+    std::cerr
+        << "Warning: UserComment (recovery metadata) not found in EXIF.\n";
   }
 
   exif_data_unref(exif_data);
@@ -157,7 +159,8 @@ std::vector<bool> embed_message_caos(cv::Mat &image,
   double x = bits_to_seed(key);
   std::vector<int> H(N);
 
-  // 1 & 2. Generate chaotic sequence using cosine-cosine map and quantize to [0, 255]
+  // 1 & 2. Generate chaotic sequence using cosine-cosine map and quantize to
+  // [0, 255]
   double r_param = 2.5; // Chaotic parameter for cosine-cosine map
   for (size_t i = 0; i < N; ++i) {
     x = chaotic_cosine(x, r_param);
@@ -219,11 +222,11 @@ std::vector<bool> embed_message_caos_with_exif(cv::Mat &image,
                                                const std::string &output_path) {
   // Embed the message using standard function
   std::vector<bool> R = embed_message_caos(image, message, key);
-  
+
   // Write recovery information to EXIF metadata
   if (!R.empty()) {
     write_recovery_metadata(output_path, R);
   }
-  
+
   return R;
 }

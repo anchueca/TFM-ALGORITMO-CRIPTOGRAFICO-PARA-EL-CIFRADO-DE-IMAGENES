@@ -194,8 +194,9 @@ __global__ void interleave_channels_kernel(const unsigned char *input,
 
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
-    unsigned short *celular_automata, Image_dimensions img_dimensions, Real r,
-    const size_t total_steps, Real *__restrict__ d_chaotic_values,
+    unsigned short *celular_automata, unsigned short *image_automata_state,
+    Image_dimensions img_dimensions, Real r, const size_t total_steps,
+    Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks) {
 
   // Shared size is determined at kernel launch
@@ -234,7 +235,11 @@ __global__ void keystream_generation_parallel(
     state_idx = img_dimensions.cols +
                 blockIdx.x; // Unique index for extra seed to avoid race
     current_xn = d_seeds[state_idx];
-    celular_automata_value = 0xAAAA; // Constant CA value as requested
+    // If d_chaotic_values is null, its the first time we are generating the
+    // keystream.
+    celular_automata_value = d_chaotic_values_for_permutation != nullptr
+                                 ? image_automata_state[blockIdx.x]
+                                 : image_automata_state[0];
   } else {
     state_idx = x - (blockIdx.x + 1);
     current_xn = d_seeds[state_idx];
@@ -247,11 +252,13 @@ __global__ void keystream_generation_parallel(
     current_xn =
         coupled_map(current_xn, *r_seed, *l_seed, r, &celular_automata_value);
     // Race condition fix: Only one block (Block 0) should write to
-    // d_chaotic_values
-    if (blockIdx.x == 0 && tid == 0 && d_chaotic_values != nullptr &&
+    // d_chaotic_values_for_permutation
+    if (blockIdx.x == 0 && tid == 0 &&
+        d_chaotic_values_for_permutation != nullptr &&
         step >= total_steps - permutation_block_size) {
       *c_seed = current_xn;
-      d_chaotic_values[step - (total_steps - permutation_block_size)] =
+      d_chaotic_values_for_permutation[step -
+                                       (total_steps - permutation_block_size)] =
           current_xn;
     } else if (tid != 0 && step >= transition_length) {
       size_t row = step - transition_length;
@@ -270,6 +277,8 @@ __global__ void keystream_generation_parallel(
   // save back
   if (tid != 0) {
     celular_automata[state_idx] = celular_automata_value;
+  } else {
+    image_automata_state[blockIdx.x] = celular_automata_value;
   }
 }
 
