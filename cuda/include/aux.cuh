@@ -85,4 +85,29 @@ void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
  */
 unsigned short calculate_image_hash(const cv::Mat &image, size_t length);
 
+/**
+ * @brief Extracts a hidden message (image hash) using EXIF metadata.
+ *
+ * @param image The image with hidden info.
+ * @param stego_key The password segment for steganography.
+ * @param input_path Path to the image file to read EXIF.
+ * @return unsigned short The extracted 16-bit hash.
+ */
+unsigned short extract_message_caos(cv::Mat &image,
+                                    const std::vector<unsigned char> &stego_key,
+                                    const std::string &input_path,
+                                    const std::string &exif_hex = "");
+
+/**
+ * @brief Embeds a message (image hash) and stores recovery info in EXIF.
+ *
+ * @param image The image to modify.
+ * @param image_hash The 16-bit hash to hide.
+ * @param stego_key The password segment for steganography.
+ * @param output_path Path to save the image (for EXIF).
+ */
+void embed_message_caos(cv::Mat &image, unsigned short image_hash,
+                        const std::vector<unsigned char> &stego_key,
+                        const std::string &output_path);
+
 #endif // AUX_CUH

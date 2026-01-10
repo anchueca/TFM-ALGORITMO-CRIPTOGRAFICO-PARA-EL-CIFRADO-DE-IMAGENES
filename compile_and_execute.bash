@@ -44,7 +44,20 @@ fi
 
 # Build the cipher
 eval $BUILD_CMD && \
-# Encrypt the test image
-./cuda/bin/cipher.out ./repositorio/set3/peppers3.tif ./cuda/bin/salida.tif password $ROUNDS 1 8 20 10 3.9 1 0 && \
-# Decrypt the encrypted image (verbose=0 for cleaner output)
-./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password $ROUNDS 0 8 20 10 3.9 0 0
+# Encrypt the test image and capture the recovery hex
+echo "[SCRIPT] Running encryption..."
+ENCRYPT_OUTPUT=$(./cuda/bin/cipher.out ./repositorio/set3/lena3.tif ./cuda/bin/salida.tif password9 $ROUNDS 1 8 20 10 3.9 1 0 2>&1)
+echo "$ENCRYPT_OUTPUT"
+
+RECOVERY_HEX=$(echo "$ENCRYPT_OUTPUT" | grep "Recovery hex:" | tail -n 1 | sed 's/.*Recovery hex: \([0-9a-f]*\).*/\1/')
+RECOVERY_HEX=$(echo "$RECOVERY_HEX" | tr -d '[:space:]')
+
+if [ -n "$RECOVERY_HEX" ]; then
+    echo "[SCRIPT] Captured Recovery Hex: $RECOVERY_HEX"
+else
+    echo "[WARNING] Could not capture Recovery Hex. Decryption might fail if EXIF reading is broken."
+fi
+
+# Decrypt the encrypted image (passing RECOVERY_HEX as 13th argument)
+echo -e "\n[SCRIPT] Running decryption..."
+./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password9 $ROUNDS 0 8 20 10 3.9 0 0 $RECOVERY_HEX

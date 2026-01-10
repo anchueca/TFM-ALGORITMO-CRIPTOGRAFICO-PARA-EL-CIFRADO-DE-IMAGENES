@@ -235,11 +235,12 @@ __global__ void keystream_generation_parallel(
     state_idx = img_dimensions.cols +
                 blockIdx.x; // Unique index for extra seed to avoid race
     current_xn = d_seeds[state_idx];
-    // If d_chaotic_values is null, its the first time we are generating the
-    // keystream.
+    // If d_chaotic_values_for_permutation is not null, it's the first call
+    // (transition/permutation). We use image_automata_state[0] (the initialized
+    // hash) as the collective seed.
     celular_automata_value = d_chaotic_values_for_permutation != nullptr
-                                 ? image_automata_state[blockIdx.x]
-                                 : image_automata_state[0];
+                                 ? image_automata_state[0]
+                                 : image_automata_state[blockIdx.x];
   } else {
     state_idx = x - (blockIdx.x + 1);
     current_xn = d_seeds[state_idx];

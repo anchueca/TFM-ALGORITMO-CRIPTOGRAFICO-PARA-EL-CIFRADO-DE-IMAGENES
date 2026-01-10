@@ -5,6 +5,9 @@
  */
 
 #include "../include/aux.cuh"
+#include "../include/steganography.hpp"
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 
 // Generate SHA3-512-derived bytes (implementation; see header for API)
 // Generate hash from string (calls buffer version)
@@ -95,8 +98,9 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   int bytes_for_flow = (img_dimensions.cols + numBlocks) * 4;
 
   // Total length
-  int length_bytes =
-      bytes_for_rows + bytes_for_columns + bytes_for_blocks + bytes_for_flow;
+  int bytes_for_stego = 8; // 64 bits for stego seed
+  int length_bytes = bytes_for_rows + bytes_for_columns + bytes_for_blocks +
+                     bytes_for_flow + bytes_for_stego;
 
   if (verbose)
     std::cout << "[DEBUG] Key Requirements:" << std::endl
@@ -104,6 +108,7 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
               << "  Columns bytes: " << bytes_for_columns << std::endl
               << "  Blocks bytes:  " << bytes_for_blocks << std::endl
               << "  Flow bytes:    " << bytes_for_flow << std::endl
+              << "  Stego bytes:   " << bytes_for_stego << std::endl
               << "  Total bytes:   " << length_bytes << " (" << length_bytes * 8
               << " bits)" << std::endl;
 
@@ -125,17 +130,22 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
     password = generate_hash(input, length_bytes);
   }
 
-  std::vector<std::vector<unsigned char>> password_segments(3);
+  std::vector<std::vector<unsigned char>> password_segments(4);
 
   // construct segments (all sizes in bytes)
-  password_segments[0] = std::vector<unsigned char>(
-      password.begin(), password.begin() + bytes_for_rows); // Rows
-  password_segments[1] = std::vector<unsigned char>(
-      password.begin() + bytes_for_rows,
-      password.begin() + bytes_for_rows + bytes_for_columns); // Columns
-  password_segments[2] = std::vector<unsigned char>(
+  password_segments[0].assign(password.begin(),
+                              password.begin() + bytes_for_rows); // Rows
+  password_segments[1].assign(password.begin() + bytes_for_rows,
+                              password.begin() + bytes_for_rows +
+                                  bytes_for_columns); // Columns
+  password_segments[2].assign(
       password.begin() + bytes_for_rows + bytes_for_columns,
-      password.end()); // Blocks and flow
+      password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks +
+          bytes_for_flow); // Blocks and flow
+  password_segments[3].assign(password.begin() + bytes_for_rows +
+                                  bytes_for_columns + bytes_for_blocks +
+                                  bytes_for_flow,
+                              password.end()); // Steganography
   return password_segments;
 }
 
@@ -188,4 +198,68 @@ unsigned short calculate_image_hash(const cv::Mat &image, size_t length) {
   std::vector<unsigned char> h =
       generate_hash(temp.data, temp.total() * temp.elemSize(), length);
   return h.size() >= 2 ? (h[0] << 8 | h[1]) : (h.size() ? h[0] : 0);
+}
+
+#include "../include/steganography.hpp"
+
+static std::vector<bool>
+bytes_to_bits(const std::vector<unsigned char> &bytes) {
+  std::vector<bool> bits;
+  bits.reserve(bytes.size() * 8);
+  for (unsigned char b : bytes) {
+    for (int i = 0; i < 8; ++i) {
+      bits.push_back((b >> i) & 1);
+    }
+  }
+  return bits;
+}
+
+static std::vector<bool> hex_to_bits_local(const std::string &hex_str) {
+  std::vector<bool> bits;
+  for (size_t i = 0; i < hex_str.size(); i += 2) {
+    if (i + 1 >= hex_str.size())
+      break;
+    std::string byte_str = hex_str.substr(i, 2);
+    uint8_t byte = (uint8_t)std::stoi(byte_str, nullptr, 16);
+    for (int j = 0; j < 8; ++j) {
+      bits.push_back((byte >> j) & 1);
+    }
+  }
+  return bits;
+}
+
+unsigned short extract_message_caos(cv::Mat &image,
+                                    const std::vector<unsigned char> &stego_key,
+                                    const std::string &input_path,
+                                    const std::string &exif_hex) {
+  std::vector<bool> key_bits = bytes_to_bits(stego_key);
+  std::vector<bool> msg_bits;
+
+  if (!exif_hex.empty()) {
+    std::vector<bool> recovery_bits = hex_to_bits_local(exif_hex);
+    msg_bits = extract_message_caos(image, recovery_bits, key_bits);
+  } else {
+    msg_bits = extract_message_caos_with_exif(image, key_bits, input_path);
+  }
+
+  if (msg_bits.size() < 16)
+    return 0;
+
+  unsigned short hash = 0;
+  for (int i = 0; i < 16; ++i) {
+    if (msg_bits[i])
+      hash |= (1 << i);
+  }
+  return hash;
+}
+
+void embed_message_caos(cv::Mat &image, unsigned short image_hash,
+                        const std::vector<unsigned char> &stego_key,
+                        const std::string &output_path) {
+  std::vector<bool> key_bits = bytes_to_bits(stego_key);
+  std::vector<bool> msg_bits(16);
+  for (int i = 0; i < 16; ++i) {
+    msg_bits[i] = (image_hash >> i) & 1;
+  }
+  embed_message_caos_with_exif(image, msg_bits, key_bits, output_path);
 }

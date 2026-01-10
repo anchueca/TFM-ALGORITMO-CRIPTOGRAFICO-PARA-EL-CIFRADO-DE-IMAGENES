@@ -44,16 +44,24 @@ int main(int argc, char **argv) {
               << " ms" << std::endl;
 
   start = std::chrono::high_resolution_clock::now();
+
+  // Ophuscated phase
   try {
     if (config.encrypt) {
       config.params.image_hash = calculate_image_hash(image, 2);
       if (config.verbose)
-        std::cout << " [INFO] Calculated Image Hash: "
+        std::cerr << " [INFO] Calculated Image Hash: "
                   << config.params.image_hash << std::endl;
     } else {
       // Recovery the ophuscated image hash
+      config.params.image_hash =
+          extract_message_caos(image, password_segments[3],
+                               config.input_image_path, config.exif_hex);
+      if (config.verbose)
+        std::cerr << " [INFO] Recovered Image Hash: "
+                  << config.params.image_hash << std::endl;
     }
-    config.params.image_hash = 43243; // REMOVE
+    // config.params.image_hash = 43243; // REMOVE
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During image hash process: " << e.what() << endl;
     return -1;
@@ -67,6 +75,11 @@ int main(int argc, char **argv) {
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During encryption process: " << e.what() << endl;
     return -1;
+  }
+  // Embed the image hash in the image
+  if (config.encrypt) {
+    embed_message_caos(image, config.params.image_hash, password_segments[3],
+                       config.output_arg);
   }
   end = std::chrono::high_resolution_clock::now();
 

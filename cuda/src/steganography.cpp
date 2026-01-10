@@ -109,7 +109,7 @@ static void write_recovery_metadata(const std::string &output_path,
   exif_data_save_data(exif_data, &exif_buf, &exif_size);
 
   if (exif_buf && exif_size > 0) {
-    std::cout << "EXIF recovery metadata prepared (size: " << exif_size
+    std::cerr << "EXIF recovery metadata prepared (size: " << exif_size
               << " bytes). Recovery hex: " << recovery_hex << "\n";
     free(exif_buf);
   }
@@ -135,7 +135,7 @@ static std::vector<bool> read_recovery_metadata(const std::string &input_path) {
   if (entry && entry->data) {
     std::string recovery_hex((char *)entry->data);
     recovery_bits = hex_to_bits(recovery_hex);
-    std::cout << "Read recovery metadata from EXIF (hex: " << recovery_hex
+    std::cerr << "Read recovery metadata from EXIF (hex: " << recovery_hex
               << ")\n";
   } else {
     std::cerr

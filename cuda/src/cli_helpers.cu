@@ -10,8 +10,8 @@ void print_usage(const char *prog_name) {
   cout << "Usage: " << prog_name
        << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
        << "<Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> "
-       << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)> <Bitstring(0/1)>"
-       << endl;
+       << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)> <Bitstring(0/1)> "
+       << "[ExifHex]" << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
   cout << "  SHOW     : Opens a window with the result (Requires GUI)" << endl;
@@ -20,10 +20,11 @@ void print_usage(const char *prog_name) {
 }
 
 bool parse_arguments(int argc, char **argv, AppConfig &config) {
-  const size_t required_args = 12;
-  if (argc != required_args) {
+  const size_t min_args = 12;
+  const size_t max_args = 13;
+  if (argc < min_args || argc > max_args) {
     cerr << "[ERROR] Invalid number of arguments! " << argc << " received, "
-         << required_args << " required." << endl;
+         << "expected " << min_args << " or " << max_args << "." << endl;
     return false;
   }
 
@@ -51,6 +52,10 @@ bool parse_arguments(int argc, char **argv, AppConfig &config) {
       config.verbose = false; // Disable verbose if piping to stdout
     } else {
       config.output_mode = OutputMode::FILE_SAVE;
+    }
+
+    if (argc == 13) {
+      config.exif_hex = argv[12];
     }
   } catch (const std::exception &e) {
     cerr << "[ERROR] Parsing arguments failed: " << e.what() << endl;

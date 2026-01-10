@@ -16,6 +16,7 @@ struct AppConfig {
   bool encrypt;
   bool use_raw_key;
   OutputMode output_mode;
+  std::string exif_hex;
 };
 
 void print_usage(const char *prog_name);

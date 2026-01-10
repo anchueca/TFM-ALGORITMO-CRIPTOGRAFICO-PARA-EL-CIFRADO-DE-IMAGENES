@@ -165,6 +165,7 @@ class ExternalCipherTester:
         self.automata_steps = str(automata_steps)
         self.transition = str(transition)
         self.is_binary = is_binary
+        self.recovery_hex = None # To store extracted EXIF info
         self.original_img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
         if self.original_img is None: raise ValueError(f"Image not found: {input_path}")
 
@@ -173,16 +174,17 @@ class ExternalCipherTester:
         password_to_use = override_password if override_password else self.password
         
         success, encoded_buffer = cv2.imencode(".tif", image_matrix)
-        if not success: raise ValueError("Python encoding error.")
-        
         binary_flag = '1' if self.is_binary else '0'
-        
         cmd = [
             self.exe, "STDIN", "STDOUT",
             password_to_use, self.rounds, mode_flag,
             self.block_size, self.automata_steps, self.transition, self.chaos, "0",
             binary_flag
         ]
+
+        if not mode_enc and self.recovery_hex:
+            cmd.append(self.recovery_hex)
+
         try:
             res = subprocess.run(cmd, input=encoded_buffer.tobytes(), capture_output=True, check=True)
             if not res.stdout: raise ValueError("C++ returned empty output")
@@ -194,6 +196,8 @@ class ExternalCipherTester:
                 for line in stderr_str.split('\n'):
                     if "EXEC_TIME:" in line:
                         exec_time = float(line.split("EXEC_TIME:")[1].strip())
+                    if "Recovery hex:" in line:
+                        self.recovery_hex = line.split("Recovery hex:")[1].strip()
             except Exception:
                 pass
 
@@ -214,7 +218,7 @@ class ExternalCipherTester:
         Standard Differential Attack: Change 1 bit in PLAINTEXT image.
         """
         alt_img = self.original_img.copy()
-        flat = alt_img.view(np.uint8).flatten()
+        flat = alt_img.ravel()
         flat[len(flat)//2] ^= 1 # Flip LSB of center pixel
         
         c1, _ = self.run_cipher_ram_to_ram(self.original_img, True)
@@ -476,7 +480,7 @@ def main():
         channels = temp_tester.original_img.shape[2] if len(temp_tester.original_img.shape) > 2 else 1
         cols = base_cols * channels
         num_blocks = (cols + 256) // 256
-        total_bytes = (rows * 2) + (cols * 2) + 4 + (cols + num_blocks) * 4
+        total_bytes = (rows * 2) + (cols * 2) + 4 + (cols + num_blocks) * 4 + 8
         required_bits = total_bytes * 8
         
         print(f"[+] Required Key Length: {required_bits} bits ({total_bytes} bytes)")
