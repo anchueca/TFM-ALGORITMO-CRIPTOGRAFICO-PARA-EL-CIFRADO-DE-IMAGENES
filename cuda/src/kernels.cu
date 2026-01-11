@@ -279,7 +279,8 @@ __global__ void keystream_generation_parallel(
   if (tid != 0) {
     celular_automata[state_idx] = celular_automata_value;
   } else {
-    image_automata_state[blockIdx.x] = celular_automata_value;
+    image_automata_state[blockIdx.x] =
+        celular_automata_value ^ convertToBitStream(current_xn);
   }
 }
 
