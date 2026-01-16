@@ -88,7 +88,6 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   // permutations.
   const size_t num_blocks_permutations = 1;
 
-  int bytes_for_rows = img_dimensions.rows * 2;
   int bytes_for_columns = img_dimensions.cols * 2;
   int bytes_for_blocks = num_blocks_permutations * 4;
 
@@ -99,12 +98,11 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
 
   // Total length
   int bytes_for_stego = 8; // 64 bits for stego seed
-  int length_bytes = bytes_for_rows + bytes_for_columns + bytes_for_blocks +
-                     bytes_for_flow + bytes_for_stego;
+  int length_bytes =
+      bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego;
 
   if (verbose)
     std::cout << "[DEBUG] Key Requirements:" << std::endl
-              << "  Row bytes:     " << bytes_for_rows << std::endl
               << "  Columns bytes: " << bytes_for_columns << std::endl
               << "  Blocks bytes:  " << bytes_for_blocks << std::endl
               << "  Flow bytes:    " << bytes_for_flow << std::endl
@@ -130,21 +128,17 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
     password = generate_hash(input, length_bytes);
   }
 
-  std::vector<std::vector<unsigned char>> password_segments(4);
+  std::vector<std::vector<unsigned char>> password_segments(3);
 
   // construct segments (all sizes in bytes)
   password_segments[0].assign(password.begin(),
-                              password.begin() + bytes_for_rows); // Rows
-  password_segments[1].assign(password.begin() + bytes_for_rows,
-                              password.begin() + bytes_for_rows +
-                                  bytes_for_columns); // Columns
-  password_segments[2].assign(
-      password.begin() + bytes_for_rows + bytes_for_columns,
-      password.begin() + bytes_for_rows + bytes_for_columns + bytes_for_blocks +
-          bytes_for_flow); // Blocks and flow
-  password_segments[3].assign(password.begin() + bytes_for_rows +
-                                  bytes_for_columns + bytes_for_blocks +
-                                  bytes_for_flow,
+                              password.begin() + bytes_for_columns); // Columns
+  password_segments[1].assign(password.begin() + bytes_for_columns,
+                              password.begin() + bytes_for_columns +
+                                  bytes_for_blocks +
+                                  bytes_for_flow); // Blocks and flow
+  password_segments[2].assign(password.begin() + bytes_for_columns +
+                                  bytes_for_blocks + bytes_for_flow,
                               password.end()); // Steganography
   return password_segments;
 }
@@ -262,4 +256,83 @@ void embed_message_caos(cv::Mat &image, unsigned short image_hash,
     msg_bits[i] = (image_hash >> i) & 1;
   }
   embed_message_caos_with_exif(image, msg_bits, key_bits, output_path);
+}
+
+#include <cmath>
+#include <opencv2/opencv.hpp>
+#include <stdexcept>
+
+cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
+                         int original_channels) {
+  if (input.cols > 65535 || input.rows > 65535) {
+    throw std::runtime_error("Dimensiones exceden el límite de 16 bits.");
+  }
+
+  uint16_t W = static_cast<uint16_t>(input.cols);
+  uint16_t H = static_cast<uint16_t>(input.rows);
+  int channels = input.channels();
+
+  // Necesitamos 5 bytes para metadatos (2 bytes para W + 2 bytes para H + 1
+  // byte para original_channels)
+  long totalPixelsOriginal = input.total();
+  int bytesNeeded = 5;
+  int pixelsForMeta = std::ceil((float)bytesNeeded / channels);
+
+  // 1. Calcular lado S: el menor cuadrado múltiplo de blockSize que contenga
+  // todo
+  int minS = std::ceil(std::sqrt(totalPixelsOriginal + pixelsForMeta));
+  int S = ((minS + blockSize - 1) / blockSize) * blockSize;
+
+  // 2. Crear contenedor cuadrado
+  cv::Mat squared = cv::Mat::zeros(S, S, input.type());
+
+  // 3. Volcado lineal de píxeles (Flattening)
+  // Copiamos la imagen original al inicio del nuevo espacio
+  cv::Mat flatInput = input.reshape(channels, 1);
+  cv::Mat flatOutput = squared.reshape(channels, 1);
+  flatInput.copyTo(flatOutput.colRange(0, totalPixelsOriginal));
+
+  // 4. Almacenar metadatos en los últimos 5 bytes del buffer de píxeles
+  // Esto sobreescribe los componentes de color de los últimos píxeles
+  uchar *dataPtr = squared.data;
+  size_t lastByteIdx = (size_t)S * S * channels;
+
+  dataPtr[lastByteIdx - 5] = (W & 0xFF);        // W Low
+  dataPtr[lastByteIdx - 4] = ((W >> 8) & 0xFF); // W High
+  dataPtr[lastByteIdx - 3] = (H & 0xFF);        // H Low
+  dataPtr[lastByteIdx - 2] = ((H >> 8) & 0xFF); // H High
+  // Byte de color: 1 = color (RGB), 0 = blanco y negro (grayscale)
+  dataPtr[lastByteIdx - 1] = (original_channels == 3) ? 1 : 0;
+
+  return squared;
+}
+
+cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
+  int channels = squared.channels();
+  uchar *dataPtr = squared.data;
+  size_t lastByteIdx = (size_t)squared.total() * channels;
+
+  // 1. Recomponer W, H y flag de color desde los últimos 5 bytes
+  uint16_t W = dataPtr[lastByteIdx - 5] |
+               (static_cast<uint16_t>(dataPtr[lastByteIdx - 4]) << 8);
+  uint16_t H = dataPtr[lastByteIdx - 3] |
+               (static_cast<uint16_t>(dataPtr[lastByteIdx - 2]) << 8);
+  // Byte de color: 1 = color (RGB/3 canales), 0 = blanco y negro (1 canal)
+  uchar is_color_flag = dataPtr[lastByteIdx - 1];
+  int original_channels = (is_color_flag == 1) ? 3 : 1;
+
+  if (out_original_channels != nullptr) {
+    *out_original_channels = original_channels;
+  }
+
+  // 2. Extraer la región de interés (ROI) original
+  cv::Mat output = cv::Mat(H, W, squared.type());
+
+  cv::Mat flatSquared = squared.reshape(channels, 1);
+  cv::Mat flatOutput = output.reshape(channels, 1);
+
+  // Copiamos solo la cantidad de píxeles que indican los metadatos
+  flatSquared.colRange(0, (size_t)W * H).copyTo(flatOutput);
+
+  return output;
 }

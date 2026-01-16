@@ -25,9 +25,38 @@ int main(int argc, char **argv) {
   cudaFree(0);
   warmup_gpu();
 
+  // Store original channel info
+  int original_channels = image.channels();
+
+  // === PREPROCESSING: Unstack and (optionally) Pad ===
+  if (config.verbose)
+    std::cout << " > Preprocessing (Unstack & Pad)..." << std::endl;
+
+  if (config.verbose)
+    std::cout << " [DEBUG] Loaded image: " << image.cols << "x" << image.rows
+              << " channels=" << image.channels() << std::endl;
+
+  cv::Mat processed_image = unstack_channels(image, config.verbose);
+
+  if (config.verbose)
+    std::cout << " [DEBUG] After unstack: " << processed_image.cols << "x"
+              << processed_image.rows
+              << " channels=" << processed_image.channels() << std::endl;
+
+  // Only pad during ENCRYPTION (encrypted images are already padded)
+  if (config.encrypt) {
+    processed_image = padImageToSquare(
+        processed_image, config.params.block_size, original_channels);
+  }
+
+  // Calculate dimensions AFTER padding (or after unstack for decryption)
   const Image_dimensions img_dimensions = {
-      static_cast<size_t>(image.channels() == 3 ? image.cols * 3 : image.cols),
-      static_cast<size_t>(image.rows)};
+      static_cast<size_t>(processed_image.cols),
+      static_cast<size_t>(processed_image.rows)};
+
+  if (config.verbose)
+    std::cout << " [INFO] Processing dimensions: " << img_dimensions.cols
+              << " x " << img_dimensions.rows << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
 
@@ -48,14 +77,14 @@ int main(int argc, char **argv) {
   // Ophuscated phase
   try {
     if (config.encrypt) {
-      config.params.image_hash = calculate_image_hash(image, 2);
+      config.params.image_hash = calculate_image_hash(processed_image, 2);
       if (config.verbose)
         std::cerr << " [INFO] Calculated Image Hash: "
                   << config.params.image_hash << std::endl;
     } else {
       // Recovery the ophuscated image hash
       config.params.image_hash =
-          extract_message_caos(image, password_segments[3],
+          extract_message_caos(processed_image, password_segments[2],
                                config.input_image_path, config.exif_hex);
       if (config.verbose)
         std::cerr << " [INFO] Recovered Image Hash: "
@@ -70,15 +99,45 @@ int main(int argc, char **argv) {
 
   start = std::chrono::high_resolution_clock::now();
   try {
-    encrypt_image(image, password_segments, img_dimensions, config.params,
-                  config.verbose, config.encrypt);
+    encrypt_image(processed_image, password_segments, img_dimensions,
+                  config.params, config.verbose, config.encrypt);
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During encryption process: " << e.what() << endl;
     return -1;
   }
-  // Embed the image hash in the image
-  if (config.encrypt) {
-    embed_message_caos(image, config.params.image_hash, password_segments[3],
+
+  // === POSTPROCESSING: Unpad and Stack ===
+  if (config.verbose)
+    std::cout << " > Postprocessing (Unpad & Stack)..." << std::endl;
+
+  if (!config.encrypt) {
+    // DECRYPTION: unpad (which retrieves original_channels) then stack back to
+    // original format
+    if (config.verbose)
+      std::cout << " [DEBUG] Before unpad: " << processed_image.cols << "x"
+                << processed_image.rows
+                << " channels=" << processed_image.channels() << std::endl;
+
+    int retrieved_channels = 1;
+    processed_image = unpadFromSquare(processed_image, &retrieved_channels);
+
+    if (config.verbose)
+      std::cout << " [DEBUG] After unpad: " << processed_image.cols << "x"
+                << processed_image.rows
+                << " channels=" << processed_image.channels()
+                << " retrieved_channels=" << retrieved_channels << std::endl;
+
+    bool is_color = (retrieved_channels == 3);
+    stack_channels(image, processed_image, is_color, config.verbose);
+
+    // No need to embed message during decryption
+  } else {
+    // ENCRYPTION: keep as single-channel with padding, no stacking
+    // The encrypted image is saved as single-channel
+    image = processed_image;
+
+    // Embed the image hash in the image
+    embed_message_caos(image, config.params.image_hash, password_segments[2],
                        config.output_arg);
   }
   end = std::chrono::high_resolution_clock::now();

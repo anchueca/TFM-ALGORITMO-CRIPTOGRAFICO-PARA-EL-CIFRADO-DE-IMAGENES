@@ -62,7 +62,7 @@ void setup_permutations(D_pointers &d_pointers,
 
   if (verbose)
     std::cout << "\t(Processing Cols Automata...)" << std::endl;
-  ElementalCelularAutomata cols_automata(password[1],
+  ElementalCelularAutomata cols_automata(password[0],
                                          img_dimensions.cols * 2 * 8, 30);
   d_pointers.d_permutation_cols = generate_automata_permutations(
       &cols_automata, params.automata_steps, img_dimensions.cols, verbose);
@@ -74,20 +74,10 @@ void setup_permutations(D_pointers &d_pointers,
              state_size, cudaMemcpyDeviceToDevice);
 
   if (verbose)
-    std::cout << "\t(Processing Rows Automata...)" << std::endl;
-  ElementalCelularAutomata rows_automata(password[0],
-                                         img_dimensions.rows * 2 * 8, 30);
-  d_pointers.d_permutation_rows = generate_automata_permutations(
-      &rows_automata, params.automata_steps, img_dimensions.rows, verbose);
-
-  if (verbose)
     std::cout << " > Calculating Inverse Permutations..." << std::endl;
   inverse_permutations(d_pointers.d_permutation_cols,
                        &d_pointers.d_permutation_cols_inverse,
                        img_dimensions.cols, 1);
-  inverse_permutations(d_pointers.d_permutation_rows,
-                       &d_pointers.d_permutation_rows_inverse,
-                       img_dimensions.rows, 1);
 }
 
 void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
@@ -98,31 +88,17 @@ void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
 
   cudaMalloc(&d_pointers.d_flow, img_size);
 
-  if (image.channels() == 3) {
-    cudaMemcpy(d_pointers.d_image_out, image.data, img_size,
-               cudaMemcpyHostToDevice);
-    unstack_channels_gpu(d_pointers.d_image_out, d_pointers.d_image, image.cols,
-                         image.rows);
-  } else {
-    cudaMemcpy(d_pointers.d_image, image.data, img_size,
-               cudaMemcpyHostToDevice);
-  }
+  // Image is already unstacked and padded, transfer directly
+  cudaMemcpy(d_pointers.d_image, image.data, img_size, cudaMemcpyHostToDevice);
 }
 
 void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   const size_t img_size = image.total() * image.elemSize();
-  if (image.channels() == 3) {
-    stack_channels_gpu(d_pointers.d_image, d_pointers.d_image_out, image.cols,
-                       image.rows);
-    cudaMemcpy(image.data, d_pointers.d_image_out, img_size,
-               cudaMemcpyDeviceToHost);
-  } else {
-    cudaMemcpy(image.data, d_pointers.d_image, img_size,
-               cudaMemcpyDeviceToHost);
-  }
+
+  // Image will be unstacked and stacked on CPU, transfer directly
+  cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
 
   cudaFree(d_pointers.d_permutation_cols);
-  cudaFree(d_pointers.d_permutation_rows);
   cudaFree(d_pointers.d_permutation_blocks);
   cudaFree(d_pointers.d_seeds);
   cudaFree(d_pointers.d_flow);
@@ -150,7 +126,7 @@ __host__ void encrypt_image(cv::Mat &image,
   allocate_and_transfer_image(d_pointers, image, params);
 
   // For flow and block permutations (and extra seeds)
-  convert_bits_to_real(password[2], &d_pointers.d_seeds);
+  convert_bits_to_real(password[1], &d_pointers.d_seeds);
 
   if (encrypt) {
     encryption_process(d_pointers, img_dimensions, params.block_size, params,
@@ -287,9 +263,9 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
   for (size_t j = 0; j < 2; j++) {
     // 1. Rows and Columns
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_rows,
-                                 d_pointers.d_permutation_cols, img_dimensions,
-                                 false);
+                                 d_pointers.d_permutation_cols,
+                                 d_pointers.d_permutation_cols_inverse,
+                                 img_dimensions, false);
     // 2. Blocks
     // Input: d_image (new data) -> Output: d_image_out (free buffer)
     block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
@@ -314,9 +290,9 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
 
     // 2. Inverse Rows and Columns
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_rows_inverse,
                                  d_pointers.d_permutation_cols_inverse,
-                                 img_dimensions, true);
+                                 d_pointers.d_permutation_cols, img_dimensions,
+                                 true);
   }
 }
 
@@ -327,9 +303,9 @@ void permutation_encryption_process(D_pointers &d_pointers,
   for (size_t j = 0; j < 2; j++) {
     // Rows and Columns on Flow
     rows_and_columns_permutation(d_pointers.d_flow, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_rows,
-                                 d_pointers.d_permutation_cols, img_dimensions,
-                                 false);
+                                 d_pointers.d_permutation_cols,
+                                 d_pointers.d_permutation_cols_inverse,
+                                 img_dimensions, false);
     // Blocks on Flow
     block_phase_permutation(d_pointers.d_flow, d_pointers.d_image_out,
                             d_pointers.d_permutation_blocks,

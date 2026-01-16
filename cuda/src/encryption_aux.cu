@@ -164,8 +164,8 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
 
 __host__ void rows_and_columns_permutation(unsigned char *d_image,
                                            unsigned char *d_image_out,
-                                           unsigned int *d_row_permutations,
-                                           unsigned int *d_col_permutations,
+                                           unsigned int *d_permutations,
+                                           unsigned int *d_permutations_inverse,
                                            Image_dimensions img_dimensions,
                                            bool inverse) {
   // Define standard block size for 2D images
@@ -179,7 +179,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 
     // Step 1: Permute Rows (Source -> Temp)
     permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, d_row_permutations, img_dimensions);
+        d_image, d_image_out, d_permutations, img_dimensions);
 
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Row permutation kernel failed");
@@ -187,7 +187,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 
     // Step 2: Permute Columns (Temp -> Source)
     permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image_out, d_image, d_col_permutations, img_dimensions);
+        d_image_out, d_image, d_permutations_inverse, img_dimensions);
 
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Col permutation kernel failed");
@@ -199,7 +199,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 
     // Step 1: Inverse Permute Columns (Source -> Temp)
     permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, d_col_permutations, img_dimensions);
+        d_image, d_image_out, d_permutations_inverse, img_dimensions);
 
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Col permutation (inverse) kernel failed");
@@ -207,7 +207,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
 
     // Step 2: Inverse Permute Rows (Temp -> Source)
     permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image_out, d_image, d_row_permutations, img_dimensions);
+        d_image_out, d_image, d_permutations, img_dimensions);
 
     if (cudaGetLastError() != cudaSuccess) {
       throw std::runtime_error("Row permutation (inverse) kernel failed");

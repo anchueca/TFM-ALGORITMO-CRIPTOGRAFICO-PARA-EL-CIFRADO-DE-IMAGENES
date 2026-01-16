@@ -27,15 +27,15 @@ using namespace std;
 
 /**
  * @brief Orchestrates the high-level image encryption process.
- * * Logic for Color Images:
- * - Pre-processing: Unstacks RGB into a wide single-channel matrix ([R][G][B])
- * for GPU processing.
- * - Post-processing: Stacks the wide matrix back into RGB ([R,G,B]).
- * * This ensures that both the Encrypted result and the Decrypted result
- * maintain the original format (e.g., 3 channels).
- * * @param image Reference to the input/output OpenCV matrix. Modified in
- * place.
+ *
+ * The image received has already been unstacked and padded on the CPU.
+ * This function performs the GPU-based encryption/decryption operations
+ * and returns the processed image in the same unstacked format.
+ *
+ * @param image Reference to the input/output OpenCV matrix (already unstacked
+ * and padded). Modified in place.
  * @param password The user-provided password for key generation.
+ * @param img_dimensions Dimensions of the padded image.
  * @param params Struct containing configuration for encryption (block size,
  * rounds, etc.).
  * @param verbose Flag to enable console logging for performance metrics.
@@ -161,9 +161,26 @@ void setup_permutations(D_pointers &d_pointers,
                         const Image_dimensions &img_dimensions,
                         const EncryptionParams &params, bool verbose);
 
+/**
+ * @brief Allocates GPU memory and transfers the already unstacked and padded
+ * image.
+ *
+ * @param d_pointers Struct containing device pointers.
+ * @param image The image (already unstacked and padded on CPU).
+ * @param params Encryption parameters.
+ */
 void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
                                  const EncryptionParams &params);
 
+/**
+ * @brief Transfers the processed image back from GPU and frees GPU memory.
+ *
+ * The image returned is still in unstacked format. Stacking and unpadding
+ * are handled on CPU after this function returns.
+ *
+ * @param d_pointers Struct containing device pointers.
+ * @param image The output image buffer (unstacked format).
+ */
 void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image);
 
 #endif // ENCRYPTION_CUH

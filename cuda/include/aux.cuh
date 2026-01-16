@@ -110,4 +110,26 @@ void embed_message_caos(cv::Mat &image, unsigned short image_hash,
                         const std::vector<unsigned char> &stego_key,
                         const std::string &output_path);
 
+/**
+ * @brief Pads the image to a square with dimensions multiple of blockSize.
+ *
+ * @param input Original image.
+ * @param blockSize Block size.
+ * @param original_channels Number of channels of the original image before
+ * unstacking.
+ * @return cv::Mat Padded square image.
+ */
+cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
+                         int original_channels);
+
+/**
+ * @brief Reverts the padding process by extracting the original image.
+ *
+ * @param squared Padded square image.
+ * @param out_original_channels Pointer to return the number of original
+ * channels.
+ * @return cv::Mat Original image.
+ */
+cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels);
+
 #endif // AUX_CUH

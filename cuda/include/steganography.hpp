@@ -2,8 +2,8 @@
 #define STEGANOGRAPHY_HPP
 
 #include <opencv2/opencv.hpp>
-#include <vector>
 #include <string>
+#include <vector>
 
 /**
  * @brief Embeds a message into an image using chaos-based steganography.

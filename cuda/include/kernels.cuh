@@ -32,6 +32,7 @@
 template <typename T> __device__ __forceinline__ T chaotic_functio(T x, T r) {
   T t = r + 3.0 * x * x;
   return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
+  // return 4.0f * x * (1.0f - x);
 }
 
 template <>
@@ -39,6 +40,7 @@ __device__ __forceinline__ float chaotic_functio<float>(float x, float r) {
 
   float t = r + 3.0f * x * x;
   return fabsf(cosf(3.14159265f * r * cosf(3.14159265f * t) * t));
+  // return 4.0f * x * (1.0f - x);
 }
 
 __device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,

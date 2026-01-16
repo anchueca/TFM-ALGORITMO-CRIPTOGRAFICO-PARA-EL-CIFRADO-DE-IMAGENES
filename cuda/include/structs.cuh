@@ -119,11 +119,8 @@ struct D_pointers {
   unsigned char *d_flow = nullptr; ///< Chaotic flow sequence (used for XOR)
   Real *d_seeds = nullptr; ///< Random seeds for initialization (used in flow)
                            ///< includes extra seeds for block permutations
-  unsigned int *d_permutation_rows = nullptr;   ///< Forward row permutation
   unsigned int *d_permutation_cols = nullptr;   ///< Forward column permutation
   unsigned int *d_permutation_blocks = nullptr; ///< Forward block permutation
-  unsigned int *d_permutation_rows_inverse =
-      nullptr; ///< Inverse row permutation
   unsigned int *d_permutation_cols_inverse =
       nullptr; ///< Inverse column permutation
   unsigned int *d_permutation_blocks_inverse =

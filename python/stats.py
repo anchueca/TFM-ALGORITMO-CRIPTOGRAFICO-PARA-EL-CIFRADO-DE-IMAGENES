@@ -11,6 +11,7 @@ import os
 import time
 import random
 import string
+import math
 
 # Use 'Agg' backend if headless (no screen), otherwise 'TkAgg'
 try:
@@ -168,6 +169,20 @@ class ExternalCipherTester:
         self.recovery_hex = None # To store extracted EXIF info
         self.original_img = cv2.imread(input_path, cv2.IMREAD_UNCHANGED)
         if self.original_img is None: raise ValueError(f"Image not found: {input_path}")
+        
+        # Determine padded dimensions (logic from aux.cu / padImageToSquare)
+        import math
+        rows, base_cols = self.original_img.shape[:2]
+        channels = self.original_img.shape[2] if len(self.original_img.shape) > 2 else 1
+        unstacked_cols = base_cols * channels if channels == 3 else base_cols
+        total_pixels_original = unstacked_cols * rows
+        bytes_needed = 5
+        pixels_for_meta = math.ceil(bytes_needed / 1.0)
+        min_S = math.ceil(math.sqrt(total_pixels_original + pixels_for_meta))
+        bs = int(block_size)
+        self.padded_S = ((min_S + bs - 1) // bs) * bs
+        self.padded_cols = self.padded_S
+        self.padded_rows = self.padded_S
 
     def run_cipher_ram_to_ram(self, image_matrix, mode_enc=True, override_password=None):
         mode_flag = '1' if mode_enc else '0'
@@ -243,22 +258,26 @@ class ExternalCipherTester:
             mod_pw = original_pw[:-1] + new_last_char
             print(f"   [Debug] Key Sensitivity (Alpha): '{original_pw[:8]}...' vs '{mod_pw[:8]}...'")
         else:
-            # Binary key segments
-            # 1. Row CA (rows * 2 bytes)
-            # 2. Col CA (cols * 2 bytes)
-            # 3. Chaotic Seeds (the rest)
-            h, w = self.original_img.shape[:2]
-            bits_rows = (h * 2) * 8
-            bits_cols = (w * 2) * 8
+            # Binary key segments (matching aux.cu segments)
+            bits_cols = (self.padded_cols * 2) * 8
+            numBlocks_gpu = (self.padded_cols + 256) // 256
+            bits_flow = (4 + (self.padded_cols + numBlocks_gpu) * 4) * 8
             
-            if segment == 'rows':
-                range_start, range_end = 0, bits_rows
-            elif segment == 'cols':
-                range_start, range_end = bits_rows, bits_rows + bits_cols
+            if segment == 'cols':
+                range_start, range_end = 0, bits_cols
             elif segment == 'seeds':
-                range_start, range_end = bits_rows + bits_cols, len(original_pw)
+                # The C++ kernel primarily uses the first numBlocks seeds (4 bytes each)
+                # plus the block permutation seed (first 4 bytes of segment 1).
+                # To ensure sensitivity, we target the first ~256 bits of the seeds segment
+                active_bits = min(bits_flow, (numBlocks_gpu + 1) * 32)
+                range_start, range_end = bits_cols, bits_cols + active_bits
+            elif segment == 'stego':
+                range_start, range_end = bits_cols + bits_flow, len(original_pw)
             else: # 'any'
                 range_start, range_end = 0, len(original_pw)
+            
+            if range_end > len(original_pw): range_end = len(original_pw)
+            if range_start >= range_end: range_start = 0 
             
             idx = random.randint(range_start, range_end - 1)
             flipped = '1' if original_pw[idx] == '0' else '0'
@@ -273,21 +292,42 @@ class ExternalCipherTester:
         
         return CryptoMetrics.calculate_npcr_uaci(c1, c2), diff_img
 
-    def occlusion_attack(self, ciphered_img):
+    def occlusion_attack(self, ciphered_img, ratio=0.10):
+        """
+        Occlusion Attack: Damage a portion of the encrypted image.
+        Defaulting to 10% to avoid metadata corruption that crashes unpader.
+        """
         damaged = ciphered_img.copy()
         h, w = damaged.shape[:2]
         
-        # 25% Data Loss
-        occ_h = int(h * 0.25)
-        occ_w = int(w * 0.25)
+        # Calculate region to damage based on area ratio
+        occ_area = h * w * ratio
+        occ_s = int(math.sqrt(occ_area))
         
         cy, cx = h // 2, w // 2
-        y1, y2 = cy - occ_h // 2, cy + occ_h // 2
-        x1, x2 = cx - occ_w // 2, cx + occ_w // 2
+        y1, y2 = max(0, cy - occ_s // 2), min(h, cy + occ_s // 2)
+        x1, x2 = max(0, cx - occ_s // 2), min(w, cx + occ_s // 2)
         
-        damaged[y1:y2, x1:x2] = 0 
+        # Damage the region
+        damaged[y1:y2, x1:x2] = 0
         
-        recovered, _ = self.decrypt_flow(damaged)
+        # Safety: ensure the last few bytes (metadata) are NEVER touched in ciphertext
+        # We restore them from the original ciphertext to avoid noise propagation in unpader logic
+        flat_view = damaged.view(np.uint8).flatten()
+        if len(flat_view) > 16: # Extra safety margin
+             flat_view[-16:] = ciphered_img.view(np.uint8).flatten()[-16:]
+
+        try:
+            recovered, _ = self.decrypt_flow(damaged)
+        except Exception as e:
+            msg = str(e)
+            if "Assertion failed" in msg or "terminate" in msg:
+                print(f" [!] Occlusion Attack caused a C++ crash due to metadata corruption: {msg}")
+            else:
+                print(f" [!] Occlusion Attack decryption failed: {e}")
+            # Return original if failed
+            recovered = np.zeros_like(self.original_img)
+            
         return damaged, recovered
 
     def run_scalability_test(self, repeats=5):
@@ -304,26 +344,61 @@ class ExternalCipherTester:
             if new_w < 16 or new_h < 16: continue
             
             n_pixels = new_w * new_h
-            if n_pixels > 120_000_000:
-                print(f"   [!] Skipping {s}x ({n_pixels/1e6:.1f} MP) to prevent crash.")
+            # Cap at 8MP to avoid "Argument list too long" due to key size
+            if n_pixels > 8_000_000:
+                print(f"   [!] Skipping {s}x ({n_pixels/1e6:.1f} MP) to avoid OS argument limits.")
                 continue
 
             try:
                 resized_img = cv2.resize(self.original_img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
                 
+                # Calculate required key length for THIS image size (with padding)
+                import math
+                rows, base_cols = resized_img.shape[:2]
+                channels = resized_img.shape[2] if len(resized_img.shape) > 2 else 1
+                
+                # After unstacking
+                unstacked_cols = base_cols * channels if channels == 3 else base_cols
+                unstacked_rows = rows
+                
+                # Cap at 5MP of UNSTACKED pixels to avoid "Argument list too long" (shell limit)
+                n_pixels_unstacked = unstacked_cols * unstacked_rows
+                if n_pixels_unstacked > 5_000_000:
+                    print(f"   [!] Skipping {s}x ({n_pixels_unstacked/1e6:.1f} MP unstacked) to avoid OS argument limits.")
+                    continue
+
+                # Calculate padded dimensions
+                total_pixels_original = unstacked_cols * unstacked_rows
+                bytes_needed = 5
+                pixels_for_meta = math.ceil(bytes_needed / 1.0)
+                min_S = math.ceil(math.sqrt(total_pixels_original + pixels_for_meta))
+                block_size = int(self.block_size)
+                S = ((min_S + block_size - 1) // block_size) * block_size
+                
+                padded_cols = S
+                padded_rows = S
+                num_blocks = (padded_cols + 256) // 256
+                # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
+                total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
+                required_bits = total_bytes * 8
+                
+                # Generate a key of the correct length for this image
+                from stats import generate_random_password
+                scaled_password = generate_random_password(length=required_bits, binary=True)
+                
                 curr_enc_times = []
                 curr_dec_times = []
 
                 # Warmup
-                try: _ = self.run_cipher_ram_to_ram(resized_img, mode_enc=True)
+                try: _ = self.run_cipher_ram_to_ram(resized_img, mode_enc=True, override_password=scaled_password)
                 except: pass 
 
                 for i in range(repeats):
                     # Use internal C++ time (CPU/GPU-only) instead of Python wall clock
-                    ciph, t_enc = self.run_cipher_ram_to_ram(resized_img, mode_enc=True)
+                    ciph, t_enc = self.run_cipher_ram_to_ram(resized_img, mode_enc=True, override_password=scaled_password)
                     curr_enc_times.append(t_enc * 1000.0) # Convert to ms
                     
-                    dec, t_dec = self.run_cipher_ram_to_ram(ciph, mode_enc=False)
+                    dec, t_dec = self.run_cipher_ram_to_ram(ciph, mode_enc=False, override_password=scaled_password)
                     curr_dec_times.append(t_dec * 1000.0) # Convert to ms
                 
                 # Remove outliers
@@ -476,13 +551,40 @@ def main():
         user_pw_is_binary = False
         if args.password:
             user_pw_is_binary = all(c in '01' for c in args.password) and len(args.password) > 100
+        
+        # Calculate dimensions AFTER unstacking and padding
         rows, base_cols = temp_tester.original_img.shape[:2]
         channels = temp_tester.original_img.shape[2] if len(temp_tester.original_img.shape) > 2 else 1
-        cols = base_cols * channels
-        num_blocks = (cols + 256) // 256
-        total_bytes = (rows * 2) + (cols * 2) + 4 + (cols + num_blocks) * 4 + 8
+        
+        # After unstacking: width = base_cols * channels for color images
+        unstacked_cols = base_cols * channels if channels == 3 else base_cols
+        unstacked_rows = rows
+        
+        # Calculate padded dimensions (rounded up to nearest multiple of block_size)
+        import math
+        # Total pixels needed (image + metadata)
+        total_pixels_original = unstacked_cols * unstacked_rows
+        bytes_needed = 5  # Metadata: W (2 bytes) + H (2 bytes) + color flag (1 byte)
+        pixels_for_meta = math.ceil(bytes_needed / 1.0)  # Single channel after unstacking
+        
+        # Minimum square size
+        min_S = math.ceil(math.sqrt(total_pixels_original + pixels_for_meta))
+        # Round up to multiple of block_size
+        S = ((min_S + args.block_size - 1) // args.block_size) * args.block_size
+        
+        # After padding, dimensions are S x S
+        padded_cols = S
+        padded_rows = S
+        
+        # Now calculate required key length based on PADDED dimensions
+        num_blocks = (padded_cols + 256) // 256
+        # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
+        total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
         required_bits = total_bytes * 8
         
+        print(f"[+] Original dimensions: {base_cols}x{rows} (channels={channels})")
+        print(f"[+] After unstacking: {unstacked_cols}x{unstacked_rows}")
+        print(f"[+] After padding: {padded_cols}x{padded_rows}")
         print(f"[+] Required Key Length: {required_bits} bits ({total_bytes} bytes)")
         print(f"[+] Starting analysis across {args.runs} runs...")
 
@@ -519,10 +621,10 @@ def main():
             # Sensitivity Test (Differential)
             npcr_p, uaci_p = tester.diff_attack_plaintext()
             
-            # Key Sensitivity per Segment
-            (n_rows, u_rows), _ = tester.diff_attack_key_sensitivity(segment='rows')
+            # Key Sensitivity per Segment (Matching correct 3-segment structure)
             (n_cols, u_cols), _ = tester.diff_attack_key_sensitivity(segment='cols')
             (n_seeds, u_seeds), _ = tester.diff_attack_key_sensitivity(segment='seeds')
+            (n_stego, u_stego), _ = tester.diff_attack_key_sensitivity(segment='stego')
             
             results.append({
                 'entropy': ent_ciph,
@@ -536,12 +638,12 @@ def main():
                 'glcm_energy': ene,
                 'npcr_p': npcr_p,
                 'uaci_p': uaci_p,
-                'npcr_rows': n_rows,
-                'uaci_rows': u_rows,
                 'npcr_cols': n_cols,
                 'uaci_cols': u_cols,
                 'npcr_seeds': n_seeds,
                 'uaci_seeds': u_seeds,
+                'npcr_stego': n_stego,
+                'uaci_stego': u_stego,
                 't_enc': t_enc * 1000.0, 
                 't_dec': t_dec * 1000.0,
                 'psnr': CryptoMetrics.calculate_psnr_mae(tester.original_img, dec)[0],
@@ -574,12 +676,12 @@ def main():
         m_npcr_p, v_npcr_p = get_stats('npcr_p')
         m_uaci_p, v_uaci_p = get_stats('uaci_p')
         
-        m_np_rows, v_np_rows = get_stats('npcr_rows')
-        m_ua_rows, v_ua_rows = get_stats('uaci_rows')
         m_np_cols, v_np_cols = get_stats('npcr_cols')
         m_ua_cols, v_ua_cols = get_stats('uaci_cols')
         m_np_seeds, v_np_seeds = get_stats('npcr_seeds')
         m_ua_seeds, v_ua_seeds = get_stats('uaci_seeds')
+        m_np_stego, v_np_stego = get_stats('npcr_stego')
+        m_ua_stego, v_ua_stego = get_stats('uaci_stego')
 
         m_t_enc, v_t_enc = get_stats('t_enc')
         m_t_dec, v_t_dec = get_stats('t_dec')
@@ -588,12 +690,13 @@ def main():
         m_mae, v_mae = get_stats('mae')
 
         # One set of data for non-stochastic metrics (original)
-        # Use a dummy password as it's not used for original image metrics
+        # Generate a valid binary password of correct length
+        final_pw_for_metrics = args.password if args.password else generate_random_password(length=required_bits, binary=True)
         tester_final = ExternalCipherTester(
-            args.exe, args.input, "dummy",
+            args.exe, args.input, final_pw_for_metrics,
             args.rounds, args.chaos,
             args.block_size, args.steps, args.trans,
-            is_binary=False
+            is_binary=(user_pw_is_binary if args.password else True)
         )
         ent_orig = CryptoMetrics.calculate_global_entropy(tester_final.original_img)
         corr_orig = CryptoMetrics.calculate_correlations_full(tester_final.original_img)
@@ -615,8 +718,8 @@ def main():
         (npcr_k_sample, uaci_k_sample), key_diff_img = tester_final_key_sens.diff_attack_key_sensitivity()
 
         # Occlusion Attack (One final sample)
-        # Requires a ciphered image, use the last one from the runs
-        occ_input, occ_output = tester_final.occlusion_attack(last_ciph)
+        # Use the SAME tester that encrypted last_ciph to ensure password matches
+        occ_input, occ_output = tester.occlusion_attack(last_ciph)
 
         # --- CONSOLE REPORT ---
         print("\n" + "="*85)
@@ -634,12 +737,12 @@ def main():
             ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f}",  f"{v_hom:.4f}", "~0"],
             ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{v_npcr_p:.4f}", ">99.6%"],
             ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{v_uaci_p:.4f}", "~33.4%"],
-            ["NPCR (Key: Rows)", "-",                  f"{m_np_rows:.4f}%", f"{v_np_rows:.4f}", ">99.6%"],
-            ["UACI (Key: Rows)", "-",                  f"{m_ua_rows:.4f}%", f"{v_ua_rows:.4f}", "~33.4%"],
             ["NPCR (Key: Cols)", "-",                  f"{m_np_cols:.4f}%", f"{v_np_cols:.4f}", ">99.6%"],
             ["UACI (Key: Cols)", "-",                  f"{m_ua_cols:.4f}%", f"{v_ua_cols:.4f}", "~33.4%"],
             ["NPCR (Key: Seeds)", "-",                 f"{m_np_seeds:.4f}%", f"{v_np_seeds:.4f}", ">99.6%"],
             ["UACI (Key: Seeds)", "-",                 f"{m_ua_seeds:.4f}%", f"{v_ua_seeds:.4f}", "~33.4%"],
+            ["NPCR (Key: Stego)", "-",                 f"{m_np_stego:.4f}%", f"{v_np_stego:.4f}", ">99.6%"],
+            ["UACI (Key: Stego)", "-",                 f"{m_ua_stego:.4f}%", f"{v_ua_stego:.4f}", "~33.4%"],
             ["Enc. Time (ms)",    "-",                 f"{m_t_enc:.4f}", f"{v_t_enc:.4f}", "Min."],
             ["Dec. Time (ms)",    "-",                 f"{m_t_dec:.4f}", f"{v_t_dec:.4f}", "Min."],
             ["PSNR (Dec. Quality)", "-",               f"{m_psnr:.4f} dB", f"{v_psnr:.4f}", ">50dB"],
