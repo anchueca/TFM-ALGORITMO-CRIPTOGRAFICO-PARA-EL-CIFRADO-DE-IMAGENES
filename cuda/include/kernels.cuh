@@ -43,8 +43,8 @@ __device__ __forceinline__ float chaotic_functio<float>(float x, float r) {
   // return 4.0f * x * (1.0f - x);
 }
 
-__device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,
-                                            Real l_seed, Real r,
+__device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
+                                            Real l_next,
                                             unsigned short *celular_automata);
 
 /**

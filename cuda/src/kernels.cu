@@ -7,13 +7,9 @@
 #include "../include/kernels.cuh"
 #include <climits>
 
-__device__ __forceinline__ Real coupled_map(Real c_seed, Real r_seed,
-                                            Real l_seed, Real r,
+__device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
+                                            Real l_next,
                                             unsigned short *celular_automata) {
-
-  Real r_next = chaotic_functio(r_seed, r);
-  Real c_next = chaotic_functio(c_seed, r);
-  Real l_next = chaotic_functio(l_seed, r);
 
   evolve_16bit_isolated(celular_automata, 30, 1); // Evolution of the 16-bit CA
 
@@ -226,15 +222,13 @@ __global__ void keystream_generation_parallel(
     l_seed = &s_seeds[tid == block_length - 1 ? 0 : tid + 1];
   }
 
-  // Get initial state
-  Real current_xn = 0.0;
   unsigned short celular_automata_value;
 
   size_t state_idx;
   if (tid == 0) {
     state_idx = img_dimensions.cols +
                 blockIdx.x; // Unique index for extra seed to avoid race
-    current_xn = d_seeds[state_idx];
+    *c_seed = d_seeds[state_idx];
     // If d_chaotic_values_for_permutation is not null, it's the first call
     // (transition/permutation). We use image_automata_state[0] (the initialized
     // hash) as the collective seed.
@@ -243,44 +237,40 @@ __global__ void keystream_generation_parallel(
                                  : image_automata_state[blockIdx.x];
   } else {
     state_idx = x - (blockIdx.x + 1);
-    current_xn = d_seeds[state_idx];
+    *c_seed = d_seeds[state_idx];
     celular_automata_value = celular_automata[state_idx];
   }
-  *c_seed = current_xn;
 
   for (size_t step = 0; step < total_steps; ++step) {
+    *c_seed = chaotic_functio(*c_seed, r);
     __syncthreads(); // To avoid race conditions
-    current_xn =
-        coupled_map(current_xn, *r_seed, *l_seed, r, &celular_automata_value);
-    // Race condition fix: Only one block (Block 0) should write to
-    // d_chaotic_values_for_permutation
+
+    *c_seed = coupled_map(*c_seed, *r_seed, *l_seed, &celular_automata_value);
+    // Only one block (Block 0) should write to d_chaotic_values_for_permutation
     if (blockIdx.x == 0 && tid == 0 &&
         d_chaotic_values_for_permutation != nullptr &&
         step >= total_steps - permutation_block_size) {
-      *c_seed = current_xn;
       d_chaotic_values_for_permutation[step -
                                        (total_steps - permutation_block_size)] =
-          current_xn;
+          *c_seed;
     } else if (tid != 0 && step >= transition_length) {
       size_t row = step - transition_length;
       d_flow[row * img_dimensions.cols + state_idx] =
-          convertToBitStream(current_xn);
+          convertToBitStream(*c_seed);
     }
-
     __syncthreads();
-    *c_seed = current_xn;
   }
 
   // Store final state back to global memory (Include tid=0 to persist extra
   // seeds)
-  d_seeds[state_idx] = current_xn;
+  d_seeds[state_idx] = *c_seed;
   // For normal threads, persist CA. For tid=0, we use a constant so no need to
   // save back
   if (tid != 0) {
     celular_automata[state_idx] = celular_automata_value;
   } else {
     image_automata_state[blockIdx.x] =
-        celular_automata_value ^ convertToBitStream(current_xn);
+        celular_automata_value ^ convertToBitStream(*c_seed);
   }
 }
 
