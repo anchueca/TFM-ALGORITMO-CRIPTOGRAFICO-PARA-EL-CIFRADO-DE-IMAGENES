@@ -39,10 +39,15 @@ ElementalCelularAutomata::ElementalCelularAutomata(size_t size, int rule)
   }
 
   // Allocate memory on the GPU and copy the initial state
-  cudaMalloc(&this->d_state[0], this->size_in_bytes);
-  cudaMalloc(&this->d_state[1], this->size_in_bytes);
-  cudaMemcpy(this->d_state[0], h_state.data(), this->size_in_bytes,
+  cudaError_t err;
+  err = cudaMalloc(&this->d_state[0], this->size_in_bytes);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMalloc 0 failed: " + std::string(cudaGetErrorString(err)));
+  err = cudaMalloc(&this->d_state[1], this->size_in_bytes);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMalloc 1 failed: " + std::string(cudaGetErrorString(err)));
+  
+  err = cudaMemcpy(this->d_state[0], h_state.data(), this->size_in_bytes,
              cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMemcpy failed: " + std::string(cudaGetErrorString(err)));
   cudaDeviceSynchronize();
 }
 
@@ -62,12 +67,17 @@ ElementalCelularAutomata::ElementalCelularAutomata(
     throw std::invalid_argument(error_message);
   }
 
-  cudaMalloc(&this->d_state[0], this->size_in_bytes);
-  cudaMalloc(&this->d_state[1], this->size_in_bytes);
+  cudaError_t err;
+  err = cudaMalloc(&this->d_state[0], this->size_in_bytes);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMalloc 0 failed: " + std::string(cudaGetErrorString(err)));
+  err = cudaMalloc(&this->d_state[1], this->size_in_bytes);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMalloc 1 failed: " + std::string(cudaGetErrorString(err)));
 
-  cudaMemcpy(this->d_state[0], initial_state.data(), size_in_bytes,
+  err = cudaMemcpy(this->d_state[0], initial_state.data(), size_in_bytes,
              cudaMemcpyHostToDevice);
-  cudaDeviceSynchronize();
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMemcpy failed: " + std::string(cudaGetErrorString(err)));
+  err = cudaDeviceSynchronize();
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaDeviceSynchronize failed: " + std::string(cudaGetErrorString(err)));
 }
 
 // Construct from a pre-packed byte vector (see header for API details)
@@ -85,11 +95,15 @@ ElementalCelularAutomata::ElementalCelularAutomata(
     throw std::invalid_argument(error_message);
   }
 
-  cudaMalloc(&this->d_state[0], this->size_in_bytes);
-  cudaMalloc(&this->d_state[1], this->size_in_bytes);
+  cudaError_t err;
+  err = cudaMalloc(&this->d_state[0], this->size_in_bytes);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMalloc 0 failed: " + std::string(cudaGetErrorString(err)));
+  err = cudaMalloc(&this->d_state[1], this->size_in_bytes);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMalloc 1 failed: " + std::string(cudaGetErrorString(err)));
 
-  cudaMemcpy(this->d_state[0], initial_state.data(), this->size_in_bytes,
+  err = cudaMemcpy(this->d_state[0], initial_state.data(), this->size_in_bytes,
              cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) throw std::runtime_error("ECA cudaMemcpy failed: " + std::string(cudaGetErrorString(err)));
   cudaDeviceSynchronize();
 }
 
