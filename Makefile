@@ -5,7 +5,7 @@ NVCC = nvcc
 NVCCFLAGS_NORMAL = -O3 -rdc=true #-use_fast_math
 
 # Debug fags
-NVCCFLAGS_lDEBUG = -G -g -O0 -rdc=true
+NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
 
 # Libraries and includes
 LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart 
