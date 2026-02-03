@@ -125,15 +125,18 @@ __host__ void block_phase_permutation(unsigned char *d_image,
                                       unsigned int *permutation_inverse,
                                       Image_dimensions img_dimensions,
                                       size_t block_size) {
-  dim3 threadsPerBlock(16, 16);
+  dim3 threadsPerBlock(block_size, block_size);
   dim3 numBlocks(
-      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+      (img_dimensions.cols + block_size - 1) / block_size,
+      (img_dimensions.rows + block_size - 1) / block_size
+  );
+  
+    size_t sharedMemBytes =
+      block_size * block_size * sizeof(unsigned int);
 
-  permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock>>>(
+  permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock, sharedMemBytes>>>(
       d_image, d_image_out, permutation, permutation_inverse, block_size,
       img_dimensions);
-  cudaDeviceSynchronize();
 }
 
 __host__ void generate_permutation_block(D_pointers &d_pointers,

@@ -117,10 +117,10 @@ __global__ void convert_bits_to_real_kernel(Real *d_seeds, size_t num_elements);
  * @param img_dimensions    Struct containing the image dimensions (.rows and
  * .cols).
  */
-__global__ void permute_blocks_kernel_simple(unsigned char *image,
-                                             unsigned char *image_out,
-                                             unsigned int *permutation,
-                                             unsigned int *permutation_inverse,
+__global__ void permute_blocks_kernel_simple(const unsigned char *__restrict__ image,
+                                              unsigned char *__restrict__ image_out,
+                                              const unsigned int *__restrict__ permutation,
+                                              const unsigned int *__restrict__ permutation_inverse,
                                              size_t block_size,
                                              Image_dimensions img_dimensions);
 

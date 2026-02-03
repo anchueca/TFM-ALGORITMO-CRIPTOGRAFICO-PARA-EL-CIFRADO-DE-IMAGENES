@@ -32,54 +32,40 @@ __device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
          (l_next * l_influence);
 }
 
-__global__ void permute_blocks_kernel_simple(unsigned char *image,
-                                             unsigned char *image_out,
-                                             unsigned int *permutation,
-                                             unsigned int *permutation_inverse,
+__global__ void permute_blocks_kernel_simple(const unsigned char *__restrict__ image,
+                                              unsigned char *__restrict__ image_out,
+                                              const unsigned int *__restrict__ permutation,
+                                              const unsigned int *__restrict__ permutation_inverse,
                                              size_t block_size,
                                              Image_dimensions img_dimensions) {
-  // Calculate global thread coordinates
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int local_x = threadIdx.x;
+    int local_y = threadIdx.y;
 
-  // Boundary check
-  if (x >= img_dimensions.cols || y >= img_dimensions.rows)
-    return;
+    int block_x = blockIdx.x;
+    int block_y = blockIdx.y;
 
-  // 1. Identify the block coordinates (Macro-coordinates)
-  int block_idx_x = x / block_size;
-  int block_idx_y = y / block_size;
+    int x = block_x * block_size + local_x;
+    int y = block_y * block_size + local_y;
 
-  // 2. Calculate local position within the block (0 to block_size-1)
-  int local_x = x % block_size;
-  int local_y = y % block_size;
+    if (x >= img_dimensions.cols || y >= img_dimensions.rows)
+        return;
 
-  // 3. Select permutation array based on Block Parity (Chessboard pattern)
-  // Using block coordinates for parity avoids high-frequency noise artifacts
-  // compared to using pixel coordinates.
-  unsigned int *current_permutation =
-      ((block_idx_x + block_idx_y) & 1) ? permutation : permutation_inverse;
+    bool use_inverse = (block_x + block_y) & 1;
+    const unsigned int* perm =
+        use_inverse ? permutation_inverse : permutation;
 
-  // 4. Retrieve the source local index from the selected permutation table
-  int permuted_index = current_permutation[local_y * block_size + local_x];
+    int permuted_index = perm[local_y * block_size + local_x];
 
-  // Decode 1D index back to 2D local source coordinates
-  int src_local_x = permuted_index % block_size;
-  int src_local_y = permuted_index / block_size;
+    int src_local_x = permuted_index % block_size;
+    int src_local_y = permuted_index / block_size;
 
-  // 5. Calculate the Global Source Coordinates
-  // (Block Origin + Permuted Local Offset)
-  int src_global_x = block_idx_x * block_size + src_local_x;
-  int src_global_y = block_idx_y * block_size + src_local_y;
+    int src_x = block_x * block_size + src_local_x;
+    int src_y = block_y * block_size + src_local_y;
 
-  // Perform the copy if source is within bounds
-  if (src_global_x < img_dimensions.cols &&
-      src_global_y < img_dimensions.rows) {
-    // Scattered Read (Random access from source) -> Coalesced Write (Linear
-    // access to dest)
-    image_out[y * img_dimensions.cols + x] =
-        image[src_global_y * img_dimensions.cols + src_global_x];
-  }
+    if (src_x < img_dimensions.cols && src_y < img_dimensions.rows) {
+        image_out[y * img_dimensions.cols + x] =
+            image[src_y * img_dimensions.cols + src_x];
+    }
 }
 
 __global__ void permute_rows_kernel(unsigned char *image,

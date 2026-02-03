@@ -10,7 +10,7 @@
 
 #include "structs.cuh"
 
-#define MAX_BLOCK_SIZE 64
+#define MAX_BLOCK_SIZE 256
 
 /**
  * @brief Sorts indices within a block based on chaotic values using insertion

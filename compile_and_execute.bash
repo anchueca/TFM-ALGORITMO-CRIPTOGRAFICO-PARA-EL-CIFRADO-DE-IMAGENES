@@ -1,37 +1,22 @@
 #!/bin/bash
 #
-# compile_and_execute.bash - Build and test the cipher
-#
-# This script performs a complete build-encrypt-decrypt cycle to verify
-# the cipher works correctly. It's useful for quick testing and validation.
+# compile_and_execute.bash - Build, test, and optionally profile the cipher
 #
 # Usage:
-#   ./compile_and_execute.bash [rounds]
+#   ./compile_and_execute.bash [rounds] [precision] [profile]
 #
 # Arguments:
-#   rounds - Number of encryption rounds (default: 3 if not specified)
+#   rounds    - Number of encryption rounds (default: 3)
+#   precision - 'float' or 'double' (default: float)
+#   profile   - '1' to profile with Nsight Systems, '0' to skip (default: 0)
 #
 # Example:
-#   ./compile_and_execute.bash 3
-#
-# Process:
-#   1. Builds the cipher using 'make' with 8 parallel jobs
-#   2. Encrypts a test image (peppers3.tif) with specified rounds
-#   3. Decrypts the encrypted image
-#   4. Both operations use:
-#      - Block size: 8
-#      - Automata steps: 50
-#      - Transition length: 50
-#      - Chaos parameter: 3.9
-#
-# The encrypted image is saved as: ./cuda/bin/salida.tif
-# The decrypted image is saved as: ./cuda/bin/salidaC.tif
-#
-# Note: You can compare salidaC.tif with the original to verify correctness
+#   ./compile_and_execute.bash 3 float 1
 
 # Parse arguments with defaults
 ROUNDS=${1:-3}
 PRECISION=${2:-float}
+PROFILE=${3:-0}   # 0 = no profiling, 1 = use Nsight Systems
 
 # Configure build command
 if [ "$PRECISION" == "double" ]; then
@@ -43,12 +28,28 @@ else
 fi
 
 # Build the cipher
-eval $BUILD_CMD && \
-# Encrypt the test image and capture the recovery hex
+eval $BUILD_CMD || { echo "[ERROR] Build failed"; exit 1; }
+
+# Prepare Nsight Systems wrapper if profiling
+if [ "$PROFILE" -eq 1 ]; then
+    if ! command -v nsys &>/dev/null; then
+        echo "[WARNING] Nsight Systems not found. Continuing without profiling."
+        NSYS_CMD=""
+    else
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        NSYS_OUT="./cuda/bin/nsys_report_$TIMESTAMP.qdrep"
+        NSYS_CMD="nsys profile -o $NSYS_OUT --stats=true"
+        echo "[SCRIPT] Profiling enabled. Output will be saved to $NSYS_OUT"
+    fi
+fi
+
+# Encrypt the test image
 echo "[SCRIPT] Running encryption..."
-ENCRYPT_OUTPUT=$(./cuda/bin/cipher.out ./repositorio/set3/lena3.tif ./cuda/bin/salida.tif password9 $ROUNDS 1 8 20 10 3.9 1 0 2>&1)
+ENCRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./repositorio/set3/lena3.tif ./cuda/bin/salida.tif password9 $ROUNDS 1 8 20 10 3.9 1 0"
+ENCRYPT_OUTPUT=$(eval $ENCRYPT_CMD 2>&1)
 echo "$ENCRYPT_OUTPUT"
 
+# Extract Recovery Hex
 RECOVERY_HEX=$(echo "$ENCRYPT_OUTPUT" | grep "Recovery hex:" | tail -n 1 | sed 's/.*Recovery hex: \([0-9a-f]*\).*/\1/')
 RECOVERY_HEX=$(echo "$RECOVERY_HEX" | tr -d '[:space:]')
 
@@ -58,6 +59,7 @@ else
     echo "[WARNING] Could not capture Recovery Hex. Decryption might fail if EXIF reading is broken."
 fi
 
-# Decrypt the encrypted image (passing RECOVERY_HEX as 13th argument)
+# Decrypt the encrypted image
 echo -e "\n[SCRIPT] Running decryption..."
-./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password9 $ROUNDS 0 8 20 10 3.9 0 0 $RECOVERY_HEX
+DECRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password9 $ROUNDS 0 8 20 10 3.9 0 0 $RECOVERY_HEX"
+eval $DECRYPT_CMD
