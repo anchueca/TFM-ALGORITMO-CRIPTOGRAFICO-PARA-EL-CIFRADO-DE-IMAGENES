@@ -161,13 +161,11 @@ __global__ void permute_rows_kernel(unsigned char *image,
  *
  * @param automata_states Array of device pointers to automata packed states.
  * @param d_chaotic_values Output array of reduced chaotic values on device.
- * @param num_blocks Number of automata/blocks.
  * @param indices Output indices array associated with chaotic values.
  * @param block_length Length of each block used for reduction.
  */
-__global__ void generate_automata_chaotic(unsigned int **automata_states,
+__global__ void generate_automata_chaotic(const unsigned int *d_automata_state,
                                           unsigned short *d_chaotic_values,
-                                          size_t num_blocks,
                                           unsigned int *indices,
                                           size_t block_length);
 

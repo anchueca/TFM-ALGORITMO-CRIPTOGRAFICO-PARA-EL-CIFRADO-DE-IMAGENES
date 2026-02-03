@@ -92,8 +92,8 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   int bytes_for_blocks = num_blocks_permutations * 4;
 
   // IMPORTANT: bytes_for_flow must match the allocation in
-  // generate_flow_stream_parallel numBlocks is (cols + 256) / 256
-  int numBlocks = (img_dimensions.cols + 256) / 256;
+  // generate_flow_stream_parallel numBlocks is (cols + 254) / 255 (255 effective threads)
+  int numBlocks = (img_dimensions.cols + 254) / 255;
   int bytes_for_flow = (img_dimensions.cols + numBlocks) * 4;
 
   // Total length

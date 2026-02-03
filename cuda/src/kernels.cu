@@ -107,20 +107,24 @@ __global__ void permute_columns_kernel(unsigned char *image,
   }
 }
 
-__global__ void generate_automata_chaotic(unsigned int **automata_states,
+__global__ void generate_automata_chaotic(const unsigned int *d_automata_state,
                                           unsigned short *d_chaotic_values,
-                                          size_t num_blocks,
                                           unsigned int *indices,
                                           size_t block_length) {
   int idx = threadIdx.x + blockIdx.x * blockDim.x;
-  if (idx >= num_blocks * block_length)
+  if (idx >= block_length)
     return;
-  unsigned int *automata_state = automata_states[idx / block_length];
-  if (idx & 1)
-    d_chaotic_values[idx] = automata_state[idx] >> 16;
-  else
-    d_chaotic_values[idx] = automata_state[idx] & 0x0000FFFF;
-  indices[idx] = idx;
+
+  unsigned int val = d_automata_state[idx];
+  int out_idx = idx << 1;
+
+  d_chaotic_values[out_idx] =
+      static_cast<unsigned short>(val >> 16); // high 16 bits
+  d_chaotic_values[out_idx + 1] =
+      static_cast<unsigned short>(val & 0xFFFF); // low 16 bits
+
+  indices[out_idx] = out_idx;
+  indices[out_idx + 1] = out_idx + 1;
 }
 
 __global__ void deinterleave_channels_kernel(const unsigned char *input,
@@ -246,14 +250,21 @@ __global__ void keystream_generation_parallel(
     __syncthreads(); // To avoid race conditions
 
     *c_seed = coupled_map(*c_seed, *r_seed, *l_seed, &celular_automata_value);
-    // Only one block (Block 0) should write to d_chaotic_values_for_permutation
-    if (blockIdx.x == 0 && tid == 0 &&
-        d_chaotic_values_for_permutation != nullptr &&
-        step >= total_steps - permutation_block_size) {
-      d_chaotic_values_for_permutation[step -
-                                       (total_steps - permutation_block_size)] =
-          *c_seed;
-    } else if (tid != 0 && step >= transition_length) {
+    // Write chaotic values to buffer using all threads if buffer is provided
+    if (d_chaotic_values_for_permutation != nullptr) {
+      // We use the generated chaotic values from all threads to populate the
+      // permutation buffer valid x (0 to cols-1) contributes
+      if (x < img_dimensions.cols && step >= transition_length) {
+        size_t valid_step = step - transition_length;
+        size_t write_idx = valid_step * img_dimensions.cols + x;
+        if (write_idx < permutation_block_size) {
+          d_chaotic_values_for_permutation[write_idx] = *c_seed;
+        }
+      }
+    }
+
+    // Normal flow generation
+    if (tid != 0 && step >= transition_length) {
       size_t row = step - transition_length;
       d_flow[row * img_dimensions.cols + state_idx] =
           convertToBitStream(*c_seed);

@@ -74,12 +74,11 @@ __global__ void sort_indices_by_chaotic_values_global(Real *d_chaotic_values,
  * @param inverses Output array for the inverted permutations on the GPU
  * (flattened).
  * @param block_length Length of a single permutation.
- * @param num_blocks Number of permutations in the batch.
  */
-__global__ void invert_permutations_kernel(unsigned int *d_permutations,
-                                           unsigned int *inverses,
-                                           size_t block_length,
-                                           size_t num_blocks);
+__global__ void
+invert_permutations_kernel(const unsigned int *__restrict__ d_permutations,
+                           unsigned int *__restrict__ inverses,
+                           size_t block_length);
 
 /**
  * @brief XOR an image buffer with a keystream buffer in-place (per-pixel XOR).

@@ -45,8 +45,16 @@ int main(int argc, char **argv) {
 
   // Only pad during ENCRYPTION (encrypted images are already padded)
   if (config.encrypt) {
+    if (config.verbose)
+      std::cout << " [DEBUG] Padding image to square..." << std::endl;
+    auto start = std::chrono::high_resolution_clock::now();
     processed_image = padImageToSquare(
         processed_image, config.params.block_size, original_channels);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> time = end - start;
+    if (config.verbose)
+      std::cout << " [DEBUG] Padding time: " << time.count() * 1000.0f << " ms"
+                << std::endl;
   }
 
   // Calculate dimensions AFTER padding (or after unstack for decryption)

@@ -170,7 +170,7 @@ void setup_permutations(D_pointers &d_pointers,
  * @param params Encryption parameters.
  */
 void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
-                                 const EncryptionParams &params);
+                                 const EncryptionParams &params, bool verbose);
 
 /**
  * @brief Transfers the processed image back from GPU and frees GPU memory.

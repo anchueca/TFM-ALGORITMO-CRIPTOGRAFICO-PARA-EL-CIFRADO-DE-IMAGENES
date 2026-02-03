@@ -6,29 +6,248 @@ This repository contains the source code developed for the Master's Thesis:
 
 ## Description
 
-The algorithm implements an image encryption scheme using:
+The algorithm implements a hybrid image encryption scheme combining:
 
-- **Chaotic dynamics** (cosine-cosine map): generates deterministic pseudo-random sequences
-- **Elementary cellular automata** (Rule 30): provides diffusion and permutation scheduling  
-- **Block-based permutations** (rows, columns, blocks) combined with pixel diffusion
-- **GPU acceleration via CUDA**: optimized kernels for high-performance encryption/decryption
+- **Chaotic dynamics** (cosine-cosine map): generate deterministic pseudo-random sequences for diffusion and permutation
+- **Elementary cellular automata** (Rule 30): provides permutation scheduling for rows and columns
+- **Confusion-diffusion architecture**: block-based permutations (rows, columns, blocks) combined with XOR-based pixel diffusion
+- **GPU acceleration via CUDA**: optimized kernels with constant memory for high-performance encryption/decryption
+- **Steganography integration**: chaos-based LSB embedding for integrity hash storage
 
-## Overview
+---
 
-The primary implementation is a high-performance C++/CUDA implementation located in the `cuda/` directory. The project focuses on a block-based image cipher combining chaotic maps and elementary cellular automata, implemented and optimized for execution on NVIDIA GPUs.
+## Encryption Scheme Overview
 
-**Key components:**
-- **Encryption engine:** GPU-accelerated CUDA kernels with constant memory optimizations
-- **Steganography module:** Chaos-based LSB steganography with lossless recovery using EXIF metadata
-- **Cryptographic analysis tools:** Python utilities for statistical testing and performance evaluation
-- **CLI interface:** Command-line tool with flexible input/output modes (file, STDIN/STDOUT, display)
+The cipher follows a **confusion-diffusion** paradigm with multiple rounds. The complete encryption pipeline is structured as follows:
 
+### High-Level Architecture
 
-## Where the core logic lives
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            IMAGE ENCRYPTION PIPELINE                            │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│  ┌─────────────┐   ┌─────────────────┐   ┌─────────────────────────────────┐   │
+│  │   INPUT     │   │  PREPROCESSING  │   │         KEY DERIVATION          │   │
+│  │   IMAGE     │──▶│  Unstack + Pad  │──▶│   Password → SHA-512 → Expand   │   │
+│  └─────────────┘   └─────────────────┘   └─────────────────────────────────┘   │
+│                                                      │                          │
+│                    ┌─────────────────────────────────┴──────────────────────┐   │
+│                    ▼                                                        ▼   │
+│  ┌─────────────────────────────────┐      ┌─────────────────────────────────┐   │
+│  │  PERMUTATION GENERATION         │      │  SEED GENERATION                │   │
+│  │  • Rule 30 CA evolution         │      │  • Password segment → Real[]    │   │
+│  │  • Argsort → Row/Col perms      │      │  • Seeds for CML keystream      │   │
+│  │  • Chaotic values → Block perms │      └─────────────────────────────────┘   │
+│  └─────────────────────────────────┘                      │                     │
+│                    │                                      │                     │
+│                    ▼                                      ▼                     │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                     INITIAL CONFUSION (×2 iterations)                    │   │
+│  │   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────────┐    │   │
+│  │   │  Row Permute    │──▶│  Column Permute │──▶│  Block Permute      │    │   │
+│  │   │  (CA-based)     │   │  (CA-based)     │   │  (Chaotic-based)    │    │   │
+│  │   └─────────────────┘   └─────────────────┘   └─────────────────────┘    │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                       │                                         │
+│                    ┌──────────────────┴──────────────────┐                      │
+│                    ▼                                     │                      │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                 CONFUSION-DIFFUSION ROUNDS (× N rounds)                  │   │
+│  │                                                                          │   │
+│  │   ┌────────────────────────────────────────────────────────────────┐     │   │
+│  │   │  Step A: Generate Chaotic Keystream (CML with coupling)        │     │   │
+│  │   │    x_{i,t+1} = (1-ε)·f(x_{i,t}, r) + ε/2·(f(x_{i-1,t}) + ...)  │     │   │
+│  │   │    where f(x,r) = cos(π·(r·cos(π·x) - 0.5))   [Cosine-Cosine]  │     │   │
+│  │   └────────────────────────────────────────────────────────────────┘     │   │
+│  │                              │                                           │   │
+│  │   ┌────────────────────────────────────────────────────────────────┐     │   │
+│  │   │  Step B: Permute Keystream (2× Row→Col→Block)                  │     │   │
+│  │   └────────────────────────────────────────────────────────────────┘     │   │
+│  │                              │                                           │   │
+│  │   ┌────────────────────────────────────────────────────────────────┐     │   │
+│  │   │  Step C: Diffusion - XOR(Image, Permuted_Keystream)            │     │   │
+│  │   └────────────────────────────────────────────────────────────────┘     │   │
+│  │                                                                          │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                       │                                         │
+│                    ┌──────────────────┴──────────────────┐                      │
+│                    ▼                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                     FINAL CONFUSION (×2 iterations)                      │   │
+│  │   Row Permute ──▶ Column Permute ──▶ Block Permute                       │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                       │                                         │
+│                    ┌──────────────────┴──────────────────┐                      │
+│                    ▼                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────────┐   │
+│  │                         HASH EMBEDDING (Steganography)                   │   │
+│  │   • Calculate image hash (2-byte checksum)                               │   │
+│  │   • Embed in LSBs using chaotic position sequence                        │   │
+│  │   • Store recovery info in EXIF metadata                                 │   │
+│  └──────────────────────────────────────────────────────────────────────────┘   │
+│                                       │                                         │
+│                                       ▼                                         │
+│                             ┌─────────────────┐                                 │
+│                             │  OUTPUT IMAGE   │                                 │
+│                             │  (Encrypted)    │                                 │
+│                             └─────────────────┘                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
 
-- `cuda/src/` — CUDA/C++ source files (kernels and host code).
-- `cuda/include/` — public headers and data structures (e.g. `encryption.cuh`, `structs.cuh`).
-- The CLI entrypoint: `cuda/src/main.cu` (build produces `bin/cipher.out`).
+---
+
+## Detailed Encryption Process
+
+### 1. Preprocessing Phase
+
+**Channel Unstacking:**
+- Color images (RGB) are converted from interleaved format (RGBRGB...) to planar format (RRR...GGG...BBB...)
+- This allows treating the image as a single-channel grayscale matrix for uniform processing
+
+**Padding:**
+- The image is padded to a square with dimensions divisible by `block_size`
+- Original dimensions are stored in the padding region for lossless recovery
+
+### 2. Key Derivation
+
+The user password is processed through a multi-stage key derivation:
+
+```
+Password → SHA-512(Password) → Key Expansion → [Segment0, Segment1, Segment2]
+```
+
+- **Segment 0**: Used to initialize the Elementary Cellular Automata (Rule 30) for permutation generation
+- **Segment 1**: Converted to floating-point seeds for the Coupled Map Lattice (CML) keystream generator
+- **Segment 2**: Used for steganography positioning (hash embedding/extraction)
+
+### 3. Permutation Generation
+
+#### 3.1 Row/Column Permutations (CA-Based)
+
+1. **Initialize CA**: Create a Rule 30 elementary cellular automaton with state derived from password segment
+2. **Evolution**: Run the automaton for `automata_steps` iterations at block granularity
+3. **Value Extraction**: Extract chaotic values from the evolved CA state (groups of 16 bits → unsigned short)
+4. **Argsort**: Sort indices by chaotic values to obtain the permutation sequence
+5. **Inverse Computation**: Pre-compute inverse permutations for decryption
+
+#### 3.2 Block Permutations (Chaotic-Based)
+
+1. **Transition Period**: Run the CML for `transition_length` iterations to reach chaotic regime
+2. **Value Collection**: Collect chaotic values corresponding to `block_size²` positions
+3. **Argsort**: Generate block permutation by sorting indices according to chaotic values
+
+### 4. Initial Confusion Phase
+
+Apply permutations to scramble spatial relationships (executed 2× for enhanced diffusion):
+
+```
+For j = 0 to 1:
+    1. Permute Rows using CA-derived permutation
+    2. Permute Columns using CA-derived permutation
+    3. Permute Blocks using chaotic-derived permutation
+```
+
+### 5. Confusion-Diffusion Rounds
+
+For each round `r` from 1 to `N`:
+
+#### Step A: Chaotic Keystream Generation
+
+The keystream is generated using a **Coupled Map Lattice (CML)** with the **cosine-cosine chaotic map**:
+
+```
+f(x, r) = cos(π · (r · cos(π · x) - 0.5))
+```
+
+The CML introduces spatial coupling between adjacent cells:
+
+```
+x_{i,t+1} = (1-ε) · f(x_{i,t}, r) + (ε/2) · [f(x_{i-1,t}, r) + f(x_{i+1,t}, r)]
+```
+
+Where:
+- `x_{i,t}` is the state of cell `i` at time `t`
+- `r` is the chaos parameter (typically 2.5-3.0 for the cosine-cosine map)
+- `ε` is the coupling strength
+
+Additionally, a **Global Seed Mixing** step ensures cross-block diffusion:
+
+```
+global_seed_mix(): Update seeds based on mean-field coupling across all blocks
+```
+
+#### Step B: Keystream Permutation
+
+Apply the same permutation sequence to the keystream (2× iterations):
+
+```
+For j = 0 to 1:
+    1. Permute keystream rows
+    2. Permute keystream columns
+    3. Permute keystream blocks
+```
+
+#### Step C: Diffusion (XOR)
+
+Apply bitwise XOR between the image and the permuted keystream:
+
+```
+Image[i,j] = Image[i,j] ⊕ Keystream[i,j]
+```
+
+This is a symmetric operation: applying XOR twice with the same keystream recovers the original data.
+
+### 6. Final Confusion Phase
+
+Apply identical permutation sequence as the initial confusion (2× iterations):
+
+```
+For j = 0 to 1:
+    1. Permute Rows
+    2. Permute Columns
+    3. Permute Blocks
+```
+
+### 7. Integrity Hash Embedding
+
+**Purpose**: Store a hash of the original image for tamper detection during decryption.
+
+1. **Hash Calculation**: Compute a 16-bit hash from the original image
+2. **Position Generation**: Generate pseudo-random LSB positions using the cosine-cosine chaotic function seeded by password segment 2
+3. **Embedding**: Replace LSBs at chaotic positions with hash bits
+4. **Recovery Storage**: Store original LSB values in EXIF `UserComment` tag for lossless restoration
+
+---
+
+## Decryption Process
+
+Decryption is the exact inverse of encryption:
+
+1. **Hash Extraction**: Extract embedded hash from LSBs, restore original LSBs from EXIF
+2. **Reverse Final Confusion**: Apply **inverse** permutations (Blocks⁻¹ → Columns⁻¹ → Rows⁻¹) ×2
+3. **Reverse Diffusion Rounds**: For each round:
+   - Regenerate identical keystream (deterministic from password)
+   - Apply same permutations to keystream
+   - XOR to reverse diffusion (XOR is self-inverse)
+4. **Reverse Initial Confusion**: Apply inverse permutations ×2
+5. **Postprocessing**: Unpad and restack channels to restore original format
+
+---
+
+## Key Components
+
+| Component | Location | Description |
+|-----------|----------|-------------|
+| CLI Entry Point | `cuda/src/main.cu` | Command-line interface and orchestration |
+| Encryption Core | `cuda/src/encryption.cu` | Main encryption/decryption pipeline |
+| Auxiliary Functions | `cuda/src/encryption_aux.cu` | Permutation generation, keystream helpers |
+| GPU Kernels | `cuda/src/kernels.cu` | CUDA kernels for parallel operations |
+| Cellular Automata | `cuda/src/automata.cu` | Rule 30 CA implementation |
+| Steganography | `cuda/src/steganography.cpp` | LSB embedding with EXIF recovery |
+| Data Structures | `cuda/include/structs.cuh` | EncryptionParams, D_pointers definitions |
+
+---
 
 ## Build
 
@@ -39,171 +258,127 @@ cd cuda
 make
 ```
 
-Binary: `cuda/bin/cipher.out` (built by the included `Makefile`).
+Binary: `cuda/bin/cipher.out`
 
-Notes:
-- The Makefile uses `nvcc` and sets `-ccbin g++-12`. Ensure `g++-12` and a compatible CUDA toolkit are available.
-- OpenCV and OpenSSL are required for image I/O and cryptographic helpers; these are linked via the Makefile.
+**Requirements:**
+- CUDA Toolkit with `nvcc`
+- `g++-12` (configured in Makefile)
+- OpenCV (image I/O)
+- OpenSSL (SHA-512 hashing)
+- libexif (EXIF metadata for steganography)
+
+---
 
 ## CLI Usage
-
-The CLI expects exactly 12 arguments after the binary name (see `main.cu`):
 
 ```
 ./bin/cipher.out <InputPath> <OutputPath|SHOW|STDOUT> <Password> <Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> <AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)>
 ```
 
 **Arguments:**
-- `InputPath`: Path to input image file, or `STDIN` to read from standard input
-- `OutputPath`: Path to output file, `SHOW` to display in window (requires GUI), or `STDOUT` to pipe to standard output
-- `Password`: Encryption/decryption password
-- `Rounds`: Number of encryption rounds (typically 1-5)
-- `Mode`: `1` for encryption, `0` for decryption
-- `BlockSize`: Size of square blocks for block permutations (e.g., 8, 16, 32)
-- `AutoSteps`: Number of cellular automata evolution steps (e.g., 20, 50, 100)
-- `TransLen`: Transition sequence length for flow permutations (e.g., 10, 20, 50)
-- `chaosParam`: Chaos parameter for the logistic map (typically 3.57-4.0, e.g., 3.9 or 3.999)
-- `Verbose`: `1` to enable verbose logging, `0` for silent operation
+
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `InputPath` | Input image or `STDIN` | `input.jpg` |
+| `OutputPath` | Output file, `SHOW`, or `STDOUT` | `output.tif` |
+| `Password` | Encryption/decryption key | `mypassword` |
+| `Rounds` | Confusion-diffusion rounds (1-10) | `3` |
+| `Mode` | `1` = encrypt, `0` = decrypt | `1` |
+| `BlockSize` | Block permutation size (8, 16, 32) | `8` |
+| `AutoSteps` | CA evolution steps (20-100) | `20` |
+| `TransLen` | CML transition length (10-50) | `10` |
+| `chaosParam` | Chaos parameter r (2.0-3.0) | `2.5` |
+| `Verbose` | Enable logging (`1`) or silent (`0`) | `1` |
 
 **Example - Encrypt:**
 
 ```bash
-./bin/cipher.out ../repositorio/set3/lena3.jpg ./bin/salida.tif password 3 1 8 4 20 10 3.9 1
+./bin/cipher.out input.jpg encrypted.tif password 3 1 8 20 10 2.5 1
 ```
 
 **Example - Decrypt:**
 
 ```bash
-./bin/cipher.out ./bin/salida.tif ./bin/decrypted.tif password 3 0 8 4 20 10 3.9 1
+./bin/cipher.out encrypted.tif decrypted.jpg password 3 0 8 20 10 2.5 1
 ```
 
-**Example - Streaming mode (STDIN/STDOUT):**
+**Example - Streaming (STDIN/STDOUT):**
 
 ```bash
-cat input.jpg | ./bin/cipher.out STDIN STDOUT password 3 1 8 4 20 10 3.9 0 > encrypted.tif
+cat input.jpg | ./bin/cipher.out STDIN STDOUT password 3 1 8 20 10 2.5 0 > encrypted.tif
 ```
 
-The order and count of arguments is strictly enforced by `main.cu`. Other scripts in the repository may assume the same ordering.
-
-## Testing / Example run
-
-A small helper `compile_and_execute.bash` demonstrates a full encrypt+decrypt run using the compiled binary.
+---
 
 ## Performance Optimizations
 
-The CUDA implementation includes several optimizations to ensure high throughput and accurate benchmarking:
+- **Constant Memory**: Block permutation tables stored in GPU `__constant__` memory
+- **Warm-up**: Dummy `cudaFree(0)` absorbs CUDA context initialization (~200ms overhead)
+- **Double Buffering**: Zero-copy buffer swapping via pointer exchange
+- **Optimal Thread Configuration**: Dynamic thread/block sizing based on image dimensions
+- **Timing Accuracy**: Reports actual algorithm time to `stderr` (excludes startup)
 
-- **Constant Memory:** Block permutation tables are stored in GPU Constant Memory (`__constant__`) to minimize memory latency during the permutation phase.
-- **Initialization Overhead:** A dummy `cudaFree(0)` call is performed before timing starts to absorb the CUDA context initialization cost (~200ms), ensuring that reported metrics reflect the actual algorithm performance (~5-20ms).
-- **Accurate Timing:** The C++ binary reports precise execution times (in ms) to `stderr`, which are parsed by the Python analysis tools to exclude invalid process startup overheads.
+---
 
 ## Steganography Module
 
-The project includes a **chaos-based steganography module** with lossless recovery capabilities:
+Chaos-based LSB steganography with lossless recovery:
 
 ### Features
 
-- **Same Chaotic Function:** Uses the identical cosine-cosine map (`chaotic_functio`) as the encryption engine for consistency
-- **LSB Embedding:** Hides messages in the least significant bits of image pixels using chaotic position generation
-- **EXIF Metadata Storage:** Recovery information is automatically stored in EXIF `UserComment` tag (0x8298) for lossless restoration
-- **Deterministic Positioning:** Message positions are derived from a chaotic sequence seeded by the encryption password
+- **Same Chaotic Function**: Uses cosine-cosine map consistent with encryption
+- **LSB Embedding**: Hides hash bits at chaotic positions
+- **EXIF Recovery**: Original LSBs stored in EXIF `UserComment` tag (0x8298)
+- **Deterministic**: Reproducible positions from password-derived key
 
-### API Usage
+### API
 
 ```cpp
 #include "steganography.hpp"
 
-// Embed message with automatic EXIF metadata storage
-std::vector<bool> recovery = embed_message_caos_with_exif(
-    image, message_bits, key_bits, "output.jpg");
+// Embed with EXIF storage
+embed_message_caos(image, hash_value, key_bits, "output.jpg");
 
-// Extract message with automatic EXIF recovery info reading
-std::vector<bool> extracted = extract_message_caos_with_exif(
-    image, key_bits, "input.jpg");
+// Extract with EXIF recovery
+unsigned short hash = extract_message_caos(image, key_bits, "input.jpg", exif_data);
 ```
 
-### How It Works
+---
 
-1. **Embedding Phase:**
-   - Generate chaotic sequence using `chaotic_cosine(x, r=2.5)` with the password-derived key
-   - Calculate LSB positions based on chaotic values
-   - Replace LSBs with message bits
-   - Generate recovery information: `R[i] = original_LSB XOR message_bit`
-   - **Automatically save recovery info to EXIF metadata**
+## Cryptographic Analysis
 
-2. **Extraction Phase:**
-   - **Read recovery information from EXIF metadata**
-   - Regenerate the same chaotic sequence using the password
-   - Extract bits from the same positions
-   - Restore original LSBs using recovery information: `original = current_LSB XOR recovery_bit`
-   - Return hidden message
+Standard metrics for evaluating cipher security:
 
-### Dependencies
+| Metric | Description | Ideal Value |
+|--------|-------------|-------------|
+| **NPCR** | Pixel change rate (1-bit change) | ≈99.6% |
+| **UACI** | Average intensity change | ≈33.4% |
+| **Correlation** | Adjacent pixel correlation | ≈0 |
+| **Entropy** | Information entropy (8-bit) | ≈8.0 |
+| **Chi-Square** | Distribution uniformity | Low p-value |
+
+**Quick Test:**
 
 ```bash
-# Required for EXIF metadata support
-apt-get install libexif-dev
-```
+# Encrypt with two slightly different keys
+./cuda/bin/cipher.out input.jpg ct1.tif password 3 1 8 20 10 2.5 0
+./cuda/bin/cipher.out input.jpg ct2.tif password_alt 3 1 8 20 10 2.5 0
 
-The Makefile automatically includes libexif during compilation.
-
-## Contact / Notes
-
-- GPU support is required. Ensure a compatible NVIDIA GPU and CUDA drivers are installed.
-- Keep the CLI argument contract when integrating other tools or wrappers.
-
-
-## Image Quality and Cryptographic Analysis
-
-This project includes standard image-quality and cryptographic-statistics that help evaluate the effectiveness and robustness of the cipher. The tests below are commonly used in the literature for image ciphers; brief definitions, formulas, and example commands/snippets are provided to reproduce results locally.
-
-- **Bit Change Rate (BCR):** Measures the percentage of bits that differ when a single bit of the plaintext (or key) is flipped. Higher values indicate strong avalanche behaviour.
-
-- **NPCR (Number of Pixel Change Rate):** Measures the percentage of pixels that change between two cipher-images (e.g., original vs. one-bit-changed). Formula:
-
-	$$\text{NPCR} = \frac{\sum_{i,j} D(i,j)}{M\times N}\times 100\%$$
-
-	where
-	- $D(i,j)=1$ if $C_1(i,j) \ne C_2(i,j)$, otherwise $D(i,j)=0$;
-	- $M,N$ are image dimensions (multiply by number of channels for color images).
-
-- **UACI (Unified Average Changing Intensity):** Measures average intensity differences between two ciphertexts. Formula:
-
-	$$\text{UACI} = \frac{1}{M\times N}\sum_{i,j} \frac{|C_1(i,j)-C_2(i,j)|}{L-1}\times 100\%$$
-
-	where $L$ is the number of grey levels (usually 256).
-
-- **Correlation Coefficient (CC):** Measures the correlation between adjacent pixels (horizontal, vertical, diagonal) in the encrypted image. A secure cipher should produce coefficients near 0.
-
-- **Information Entropy (IE):** Measures randomness of the pixel value distribution. For an 8-bit grayscale channel:
-
-	$$IE = -\sum_{v=0}^{255} p(v)\log_2 p(v)$$
-
-	Values close to 8 indicate high randomness for an 8-bit image.
-
-- **MSE / PSNR:** Standard image-quality metrics useful to quantify distortion when comparing original vs decrypted images. PSNR is derived from MSE.
-
-- **Chi-Square Test:** Assesses the uniformity of the pixel value distribution in the ciphertext; lower p-values indicate non-uniformity.
-
-- **Key Sensitivity Test:** Encrypt the same plaintext with two keys differing by one bit and measure NPCR/UACI to assess sensitivity to key changes.
-
-Practical example: generate two ciphertexts and compute NPCR/UACI using Python + OpenCV + NumPy (quick one-shot):
-
-```bash
-# encrypt original
-./cuda/bin/cipher.out ../repositorio/set3/lena3.jpg ./tmp/ct1.tif password 3 1 8 4 20 10 3.9 0
-# flip one bit in the plaintext or use a different key to produce ct2 (example using the same binary with a slightly different password)
-./cuda/bin/cipher.out ../repositorio/set3/lena3.jpg ./tmp/ct2.tif password_alt 3 1 8 4 20 10 3.9 0
-
-python - <<'PY'
+python3 - <<'PY'
 import cv2, numpy as np
-a = cv2.imread('tmp/ct1.tif', cv2.IMREAD_UNCHANGED)
-b = cv2.imread('tmp/ct2.tif', cv2.IMREAD_UNCHANGED)
-channels = a.shape[2] if a.ndim==3 else 1
-M, N = a.shape[0], a.shape[1]
-diff = (a != b).astype(np.uint8)
-NPCR = 100.0 * np.sum(diff) / (M * N * channels)
-UACI = 100.0 * np.sum(np.abs(a.astype(np.int32) - b.astype(np.int32))) / ((255.0) * M * N * channels)
+a = cv2.imread('ct1.tif', cv2.IMREAD_UNCHANGED)
+b = cv2.imread('ct2.tif', cv2.IMREAD_UNCHANGED)
+M, N, C = a.shape if a.ndim==3 else (*a.shape, 1)
+NPCR = 100.0 * np.sum(a != b) / (M * N * C)
+UACI = 100.0 * np.sum(np.abs(a.astype(np.int32) - b)) / (255.0 * M * N * C)
 print(f'NPCR: {NPCR:.4f}%  UACI: {UACI:.4f}%')
 PY
 ```
+
+---
+
+## Notes
+
+- **GPU Required**: NVIDIA GPU with compatible CUDA drivers
+- **Parameter Consistency**: Encryption and decryption MUST use identical parameters
+- **Lossless Format**: Use `.tif` or `.png` for encrypted output to avoid compression artifacts

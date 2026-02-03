@@ -71,7 +71,7 @@ __host__ void rows_and_columns_permutation(unsigned char *d_image,
  */
 __host__ void inverse_permutations(unsigned int *d_permutations,
                                    unsigned int **d_permutations_inverse,
-                                   size_t block_length, size_t num_blocks);
+                                   size_t block_length);
 
 /**
  * @brief Converts password bits into real-valued seeds for chaotic maps.
