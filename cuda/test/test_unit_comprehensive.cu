@@ -83,13 +83,14 @@ protected:
     // Calculate required sizes based on calculate_password logic
     const size_t num_blocks_permutations = 1;
     int bytes_for_columns = dims.cols * 2;
-    int bytes_for_rows = dims.rows * 2;
+    // Rows are equal to cols due to padding, so we just use columns bytes or they are shared.
+    // The implementation in aux.cu only allocates bytes_for_columns.
     int bytes_for_blocks = num_blocks_permutations * 4;
     int numBlocks = (dims.cols + 256) / 256;
     int bytes_for_flow = (dims.cols + numBlocks) * 4;
     int bytes_for_stego = 8;
     int total_bytes =
-        bytes_for_columns + bytes_for_rows + bytes_for_blocks + bytes_for_flow + bytes_for_stego;
+        bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego;
 
     // Generate random password
     std::vector<unsigned char> password = create_random_bytes(total_bytes);
@@ -97,11 +98,11 @@ protected:
     // Split into segments
     std::vector<std::vector<unsigned char>> segments(3);
     segments[0].assign(password.begin(),
-                       password.begin() + bytes_for_columns + bytes_for_rows);
-    segments[1].assign(password.begin() + bytes_for_columns + bytes_for_rows,
-                       password.begin() + bytes_for_columns + bytes_for_rows + bytes_for_blocks +
+                       password.begin() + bytes_for_columns);
+    segments[1].assign(password.begin() + bytes_for_columns,
+                       password.begin() + bytes_for_columns + bytes_for_blocks +
                            bytes_for_flow);
-    segments[2].assign(password.begin() + bytes_for_columns + bytes_for_rows + bytes_for_blocks +
+    segments[2].assign(password.begin() + bytes_for_columns + bytes_for_blocks +
                            bytes_for_flow,
                        password.end());
     return segments;
@@ -267,7 +268,7 @@ TEST_F(MemoryTest, AllocateSmallImage) {
   params.transition_length = 5;
   params.chaos_parameter = 3.9f;
 
-  ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params));
+  ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params, false));
   ASSERT_NE(d_ptrs.d_image, nullptr);
 }
 
@@ -286,7 +287,7 @@ TEST_F(MemoryTest, AllocateLargeImage) {
   params.transition_length = 8;
   params.chaos_parameter = 3.9f;
 
-  ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params));
+  ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params, false));
   ASSERT_NE(d_ptrs.d_image, nullptr);
 }
 
@@ -302,7 +303,7 @@ TEST_F(MemoryTest, TransferBackAndCleanup) {
   params.transition_length = 5;
   params.chaos_parameter = 3.9f;
 
-  ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params));
+  ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params, false));
   ASSERT_NO_THROW(transfer_back_and_cleanup(d_ptrs, img_result));
 }
 

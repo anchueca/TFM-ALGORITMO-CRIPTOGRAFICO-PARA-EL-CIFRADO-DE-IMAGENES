@@ -12,6 +12,23 @@
 
 #define MAX_BLOCK_SIZE 256
 
+#include <iostream>
+#include <stdexcept>
+#include <string>
+
+/**
+ * @brief Utility function to check CUDA return status and throw detailed
+ * exception on error.
+ *
+ * @param err The CUDA error code to check.
+ * @param msg The context message to include in the exception.
+ */
+inline void checkCudaError(cudaError_t err, const std::string &msg) {
+  if (err != cudaSuccess) {
+    throw std::runtime_error(msg + ": " + cudaGetErrorString(err));
+  }
+}
+
 /**
  * @brief Sorts indices within a block based on chaotic values using insertion
  * sort.

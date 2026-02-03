@@ -99,37 +99,17 @@ void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
     std::cout << " > Allocating Device Memory for Image Buffers..."
               << std::endl;
   const size_t img_size = image.total() * image.elemSize();
-  cudaError_t err;
-  err = cudaMalloc(&d_pointers.d_image, img_size);
-  if (err != cudaSuccess) {
-    throw std::runtime_error("Error allocating device memory for image, " +
-                             std::string(cudaGetErrorString(err)));
-  }
-  err = cudaMalloc(&d_pointers.d_image_out, img_size);
-  if (err != cudaSuccess) {
-    cudaFree(d_pointers.d_image);
-    throw std::runtime_error("Error allocating device memory for image_out, " +
-                             std::string(cudaGetErrorString(err)));
-  }
-
-  err = cudaMalloc(&d_pointers.d_flow, img_size);
-  if (err != cudaSuccess) {
-    cudaFree(d_pointers.d_image);
-    cudaFree(d_pointers.d_image_out);
-    throw std::runtime_error("Error allocating device memory for flow, " +
-                             std::string(cudaGetErrorString(err)));
-  }
+  checkCudaError(cudaMalloc(&d_pointers.d_image, img_size),
+                 "cudaMalloc failed for d_image");
+  checkCudaError(cudaMalloc(&d_pointers.d_image_out, img_size),
+                 "cudaMalloc failed for d_image_out");
+  checkCudaError(cudaMalloc(&d_pointers.d_flow, img_size),
+                 "cudaMalloc failed for d_flow");
 
   // Image is already unstacked and padded, transfer directly
-  err = cudaMemcpy(d_pointers.d_image, image.data, img_size,
-                   cudaMemcpyHostToDevice);
-  if (err != cudaSuccess) {
-    cudaFree(d_pointers.d_image);
-    cudaFree(d_pointers.d_image_out);
-    cudaFree(d_pointers.d_flow);
-    throw std::runtime_error("Error copying image data to device memory," +
-                             std::string(cudaGetErrorString(err)));
-  }
+  checkCudaError(cudaMemcpy(d_pointers.d_image, image.data, img_size,
+                            cudaMemcpyHostToDevice),
+                 "cudaMemcpy failed to device");
 }
 
 void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
@@ -312,9 +292,9 @@ void unencryption_process(D_pointers &d_pointers,
 void image_permutation_encryption_process(D_pointers &d_pointers,
                                           Image_dimensions img_dimensions,
                                           size_t block_size) {
-  for (size_t j = 0; j < 2; j++) {
-    // 1. Rows and Columns
-    // P for Rows, P_inv for Cols
+  constexpr size_t NUM_ITERATIONS = 2;
+  for (size_t iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
+    // 1. Rows and Columns (P for Rows, P_inv for Cols)
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
                                  d_pointers.d_permutation_vector,
                                  d_pointers.d_permutation_vector_inverse,
@@ -324,10 +304,7 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
                             d_pointers.d_permutation_blocks,
                             d_pointers.d_permutation_blocks_inverse,
                             img_dimensions, block_size);
-    cudaError_t error = cudaDeviceSynchronize();
-    if (error != cudaSuccess)
-      throw std::runtime_error("Error after Block permutation, " +
-                               std::string(cudaGetErrorString(error)));
+    checkCudaError(cudaDeviceSynchronize(), "Error after Block permutation");
 
     std::swap(d_pointers.d_image, d_pointers.d_image_out);
   }
@@ -336,7 +313,8 @@ void image_permutation_encryption_process(D_pointers &d_pointers,
 void image_permutation_unencryption_process(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
                                             size_t block_size) {
-  for (size_t j = 0; j < 2; j++) {
+  constexpr size_t NUM_ITERATIONS = 2;
+  for (size_t iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
     // 1. Inverse Blocks
     block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
                             d_pointers.d_permutation_blocks_inverse,
@@ -344,8 +322,7 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
                             block_size);
     std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
-    // 2. Inverse Rows and Columns
-    // Decryption: Rows use P_inv (Inverse of P), Cols use P (Inverse of P_inv)
+    // 2. Inverse Rows and Columns (Rows use P_inv, Cols use P)
     rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
                                  d_pointers.d_permutation_vector_inverse,
                                  d_pointers.d_permutation_vector,
@@ -356,8 +333,9 @@ void image_permutation_unencryption_process(D_pointers &d_pointers,
 void permutation_encryption_process(D_pointers &d_pointers,
                                     Image_dimensions img_dimensions,
                                     size_t block_size) {
+  constexpr size_t NUM_ITERATIONS = 2;
   // Operation on d_flow, using d_image_out as temp buffer
-  for (size_t j = 0; j < 2; j++) {
+  for (size_t iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
     // Rows and Columns on Flow
     rows_and_columns_permutation(d_pointers.d_flow, d_pointers.d_image_out,
                                  d_pointers.d_permutation_vector,

@@ -2,7 +2,6 @@
 #define KERNELS_CUH
 
 // CUDA headers first
-#include <cstddef>
 #include <cuda_runtime.h>
 
 // Standard headers
@@ -11,7 +10,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <iostream>
-#include <limits.h>
 #include <vector>
 
 // Project headers
@@ -29,15 +27,14 @@
  * @param r Chaotic parameter.
  * @return The next chaotic value.
  */
-template <typename T> __device__ __forceinline__ T chaotic_functio(T x, T r) {
+template <typename T> __device__ __forceinline__ T chaotic_function(T x, T r) {
   T t = r + 3.0 * x * x;
   return fabs(cos(3.14159265 * r * cos(3.14159265 * t) * t));
   // return 4.0f * x * (1.0f - x);
 }
 
 template <>
-__device__ __forceinline__ float chaotic_functio<float>(float x, float r) {
-
+__device__ __forceinline__ float chaotic_function<float>(float x, float r) {
   float t = r + 3.0f * x * x;
   return fabsf(cosf(3.14159265f * r * cosf(3.14159265f * t) * t));
   // return 4.0f * x * (1.0f - x);
@@ -45,7 +42,7 @@ __device__ __forceinline__ float chaotic_functio<float>(float x, float r) {
 
 __device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
                                             Real l_next,
-                                            unsigned short *celular_automata);
+                                            unsigned short *cellular_automata);
 
 /**
  * @brief Kernel to generate keystream using a Block-Parallel Coupled Map
@@ -71,7 +68,7 @@ __device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
  */
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
-    unsigned short *celular_automata, unsigned short *d_image_automata_state,
+    unsigned short *cellular_automata, unsigned short *d_image_automata_state,
     Image_dimensions img_dimensions, Real r, const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks);

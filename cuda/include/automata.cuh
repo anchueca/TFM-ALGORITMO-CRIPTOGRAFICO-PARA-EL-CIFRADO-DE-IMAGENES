@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "automataKernel.cuh"
+#include "kernels_aux.cuh"
 
 /**
  * @class ElementalCelularAutomata

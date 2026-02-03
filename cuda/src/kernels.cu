@@ -9,12 +9,12 @@
 
 __device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
                                             Real l_next,
-                                            unsigned short *celular_automata) {
+                                            unsigned short *cellular_automata) {
 
-  evolve_16bit_isolated(celular_automata, 30, 1); // Evolution of the 16-bit CA
+  evolve_16bit_isolated(cellular_automata, 30, 1); // Evolution of the 16-bit CA
 
   // Extract weights from the CA state
-  unsigned short ca_val = *celular_automata;
+  unsigned short ca_val = *cellular_automata;
   Real v1 = static_cast<Real>((ca_val >> 8) & 0xFF) /
             255.0; // First 8 bits normalized (0, 1)
   Real v2 =
@@ -102,15 +102,15 @@ __global__ void generate_automata_chaotic(const unsigned int *d_automata_state,
     return;
 
   unsigned int val = d_automata_state[idx];
-  int out_idx = idx << 1;
+  int base_idx = idx << 1; // idx * 2
 
-  d_chaotic_values[out_idx] =
-      static_cast<unsigned short>(val >> 16); // high 16 bits
-  d_chaotic_values[out_idx + 1] =
-      static_cast<unsigned short>(val & 0xFFFF); // low 16 bits
+  // Split 32-bit value into two 16-bit values
+  d_chaotic_values[base_idx] = static_cast<unsigned short>(val >> 16); // High 16 bits
+  d_chaotic_values[base_idx + 1] = static_cast<unsigned short>(val & 0xFFFF); // Low 16 bits
 
-  indices[out_idx] = out_idx;
-  indices[out_idx + 1] = out_idx + 1;
+  // Initialize indices for sorting
+  indices[base_idx] = base_idx;
+  indices[base_idx + 1] = base_idx + 1;
 }
 
 __global__ void deinterleave_channels_kernel(const unsigned char *input,
@@ -180,7 +180,7 @@ __global__ void interleave_channels_kernel(const unsigned char *input,
 
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
-    unsigned short *celular_automata, unsigned short *image_automata_state,
+    unsigned short *cellular_automata, unsigned short *image_automata_state,
     Image_dimensions img_dimensions, Real r, const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks) {
@@ -212,7 +212,7 @@ __global__ void keystream_generation_parallel(
     l_seed = &s_seeds[tid == block_length - 1 ? 0 : tid + 1];
   }
 
-  unsigned short celular_automata_value;
+  unsigned short cellular_automata_value;
 
   size_t state_idx;
   if (tid == 0) {
@@ -222,20 +222,20 @@ __global__ void keystream_generation_parallel(
     // If d_chaotic_values_for_permutation is not null, it's the first call
     // (transition/permutation). We use image_automata_state[0] (the initialized
     // hash) as the collective seed.
-    celular_automata_value = d_chaotic_values_for_permutation != nullptr
-                                 ? image_automata_state[0]
-                                 : image_automata_state[blockIdx.x];
+    cellular_automata_value = d_chaotic_values_for_permutation != nullptr
+                                  ? image_automata_state[0]
+                                  : image_automata_state[blockIdx.x];
   } else {
     state_idx = x - (blockIdx.x + 1);
     *c_seed = d_seeds[state_idx];
-    celular_automata_value = celular_automata[state_idx];
+    cellular_automata_value = cellular_automata[state_idx];
   }
 
   for (size_t step = 0; step < total_steps; ++step) {
-    *c_seed = chaotic_functio(*c_seed, r);
+    *c_seed = chaotic_function(*c_seed, r);
     __syncthreads(); // To avoid race conditions
 
-    *c_seed = coupled_map(*c_seed, *r_seed, *l_seed, &celular_automata_value);
+    *c_seed = coupled_map(*c_seed, *r_seed, *l_seed, &cellular_automata_value);
     // Write chaotic values to buffer using all threads if buffer is provided
     if (d_chaotic_values_for_permutation != nullptr) {
       // We use the generated chaotic values from all threads to populate the
@@ -264,10 +264,10 @@ __global__ void keystream_generation_parallel(
   // For normal threads, persist CA. For tid=0, we use a constant so no need to
   // save back
   if (tid != 0) {
-    celular_automata[state_idx] = celular_automata_value;
+    cellular_automata[state_idx] = cellular_automata_value;
   } else {
     image_automata_state[blockIdx.x] =
-        celular_automata_value ^ convertToBitStream(*c_seed);
+        cellular_automata_value ^ convertToBitStream(*c_seed);
   }
 }
 
@@ -289,7 +289,7 @@ __device__ void sort_indices_by_chaotic_values(int base_idx, Real *chaotic_vals,
   unsigned int local_indices[MAX_BLOCK_SIZE];
 
   if (block_length > MAX_BLOCK_SIZE)
-    printf("Length too large");
+    return; // Safety check
 
   for (size_t i = 0; i < block_length; i++) {
     local_vals[i] = chaotic_vals[base_idx + i];
