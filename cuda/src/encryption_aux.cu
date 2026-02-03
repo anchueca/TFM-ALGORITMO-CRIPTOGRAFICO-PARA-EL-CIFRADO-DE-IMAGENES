@@ -323,7 +323,10 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                             EncryptionParams params) {
 
   // Launch flow stream kernel
-  int max_threads = 256;
+  // Optimization: Reduce threads per block to increase number of blocks (occupancy)
+  // Since we have limited number of columns (e.g. 512-1024), 256 threads only gives ~2-4 blocks.
+  // Using 64 threads gives ~8-16 blocks, utilizing more SMs.
+  int max_threads = 64;
   // Effective threads = max_threads - 1 (tid=0 is used for halo/coupling)
   int effective_threads = max_threads - 1;
   dim3 threadsPerBlock(max_threads);
