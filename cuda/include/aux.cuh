@@ -10,8 +10,11 @@
 
 #include <iostream>
 
+#include "encryption_aux.cuh"
 #include "kernels_aux.cuh"
 #include "structs.cuh"
+#include "steganography.hpp"
+
 
 /**
  * @brief Generates a SHA-256 hash of the input string.

@@ -5,9 +5,6 @@
  */
 
 #include "../include/aux.cuh"
-#include "../include/steganography.hpp"
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 
 // Generate SHA3-512-derived bytes (implementation; see header for API)
 // Generate hash from string (calls buffer version)
@@ -93,7 +90,7 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
 
   // IMPORTANT: bytes_for_flow must match the allocation in
   // generate_flow_stream_parallel numBlocks is (cols + 254) / 255 (255 effective threads)
-  int numBlocks = (img_dimensions.cols + 254) / 255;
+  int numBlocks = (img_dimensions.cols + MAX_THREADS - 2) / MAX_THREADS - 1;
   int bytes_for_flow = (img_dimensions.cols + numBlocks) * 4;
 
   // Total length
@@ -259,7 +256,8 @@ void embed_message_caos(cv::Mat &image, unsigned short image_hash,
 }
 
 #include <cmath>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>   // Basic structures
+#include <opencv2/imgproc.hpp> // Image processing
 #include <stdexcept>
 
 cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
@@ -320,6 +318,14 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
   // Byte de color: 1 = color (RGB/3 canales), 0 = blanco y negro (1 canal)
   uchar is_color_flag = dataPtr[lastByteIdx - 1];
   int original_channels = (is_color_flag == 1) ? 3 : 1;
+
+  // Validation: Check for corrupted metadata (common sign of decryption failure)
+  size_t required_pixels = (size_t)W * H;
+  if (required_pixels == 0 || required_pixels > squared.total() || W == 0 || H == 0) {
+      throw std::runtime_error("Decryption failed: Recovered image dimensions (" +
+                               std::to_string(W) + "x" + std::to_string(H) +
+                               ") are invalid or exceed buffer size. Metadata might be corrupted.");
+  }
 
   if (out_original_channels != nullptr) {
     *out_original_channels = original_channels;

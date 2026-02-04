@@ -116,7 +116,7 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   const size_t img_size = image.total() * image.elemSize();
 
   // Image will be unstacked and stacked on CPU, transfer directly
-  cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost);
+  checkCudaError(cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost), "Error cudaMemcpy for image");
 
   cudaFree(d_pointers.d_permutation_vector);
   cudaFree(d_pointers.d_permutation_vector_inverse);

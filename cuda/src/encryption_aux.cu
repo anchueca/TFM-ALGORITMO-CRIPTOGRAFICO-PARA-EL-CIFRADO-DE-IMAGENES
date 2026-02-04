@@ -5,7 +5,6 @@
  */
 
 #include "../include/encryption_aux.cuh"
-#include <cstdio>
 
 __host__ unsigned int *
 generate_automata_permutations(ElementalCelularAutomata *automata,
@@ -44,11 +43,8 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
   checkCudaError(cudaMalloc(&d_chaotic_values, num_keys * sizeof(unsigned short)),
                  "cudaMalloc failed for d_chaotic_values");
 
-  err = cudaMalloc(&d_indices, num_keys * sizeof(unsigned int));
-  if (err != cudaSuccess) {
-    cudaFree(d_chaotic_values);
-    throw std::runtime_error("cudaMalloc failed for d_indices");
-  }
+  checkCudaError(cudaMalloc(&d_indices, num_keys * sizeof(unsigned int)),
+                 "cudaMalloc failed for d_indices");
 
   int threadsPerBlock = 256;
   int numBlocks = (block_length / 2 + threadsPerBlock - 1) / threadsPerBlock;
@@ -56,13 +52,9 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
   generate_automata_chaotic<<<numBlocks, threadsPerBlock>>>(
       d_automata_state, d_chaotic_values, d_indices, block_length);
 
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    cudaFree(d_indices);
-    cudaFree(d_chaotic_values);
-    throw std::runtime_error("Kernel fail: generate_automata_chaotic (" +
-                             std::string(cudaGetErrorString(err)) + ")");
-  }
+  checkCudaError(cudaDeviceSynchronize(),
+                 "cudaDeviceSynchronize failed after generate_automata_chaotic");
+  
   auto end_chaotic = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time_chaotic = end_chaotic - start_chaotic;
 
@@ -70,14 +62,9 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
   auto start_sort = std::chrono::high_resolution_clock::now();
   batched_gpu_argsort(d_chaotic_values, d_indices, 1, block_length);
 
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    cudaFree(d_indices);
-    cudaFree(d_chaotic_values);
-    throw std::runtime_error(
-        "cudaDeviceSynchronize failed after batched_gpu_argsort: " +
-        std::string(cudaGetErrorString(err)));
-  }
+  checkCudaError(cudaDeviceSynchronize(),
+                 "cudaDeviceSynchronize failed after batched_gpu_argsort");
+  
   auto end_sort = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time_sort = end_sort - start_sort;
 
@@ -122,11 +109,9 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
   size_t block_size = params.block_size * params.block_size;
 
   if (d_pointers.d_permutation_blocks == nullptr) {
-    cudaError_t err = cudaMalloc(&d_pointers.d_permutation_blocks,
-                                 block_size * sizeof(unsigned int));
-    if (err != cudaSuccess) {
-      throw std::runtime_error("Failed to allocate device memory for indices");
-    }
+    checkCudaError(cudaMalloc(&d_pointers.d_permutation_blocks,
+                                 block_size * sizeof(unsigned int)),
+                   "Failed to allocate device memory for indices");
   }
   dim3 threadsPerBlock(256);
   dim3 numBlocks((img_dimensions.cols + threadsPerBlock.x) / threadsPerBlock.x);
@@ -194,19 +179,7 @@ __host__ void flow_encrypt(D_pointers &d_pointers,
   image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,
                                             d_pointers.d_image, img_dimensions);
 
-  cudaError_t err = cudaGetLastError();
-  if (err != cudaSuccess) {
-    std::string errorMsg = "Flow encryption kernel launch error: ";
-    errorMsg += cudaGetErrorString(err);
-    throw std::runtime_error(errorMsg);
-  }
-
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    std::string errorMsg = "Flow encryption execution error: ";
-    errorMsg += cudaGetErrorString(err);
-    throw std::runtime_error(errorMsg);
-  }
+  checkCudaError(cudaDeviceSynchronize(), "Flow encryption execution error");
 }
 
 __host__ void inverse_permutations(unsigned int *d_permutations,
@@ -227,21 +200,8 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
   invert_permutations_kernel<<<numBlocks, threadsPerBlock>>>(
       d_permutations, *d_permutations_inverse, block_length);
 
-  err = cudaGetLastError();
-  if (err != cudaSuccess) {
-    cudaFree(*d_permutations_inverse);
-    throw std::runtime_error(
-        std::string("Kernel launch error in inverse_permutations: ") +
-        cudaGetErrorString(err));
-  }
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    cudaFree(*d_permutations_inverse);
-    throw std::runtime_error(
-        std::string(
-            "Error during cudaDeviceSynchronize in inverse_permutations: ") +
-        cudaGetErrorString(err));
-  }
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Error during cudaDeviceSynchronize in inverse_permutations");
 }
 
 __host__ void unstack_channels_gpu(unsigned char *d_interleaved,
@@ -253,10 +213,8 @@ __host__ void unstack_channels_gpu(unsigned char *d_interleaved,
   deinterleave_channels_kernel<<<grid, block>>>(d_interleaved, d_planar, width,
                                                 height);
 
-  if (cudaPeekAtLastError() != cudaSuccess) {
-    throw std::runtime_error("Launch error: deinterleave_channels_kernel");
-  }
-  cudaDeviceSynchronize();
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Error during cudaDeviceSynchronize in deinterleave_channels_kernel");
 }
 
 __host__ void stack_channels_gpu(unsigned char *d_planar,
@@ -268,10 +226,8 @@ __host__ void stack_channels_gpu(unsigned char *d_planar,
   interleave_channels_kernel<<<grid, block>>>(d_planar, d_interleaved, width,
                                               height);
 
-  if (cudaPeekAtLastError() != cudaSuccess) {
-    throw std::runtime_error("Launch error: interleave_channels_kernel");
-  }
-  cudaDeviceSynchronize();
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Error during cudaDeviceSynchronize in interleave_channels_kernel");
 }
 
 __host__ void
@@ -290,13 +246,8 @@ convert_bits_to_real(const std::vector<unsigned char> &password_segment,
   checkCudaError(cudaMalloc((void **)d_seeds, total_bytes),
                  "Error cudaMalloc for seeds");
 
-  cudaError_t err = cudaMemcpy(*d_seeds, password_segment.data(), total_bytes,
-                   cudaMemcpyHostToDevice);
-  if (err != cudaSuccess) {
-    cudaFree(*d_seeds);
-    throw std::runtime_error("Error cudaMemcpy for seeds," +
-                             std::string(cudaGetErrorString(err)));
-  }
+  checkCudaError(cudaMemcpy(*d_seeds, password_segment.data(), total_bytes,
+                   cudaMemcpyHostToDevice), "Error cudaMemcpy for seeds");
 
   const int threadsPerBlock = 256;
   const int gridOfBlocks =
@@ -305,17 +256,8 @@ convert_bits_to_real(const std::vector<unsigned char> &password_segment,
   convert_bits_to_real_kernel<<<gridOfBlocks, threadsPerBlock>>>(*d_seeds,
                                                                  num_elements);
 
-  if (cudaGetLastError() != cudaSuccess) {
-    cudaFree(*d_seeds);
-    throw std::runtime_error("Error en kernel convert_bits_to_real");
-  }
-
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    cudaFree(*d_seeds);
-    throw std::runtime_error(
-        "Error during cudaDeviceSynchronize in convert_bits_to_real");
-  }
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Error during cudaDeviceSynchronize in convert_bits_to_real");
 }
 
 __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
@@ -326,10 +268,9 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   // Optimization: Reduce threads per block to increase number of blocks (occupancy)
   // Since we have limited number of columns (e.g. 512-1024), 256 threads only gives ~2-4 blocks.
   // Using 64 threads gives ~8-16 blocks, utilizing more SMs.
-  int max_threads = 64;
-  // Effective threads = max_threads - 1 (tid=0 is used for halo/coupling)
-  int effective_threads = max_threads - 1;
-  dim3 threadsPerBlock(max_threads);
+  // Effective threads = MAX_THREADS - 1 (tid=0 is used for halo/coupling)
+  int effective_threads = MAX_THREADS - 1;
+  dim3 threadsPerBlock(MAX_THREADS);
   dim3 numBlocks((img_dimensions.cols + effective_threads - 1) /
                  effective_threads);
 
@@ -340,34 +281,28 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   Real *chaotic_values;
 
   // Initialization logic for first run (checked via d_image_automata_state)
-  cudaError_t err;
   if (d_pointers.d_image_automata_state == nullptr) {
     // Allocate chaotic values if not already done (it might be passed in or
     // allocated externally)
     if (d_pointers.d_chaotic_values_for_permutation == nullptr) {
-      err = cudaMalloc(&d_pointers.d_chaotic_values_for_permutation,
-                       block_size * sizeof(Real));
-      if (err != cudaSuccess)
-        throw std::runtime_error("Failed to alloc chaotic values");
+      checkCudaError(cudaMalloc(&d_pointers.d_chaotic_values_for_permutation,
+                       block_size * sizeof(Real)),
+                   "Failed to allocate chaotic values");
     }
 
     transition_length = params.transition_length;
     chaotic_values = d_pointers.d_chaotic_values_for_permutation;
 
     // Allocate and initialize automata state
-    err = cudaMalloc(&d_pointers.d_image_automata_state,
-                     numBlocks.x * sizeof(unsigned short));
-    if (err != cudaSuccess) {
-      throw std::runtime_error(
-          "Failed to allocate device memory for image automata state");
-    }
+    checkCudaError(cudaMalloc(&d_pointers.d_image_automata_state,
+                     numBlocks.x * sizeof(unsigned short)),
+                   "Failed to allocate device memory for image automata state");
+
     std::vector<unsigned short> init_states(numBlocks.x, params.image_hash);
-    err = cudaMemcpy(d_pointers.d_image_automata_state, init_states.data(),
+
+    checkCudaError(cudaMemcpy(d_pointers.d_image_automata_state, init_states.data(),
                      numBlocks.x * sizeof(unsigned short),
-                     cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-      throw std::runtime_error("Failed to copy hash to device memory");
-    }
+                     cudaMemcpyHostToDevice), "Failed to copy hash to device memory");
   } else {
     // Subsequent runs
     transition_length = threadsPerBlock.x / 2;
@@ -389,24 +324,16 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   // Final synchronization to ensure all stream generation is done before
   // proceeding
 
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    cudaFree(d_pointers.d_image_automata_state);
-    throw std::runtime_error(
-        "Error during cudaDeviceSynchronize in generate_flow_stream_parallel");
-  }
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Error during cudaDeviceSynchronize in generate_flow_stream_parallel");
 
   // Global Diffusion Layer: Iterative Global Mean-Field Coupling
   // This step ensures that changes in one block propagate to all blocks in the
   // next round.
   global_seed_mix_kernel<<<1, 1>>>(d_pointers.d_seeds, img_dimensions.cols,
                                    numBlocks.x);
-  err = cudaDeviceSynchronize();
-  if (err != cudaSuccess) {
-    cudaFree(d_pointers.d_image_automata_state);
-    throw std::runtime_error(
-        "Error during cudaDeviceSynchronize in global_seed_mix_kernel");
-  }
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Error during cudaDeviceSynchronize in global_seed_mix_kernel");
 }
 
 __global__ void sort_indices_by_chaotic_values_global(Real *d_chaotic_values,

@@ -176,7 +176,8 @@ void ElementalCelularAutomata::iterate_block_level(int num_steps) {
   evolve_block_level<<<num_blocks, threads_per_block, shared_mem_size>>>(
       this->d_state[0], this->d_state[1], this->rule, num_steps);
 
-  cudaDeviceSynchronize();
+  checkCudaError(cudaDeviceSynchronize(),
+                 "ECA cudaDeviceSynchronize failed");
 }
 
 // Print the automaton state (implementation; see header for docs)

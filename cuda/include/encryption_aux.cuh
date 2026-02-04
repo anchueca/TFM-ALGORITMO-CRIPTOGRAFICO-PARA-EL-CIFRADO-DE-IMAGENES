@@ -6,11 +6,15 @@
 #include <cstddef>
 #include <iostream>
 #include <vector>
+#include <cstdio>
 
 #include "CudaPermutation.cuh"
 #include "automata.cuh"
 #include "kernels.cuh"
 #include "structs.cuh"
+
+
+#define MAX_THREADS 64
 
 /**
  * @brief Applies a simplified block permutation to the image.

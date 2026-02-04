@@ -276,10 +276,6 @@ TEST_F(MemoryTest, AllocateLargeImage) {
   cv::Mat img = create_test_image(256, 256, 1);
   D_pointers d_ptrs;
 
-  Image_dimensions dims;
-  dims.rows = 256;
-  dims.cols = 256;
-
   EncryptionParams params;
   params.rounds = 1;
   params.block_size = 16;
@@ -1004,6 +1000,43 @@ TEST_F(LargeImageStressTest, BlockSize64AndLargeRounds) {
   encrypt_image(img, password, dims, params, false, false);
   ASSERT_EQ(cv::countNonZero(original != img), 0)
       << "Decryption failed with block_size=64, rounds=4";
+}
+
+// ============================================================================
+// TEST GROUP 9: Scalability Tests
+// ============================================================================
+
+TEST_F(EdgeCaseTest, LargeImage1024x1024) {
+  // Test with 1024x1024 image (approx Scale 4.0x from 256x256)
+  // This aims to reproduce the metadata corruption crash seen in stats.py
+  int size = 1024;
+  cv::Mat img = create_test_image(size, size, 1);
+  Image_dimensions dims;
+  dims.rows = size;
+  dims.cols = size;
+
+  std::vector<std::vector<unsigned char>> password =
+      create_password_for_image(dims);
+
+  EncryptionParams params;
+  params.rounds = 3;
+  params.block_size = 16; // Using 16 (Safe for Large Images)
+  params.automata_steps = 20;
+  params.transition_length = 10;
+  params.chaos_parameter = 3.9f;
+  params.image_hash = 0;
+
+  cv::Mat original = img.clone();
+  
+  // Encrypt
+  ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
+
+  // Decrypt
+  ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, false));
+  
+  // Verify equality
+  int diff = cv::countNonZero(original != img);
+  ASSERT_EQ(diff, 0) << "Decryption failed for 1024x1024 image. Diff pixels: " << diff;
 }
 
 // ============================================================================

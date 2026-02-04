@@ -235,7 +235,9 @@ __global__ void keystream_generation_parallel(
     *c_seed = chaotic_function(*c_seed, r);
     __syncthreads(); // To avoid race conditions
 
-    *c_seed = coupled_map(*c_seed, *r_seed, *l_seed, &cellular_automata_value);
+    Real next_val = coupled_map(*c_seed, *r_seed, *l_seed, &cellular_automata_value);
+    __syncthreads(); // Wait for all threads to read current state
+    *c_seed = next_val; // Update state
     // Write chaotic values to buffer using all threads if buffer is provided
     if (d_chaotic_values_for_permutation != nullptr) {
       // We use the generated chaotic values from all threads to populate the

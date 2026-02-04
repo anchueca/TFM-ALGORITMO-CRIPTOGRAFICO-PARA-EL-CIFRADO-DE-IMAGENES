@@ -118,35 +118,40 @@ int main(int argc, char **argv) {
   if (config.verbose)
     std::cout << " > Postprocessing (Unpad & Stack)..." << std::endl;
 
-  if (!config.encrypt) {
-    // DECRYPTION: unpad (which retrieves original_channels) then stack back to
-    // original format
-    if (config.verbose)
-      std::cout << " [DEBUG] Before unpad: " << processed_image.cols << "x"
-                << processed_image.rows
-                << " channels=" << processed_image.channels() << std::endl;
+  try {
+    if (!config.encrypt) {
+      // DECRYPTION: unpad (which retrieves original_channels) then stack back to
+      // original format
+      if (config.verbose)
+        std::cout << " [DEBUG] Before unpad: " << processed_image.cols << "x"
+                  << processed_image.rows
+                  << " channels=" << processed_image.channels() << std::endl;
 
-    int retrieved_channels = 1;
-    processed_image = unpadFromSquare(processed_image, &retrieved_channels);
+      int retrieved_channels = 1;
+      processed_image = unpadFromSquare(processed_image, &retrieved_channels);
 
-    if (config.verbose)
-      std::cout << " [DEBUG] After unpad: " << processed_image.cols << "x"
-                << processed_image.rows
-                << " channels=" << processed_image.channels()
-                << " retrieved_channels=" << retrieved_channels << std::endl;
+      if (config.verbose)
+        std::cout << " [DEBUG] After unpad: " << processed_image.cols << "x"
+                  << processed_image.rows
+                  << " channels=" << processed_image.channels()
+                  << " retrieved_channels=" << retrieved_channels << std::endl;
 
-    bool is_color = (retrieved_channels == 3);
-    stack_channels(image, processed_image, is_color, config.verbose);
+      bool is_color = (retrieved_channels == 3);
+      stack_channels(image, processed_image, is_color, config.verbose);
 
-    // No need to embed message during decryption
-  } else {
-    // ENCRYPTION: keep as single-channel with padding, no stacking
-    // The encrypted image is saved as single-channel
-    image = processed_image;
+      // No need to embed message during decryption
+    } else {
+      // ENCRYPTION: keep as single-channel with padding, no stacking
+      // The encrypted image is saved as single-channel
+      image = processed_image;
 
-    // Embed the image hash in the image
-    embed_message_caos(image, config.params.image_hash, password_segments[2],
-                       config.output_arg);
+      // Embed the image hash in the image
+      embed_message_caos(image, config.params.image_hash, password_segments[2],
+                         config.output_arg);
+    }
+  } catch (const std::exception &e) {
+    cerr << "\n[FATAL ERROR] During post-processing (Unpad/Stack): " << e.what() << endl;
+    return -1;
   }
   end = std::chrono::high_resolution_clock::now();
 
