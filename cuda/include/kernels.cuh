@@ -40,8 +40,8 @@ __device__ __forceinline__ float chaotic_function<float>(float x, float r) {
   // return 4.0f * x * (1.0f - x);
 }
 
-__device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
-                                            Real l_next,
+__device__ __forceinline__ Real coupled_map(Real c_next, Real* r_next,
+                                            Real* l_next,
                                             unsigned short *cellular_automata);
 
 /**
@@ -68,7 +68,7 @@ __device__ __forceinline__ Real coupled_map(Real c_next, Real r_next,
  */
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
-    unsigned short *cellular_automata, unsigned short *d_image_automata_state,
+    unsigned short *__restrict__ cellular_automata, unsigned short *__restrict__ d_image_automata_state,
     Image_dimensions img_dimensions, Real r, const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks);
