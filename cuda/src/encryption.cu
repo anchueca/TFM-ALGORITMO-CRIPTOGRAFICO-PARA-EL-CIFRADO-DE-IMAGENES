@@ -196,9 +196,18 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
     std::cout << " > Generating Initial Permutations..." << std::endl;
 
   // Generate initial stream (transition)
+  auto transition_start = std::chrono::high_resolution_clock::now();
   generate_flow_stream_parallel(d_pointers, img_dimensions, params);
+  auto transition_end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> transition_time = transition_end - transition_start;
+  if (verbose)      std::cout << "\tInitial stream generated in " << transition_time.count() * 1000.0f << " ms" << std::endl;
+
+  transition_start = std::chrono::high_resolution_clock::now();
   // Generate block permutations
   generate_permutation_block(d_pointers, img_dimensions, params);
+  transition_end = std::chrono::high_resolution_clock::now();
+  transition_time = transition_end - transition_start;
+  if (verbose)      std::cout << "\tBlock permutations generated in " << transition_time.count() * 1000.0f << " ms" << std::endl;
 
   // === PHASE 1: Initial Confusion (permutation of image) ===
   if (verbose)
@@ -212,14 +221,27 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
   for (size_t round = 0; round < params.rounds; round++) {
     auto round_start = std::chrono::high_resolution_clock::now();
 
+    auto keystream_start = std::chrono::high_resolution_clock::now();
     // Step A: Generate chaotic keystream
     generate_flow_stream_parallel(d_pointers, img_dimensions, params);
 
+    auto keystream_end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> keystream_time = keystream_end - keystream_start;
+    if (verbose)      std::cout << "\t\t Keystream generated in " << keystream_time.count() * 1000.0f << " ms" << std::endl;
+
+    keystream_start = std::chrono::high_resolution_clock::now();
     // Step B: Permute the keystream
     permutation_encryption_process(d_pointers, img_dimensions, block_size);
+    keystream_end = std::chrono::high_resolution_clock::now();
+    keystream_time = keystream_end - keystream_start;
+    if (verbose)      std::cout << "\t\t Keystream permuted in " << keystream_time.count() * 1000.0f << " ms" << std::endl;
 
+    keystream_start = std::chrono::high_resolution_clock::now();
     // Step C: Diffusion - XOR image with permuted keystream
     flow_encrypt(d_pointers, img_dimensions);
+    keystream_end = std::chrono::high_resolution_clock::now();
+    keystream_time = keystream_end - keystream_start;
+    if (verbose)      std::cout << "\t\t Diffusion (XOR) completed in " << keystream_time.count() * 1000.0f << " ms" << std::endl;
 
     auto round_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> round_time = round_end - round_start;
