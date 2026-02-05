@@ -17,7 +17,6 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
         "Incompatible automata size (" + std::to_string(automata->get_size()) +
         ") and block length (" + std::to_string(block_length * 16) + ")");
 
-  cudaError_t err;
   // === TIMING 1: Automata Iteration ===
   auto start_iterate = std::chrono::high_resolution_clock::now();
   automata->iterate_block_level(steps);

@@ -27,7 +27,6 @@ __device__ __forceinline__ Real coupled_map(Real c_next, Real* r_next,
   Real rest = (Real)1.0 - v1;
   Real r_influence = rest * v2;
   Real l_influence = rest * ((Real)1.0 - v2);
-  __syncthreads();
   return (c_next * c_influence) + (*r_next * r_influence) +
          (*l_next * l_influence);
 }
@@ -193,83 +192,92 @@ __global__ void keystream_generation_parallel(
   const int tid = threadIdx.x;
   const int x = blockIdx.x * blockDim.x + tid;
 
-  // Get neighbors
+  const size_t cols_and_blocks = img_dimensions.cols + numBlocks;
+
+  // Correct block_length for the last block
+  const size_t current_block_length =
+      (blockIdx.x < numBlocks - 1)
+          ? blockDim.x
+          : (cols_and_blocks - (numBlocks - 1) * blockDim.x);
+
+  const bool is_active = (tid < current_block_length);
 
   Real *c_seed = nullptr;
   Real *r_seed = nullptr;
   Real *l_seed = nullptr;
-  
-  {
-    const size_t cols_and_blocks = img_dimensions.cols + numBlocks; // Extra seed
-    if (x >= cols_and_blocks)
-      return;
-    size_t block_length = blockIdx.x < numBlocks
-                              ? blockDim.x
-                              : cols_and_blocks - (numBlocks - 1) * blockDim.x;
-
-    c_seed = &s_seeds[tid];
-    r_seed = &s_seeds[tid == 0 ? block_length - 1 : tid - 1];
-    l_seed = &s_seeds[tid == block_length - 1 ? 0 : tid + 1];
-  }
 
   unsigned short cellular_automata_value;
-
   size_t state_idx;
-
   Real next_val;
-  if (tid == 0) { //Special seed for perturbation
-    state_idx = img_dimensions.cols +
-                blockIdx.x; // Unique index for extra seed to avoid race
-    *c_seed = d_seeds[state_idx];
-    // If d_chaotic_values_for_permutation is not null, it's the first call
-    // (transition/permutation). We use image_automata_state[0] (the initialized
-    // hash) as the collective seed.
-    cellular_automata_value = d_chaotic_values_for_permutation != nullptr
-                                  ? image_automata_state[0]
-                                  : image_automata_state[blockIdx.x];
-  } else {
-    state_idx = x - (blockIdx.x + 1);
-    *c_seed = d_seeds[state_idx];
-    cellular_automata_value = cellular_automata[state_idx];
-  }
-  next_val = *c_seed;
+
+  if (is_active) {
+    c_seed = &s_seeds[tid];
+    r_seed = &s_seeds[tid == 0 ? current_block_length - 1 : tid - 1];
+    l_seed = &s_seeds[tid == current_block_length - 1 ? 0 : tid + 1];
+
+    if (tid == 0) { // Special seed for perturbation
+      state_idx = img_dimensions.cols + blockIdx.x;
+      *c_seed = d_seeds[state_idx];
+      cellular_automata_value = d_chaotic_values_for_permutation != nullptr
+                                    ? image_automata_state[0]
+                                    : image_automata_state[blockIdx.x];
+    } else {
+      state_idx = x - (blockIdx.x + 1);
+      *c_seed = d_seeds[state_idx];
+      cellular_automata_value = cellular_automata[state_idx];
+    }
+    next_val = *c_seed;
+  }  
+
   for (size_t step = 0; step < total_steps; ++step) {
-    next_val = chaotic_function(next_val, r);
-    *c_seed = next_val;
-    next_val = coupled_map(next_val, r_seed, l_seed, &cellular_automata_value);
-    // Write chaotic values to buffer using all threads if buffer is provided
-    if (d_chaotic_values_for_permutation != nullptr) {
-      // We use the generated chaotic values from all threads to populate the
-      // permutation buffer valid x (0 to cols-1) contributes
-      if (x < img_dimensions.cols && step >= transition_length) {
-        size_t valid_step = step - transition_length;
-        size_t write_idx = valid_step * img_dimensions.cols + x;
-        if (write_idx < permutation_block_size) {
-          d_chaotic_values_for_permutation[write_idx] = next_val;
+    if (is_active)
+      next_val = chaotic_function(next_val, r);
+    
+    // Initial synchronization to ensure shared memory is populated (at first iteration) or updated (in subsequent iterations) before any thread reads from it
+    __syncthreads();
+
+    if (is_active)
+      *c_seed = next_val;
+    
+
+    // Ensure all threads have updated their s_seeds
+    __syncthreads();
+
+    if (is_active) {
+      next_val = coupled_map(next_val, r_seed, l_seed, &cellular_automata_value);
+
+      // Write chaotic values to buffer using all threads if buffer is provided
+      if (d_chaotic_values_for_permutation != nullptr) {
+        if (tid != 0 && state_idx < img_dimensions.cols &&
+            step >= transition_length) {
+          size_t valid_step = step - transition_length;
+          size_t write_idx = valid_step * img_dimensions.cols + state_idx;
+          if (write_idx < permutation_block_size) {
+            d_chaotic_values_for_permutation[write_idx] = next_val;
+          }
         }
       }
+
+      // Normal flow generation
+      if (tid != 0 && step >= transition_length) {
+        size_t row = step - transition_length;
+        d_flow[row * img_dimensions.cols + state_idx] =
+            convertToBitStream(next_val);
+      }
     }
-    // Normal flow generation
-    if (tid != 0 && step >= transition_length) {
-      size_t row = step - transition_length;
-      d_flow[row * img_dimensions.cols + state_idx] =
-          convertToBitStream(next_val);
-    }
+
   }
 
-  // Store final state back to global memory (Include tid=0 to persist extra
-  // seeds)
-  d_seeds[state_idx] = *c_seed;
-  // For normal threads, persist CA. For tid=0, we use a constant so no need to
-  // save back
-  __syncthreads();
-  if (tid != 0) {
-    cellular_automata[state_idx] = cellular_automata_value;
-  } else {
-    image_automata_state[blockIdx.x] =
-        cellular_automata_value ^ convertToBitStream(*c_seed);
+  if (is_active) {
+    // Store final state back to global memory
+    d_seeds[state_idx] = *c_seed;
+    if (tid != 0) {
+      cellular_automata[state_idx] = cellular_automata_value;
+    } else {
+      image_automata_state[blockIdx.x] =
+          cellular_automata_value ^ convertToBitStream(*c_seed);
+    }
   }
-  __syncthreads();
 }
 
 __global__ void convert_bits_to_real_kernel(Real *d_seeds,
