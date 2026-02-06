@@ -40,8 +40,8 @@ __device__ __forceinline__ float chaotic_function<float>(float x, float r) {
   // return 4.0f * x * (1.0f - x);
 }
 
-__device__ __forceinline__ Real coupled_map(Real c_next, Real* r_next,
-                                            Real* l_next,
+__device__ __forceinline__ Real coupled_map(Real c_next, Real *r_next,
+                                            Real *l_next,
                                             unsigned short *cellular_automata);
 
 /**
@@ -68,7 +68,8 @@ __device__ __forceinline__ Real coupled_map(Real c_next, Real* r_next,
  */
 __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
-    unsigned short *__restrict__ cellular_automata, unsigned short *__restrict__ d_image_automata_state,
+    unsigned short *__restrict__ cellular_automata,
+    unsigned short *__restrict__ d_image_automata_state,
     Image_dimensions img_dimensions, Real r, const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks);
@@ -114,12 +115,12 @@ __global__ void convert_bits_to_real_kernel(Real *d_seeds, size_t num_elements);
  * @param img_dimensions    Struct containing the image dimensions (.rows and
  * .cols).
  */
-__global__ void permute_blocks_kernel_simple(const unsigned char *__restrict__ image,
-                                              unsigned char *__restrict__ image_out,
-                                              const unsigned int *__restrict__ permutation,
-                                              const unsigned int *__restrict__ permutation_inverse,
-                                             size_t block_size,
-                                             Image_dimensions img_dimensions);
+__global__ void permute_blocks_kernel_simple(
+    const unsigned char *__restrict__ image,
+    unsigned char *__restrict__ image_out,
+    const unsigned int *__restrict__ permutation,
+    const unsigned int *__restrict__ permutation_inverse, size_t block_size,
+    Image_dimensions img_dimensions);
 
 /**
  * @brief Kernel that permutes columns of the image according to a permutation.
@@ -183,18 +184,6 @@ __global__ void deinterleave_channels_kernel(const unsigned char *input,
 __global__ void interleave_channels_kernel(const unsigned char *input,
                                            unsigned char *output, int width,
                                            int height);
-
-/**
- * @brief Kernel to sort indices based on chaotic values for permutations.
- *
- * Typically called with <<<num_permutations, 1>>>.
- * N is small (e.g. 64), so a simple serial sort per block is sufficient and
- * robust.
- */
-__global__ void sort_indices_by_chaotic_values_global(Real *chaotic_values,
-                                                      size_t num_permutations,
-                                                      unsigned int *indices,
-                                                      size_t block_area);
 
 __global__ void global_seed_mix_kernel(Real *d_seeds, size_t offset,
                                        size_t n_blocks);

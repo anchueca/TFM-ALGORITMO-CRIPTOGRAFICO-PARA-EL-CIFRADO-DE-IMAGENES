@@ -30,6 +30,13 @@ void compute_permutation_gpu(const float *h_chaotic_sequence,
                              int *h_permutation, int n);
 
 /**
+ * @brief Generates a permutation (argsort) based on a chaotic sequence already
+ * on the GPU.
+ */
+void compute_permutation_device(float *d_values, unsigned int *d_indices,
+                                int n);
+
+/**
  * @brief GPU Kernel: Initializes buffers.
  * Copies indices 0..n-1 and fills the padding area with FLT_MAX.
  */

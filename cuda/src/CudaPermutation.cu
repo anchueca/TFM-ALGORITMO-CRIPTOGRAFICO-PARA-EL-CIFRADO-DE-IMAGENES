@@ -28,7 +28,7 @@ int next_power_of_2(int n) {
 
 // --- SINGLE ARRAY SORT KERNELS ---
 
-__global__ void init_buffers_kernel(float *values, int *indices, int n,
+__global__ void init_buffers_kernel(float *values, unsigned int *indices, int n,
                                     int padded_size) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -45,8 +45,8 @@ __global__ void init_buffers_kernel(float *values, int *indices, int n,
   }
 }
 
-__global__ void bitonic_sort_step_kernel(float *values, int *indices, int j,
-                                         int k, int padded_size) {
+__global__ void bitonic_sort_step_kernel(float *values, unsigned int *indices,
+                                         int j, int k, int padded_size) {
   unsigned int i = threadIdx.x + blockDim.x * blockIdx.x;
   unsigned int ixj = i ^ j;
 
@@ -67,7 +67,7 @@ __global__ void bitonic_sort_step_kernel(float *values, int *indices, int j,
       values[ixj] = v1;
 
       // Swap indices (payload)
-      int temp_idx = indices[i];
+      unsigned int temp_idx = indices[i];
       indices[i] = indices[ixj];
       indices[ixj] = temp_idx;
     }
@@ -82,11 +82,12 @@ void compute_permutation_gpu(const float *h_chaotic_sequence,
 
   // Device pointers
   float *d_values;
-  int *d_indices;
+  unsigned int *d_indices;
 
   // 1. GPU Memory Allocation (Padded size)
   CHECK_CUDA_ERROR(cudaMalloc((void **)&d_values, padded_size * sizeof(float)));
-  CHECK_CUDA_ERROR(cudaMalloc((void **)&d_indices, padded_size * sizeof(int)));
+  CHECK_CUDA_ERROR(
+      cudaMalloc((void **)&d_indices, padded_size * sizeof(unsigned int)));
 
   // 2. Copy input data (only the n real data points)
   CHECK_CUDA_ERROR(cudaMemcpy(d_values, h_chaotic_sequence, n * sizeof(float),
@@ -119,12 +120,59 @@ void compute_permutation_gpu(const float *h_chaotic_sequence,
   // Since we used FLT_MAX for padding and sorted ascendingly,
   // the valid indices are at the beginning. The padding ended up at [n ...
   // padded_size-1].
-  CHECK_CUDA_ERROR(cudaMemcpy(h_permutation, d_indices, n * sizeof(int),
+  CHECK_CUDA_ERROR(cudaMemcpy(h_permutation, d_indices,
+                              n * sizeof(unsigned int),
                               cudaMemcpyDeviceToHost));
 
   // 7. Free memory
   CHECK_CUDA_ERROR(cudaFree(d_values));
   CHECK_CUDA_ERROR(cudaFree(d_indices));
+}
+
+// --- NEW DEVICE-ONLY IMPLEMENTATION ---
+
+void compute_permutation_device(float *d_values, unsigned int *d_indices,
+                                int n) {
+  int padded_size = next_power_of_2(n);
+
+  float *d_padded_values = nullptr;
+  unsigned int *d_padded_indices = nullptr;
+
+  // Allocate temporary padded buffers
+  CHECK_CUDA_ERROR(
+      cudaMalloc((void **)&d_padded_values, padded_size * sizeof(float)));
+  CHECK_CUDA_ERROR(cudaMalloc((void **)&d_padded_indices,
+                              padded_size * sizeof(unsigned int)));
+
+  // Copy original values to padded buffer
+  CHECK_CUDA_ERROR(cudaMemcpy(d_padded_values, d_values, n * sizeof(float),
+                              cudaMemcpyDeviceToDevice));
+
+  int threadsPerBlock = 256;
+  int blocksPerGrid = (padded_size + threadsPerBlock - 1) / threadsPerBlock;
+
+  // Initialize padding and indices
+  init_buffers_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+      d_padded_values, d_padded_indices, n, padded_size);
+
+  // Parallel Bitonic Sort
+  for (int k = 2; k <= padded_size; k <<= 1) {
+    for (int j = k >> 1; j > 0; j >>= 1) {
+      bitonic_sort_step_kernel<<<blocksPerGrid, threadsPerBlock>>>(
+          d_padded_values, d_padded_indices, j, k, padded_size);
+    }
+  }
+
+  // Copy results back (only the first n elements)
+  CHECK_CUDA_ERROR(cudaMemcpy(d_indices, d_padded_indices,
+                              n * sizeof(unsigned int),
+                              cudaMemcpyDeviceToDevice));
+
+  // Sync to ensure results are ready
+  CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+
+  CHECK_CUDA_ERROR(cudaFree(d_padded_values));
+  CHECK_CUDA_ERROR(cudaFree(d_padded_indices));
 }
 
 // --- BATCHED SORT KERNELS ---

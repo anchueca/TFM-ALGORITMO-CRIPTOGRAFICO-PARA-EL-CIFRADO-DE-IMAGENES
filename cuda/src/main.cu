@@ -36,7 +36,15 @@ int main(int argc, char **argv) {
     std::cout << " [DEBUG] Loaded image: " << image.cols << "x" << image.rows
               << " channels=" << image.channels() << std::endl;
 
+  if (config.verbose)
+    std::cout << " [DEBUG] Unstacking channels..." << std::endl;
+  auto start = std::chrono::high_resolution_clock::now();
   cv::Mat processed_image = unstack_channels(image, config.verbose);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<double> time = end - start;
+  if (config.verbose)
+    std::cout << " [DEBUG] Unstacking time: " << time.count() * 1000.0f << " ms"
+              << std::endl;
 
   if (config.verbose)
     std::cout << " [DEBUG] After unstack: " << processed_image.cols << "x"
@@ -47,10 +55,10 @@ int main(int argc, char **argv) {
   if (config.encrypt) {
     if (config.verbose)
       std::cout << " [DEBUG] Padding image to square..." << std::endl;
-    auto start = std::chrono::high_resolution_clock::now();
+    start = std::chrono::high_resolution_clock::now();
     processed_image = padImageToSquare(
         processed_image, config.params.block_size, original_channels);
-    auto end = std::chrono::high_resolution_clock::now();
+    end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> time = end - start;
     if (config.verbose)
       std::cout << " [DEBUG] Padding time: " << time.count() * 1000.0f << " ms"
@@ -66,7 +74,7 @@ int main(int argc, char **argv) {
     std::cout << " [INFO] Processing dimensions: " << img_dimensions.cols
               << " x " << img_dimensions.rows << std::endl;
 
-  auto start = std::chrono::high_resolution_clock::now();
+  start = std::chrono::high_resolution_clock::now();
 
   if (config.verbose)
     std::cout << " > Password hashing & expansion: ";
@@ -75,7 +83,7 @@ int main(int argc, char **argv) {
       calculate_password(config.password, img_dimensions, config.verbose,
                          config.use_raw_key);
 
-  auto end = std::chrono::high_resolution_clock::now();
+  end = std::chrono::high_resolution_clock::now();
   if (config.verbose)
     std::cout << std::chrono::duration<double>(end - start).count() * 1000.0f
               << " ms" << std::endl;

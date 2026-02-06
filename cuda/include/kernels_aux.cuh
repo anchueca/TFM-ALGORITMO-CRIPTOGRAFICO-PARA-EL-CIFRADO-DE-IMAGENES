@@ -30,23 +30,6 @@ inline void checkCudaError(cudaError_t err, const std::string &msg) {
 }
 
 /**
- * @brief Sorts indices within a block based on chaotic values using insertion
- * sort.
- *
- * This device function performs an in-place insertion sort on a local array of
- * chaotic values and their corresponding indices. It is used to generate
- * permutations for a specific block.
- *
- * @param base_idx The global base index for the current block in the input
- * arrays.
- * @param chaotic_vals Pointer to the global array of chaotic values.
- * @param indices Pointer to the global array of indices to be sorted.
- * @param block_length The number of elements in the block to be sorted.
- */
-__device__ void sort_indices_by_chaotic_values(int base_idx, Real *chaotic_vals,
-                                               unsigned int *indices,
-                                               size_t block_length);
-/**
  * @brief Converts a double precision chaotic value to a single byte keystream
  * value.
  *
@@ -63,24 +46,6 @@ __device__ unsigned char convertToBitStream(double value);
  * @return The corresponding byte value (unsigned char).
  */
 __device__ unsigned char convertToBitStream(float value);
-
-/**
- * @brief Kernel that sorts index arrays per block using associated chaotic
- * values.
- *
- * Each thread (or logical index determined by the grid) handles a separate
- * block segment of length block_length. It calls the device insertion sort to
- * reorder the chaotic values and indices in-place.
- *
- * @param d_chaotic_values Device pointer to chaotic values (contiguous blocks).
- * @param num_blocks Number of blocks (segments) to sort.
- * @param indices Device pointer to flat indices array to reorder.
- * @param block_length Length of each block segment.
- */
-__global__ void sort_indices_by_chaotic_values_global(Real *d_chaotic_values,
-                                                      size_t num_blocks,
-                                                      unsigned int *indices,
-                                                      size_t block_length);
 
 /**
  * @brief Kernel to invert a batch of permutations in parallel.

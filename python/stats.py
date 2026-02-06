@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 import matplotlib
 import matplotlib.pyplot as plt
+from scipy import stats
 from scipy.stats import entropy, chisquare
 from skimage.feature import graycomatrix, graycoprops
 from tabulate import tabulate
@@ -12,6 +13,18 @@ import time
 import random
 import string
 import math
+
+# Force software-only AES in PyCryptodome (disable AES-NI)
+os.environ['CRYPTODOME_DISABLE_AESNI'] = '1'
+
+try:
+    from Crypto.Cipher import AES
+    from Crypto.Util import Counter
+    from Crypto.Random import get_random_bytes
+except ImportError:
+    from Cryptodome.Cipher import AES
+    from Cryptodome.Util import Counter
+    from Cryptodome.Random import get_random_bytes
 
 # Use 'Agg' backend if headless (no screen), otherwise 'TkAgg'
 try:
@@ -377,13 +390,12 @@ class ExternalCipherTester:
                 
                 padded_cols = S
                 padded_rows = S
-                num_blocks = (padded_cols + 256) // 256
+                num_blocks = (padded_cols + 64) // 64
                 # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
                 total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
                 required_bits = total_bytes * 8
                 
                 # Generate a key of the correct length for this image
-                from stats import generate_random_password
                 scaled_password = generate_random_password(length=required_bits, binary=True)
                 
                 curr_enc_times = []
@@ -419,6 +431,86 @@ class ExternalCipherTester:
                 break 
                 
         return pixel_counts, enc_times_avg, dec_times_avg
+
+class AESCipherTester:
+    def __init__(self, image):
+        self.original_img = image
+        self.key = get_random_bytes(16) # 128-bit AES
+    
+    def pad(self, data):
+        pad_len = 16 - (len(data) % 16)
+        return data + bytes([pad_len] * pad_len)
+
+    def unpad(self, data):
+        pad_len = data[-1]
+        return data[:-pad_len]
+
+    def run_benchmark(self, mode_name='ECB'):
+        # Flatten image
+        flat_data = self.original_img.tobytes()
+        
+        if mode_name == 'ECB':
+            cipher_enc = AES.new(self.key, AES.MODE_ECB)
+            cipher_dec = AES.new(self.key, AES.MODE_ECB)
+            data_to_enc = self.pad(flat_data)
+        elif mode_name == 'CBC':
+            iv = get_random_bytes(16)
+            cipher_enc = AES.new(self.key, AES.MODE_CBC, iv)
+            cipher_dec = AES.new(self.key, AES.MODE_CBC, iv)
+            data_to_enc = self.pad(flat_data)
+        elif mode_name == 'CTR':
+            ctr = Counter.new(128)
+            cipher_enc = AES.new(self.key, AES.MODE_CTR, counter=ctr)
+            # Re-create counter for decryption
+            ctr_dec = Counter.new(128)
+            cipher_dec = AES.new(self.key, AES.MODE_CTR, counter=ctr_dec)
+            data_to_enc = flat_data # No padding needed for CTR
+        else:
+            raise ValueError("Unsupported AES mode")
+
+        # Encrypt
+        start = time.perf_counter()
+        ciph_bytes = cipher_enc.encrypt(data_to_enc)
+        t_enc = (time.perf_counter() - start) * 1000.0
+
+        # Decrypt
+        start = time.perf_counter()
+        dec_bytes = cipher_dec.decrypt(ciph_bytes)
+        if mode_name != 'CTR':
+            dec_bytes = self.unpad(dec_bytes)
+        t_dec = (time.perf_counter() - start) * 1000.0
+
+        # Reconstruct image for metrics
+        ciph_img = np.frombuffer(ciph_bytes[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        
+        return ciph_img, t_enc, t_dec
+
+    def run_key_sensitivity_benchmark(self, mode_name='ECB'):
+        """Measures NPCR/UACI when changing one bit of the AES key."""
+        key_list = list(self.key)
+        key_list[0] ^= 0x01
+        key_mod = bytes(key_list)
+        
+        flat_data = self.original_img.tobytes()
+        iv = bytes.fromhex('2122232425262728292A2B2C2D2E2F30')
+        
+        if mode_name == 'ECB':
+            c1 = AES.new(self.key, AES.MODE_ECB).encrypt(self.pad(flat_data))
+            c2 = AES.new(key_mod, AES.MODE_ECB).encrypt(self.pad(flat_data))
+        elif mode_name == 'CBC':
+            c1 = AES.new(self.key, AES.MODE_CBC, iv).encrypt(self.pad(flat_data))
+            c2 = AES.new(key_mod, AES.MODE_CBC, iv).encrypt(self.pad(flat_data))
+        elif mode_name == 'CTR':
+            ctr1 = Counter.new(128); ctr2 = Counter.new(128)
+            c1 = AES.new(self.key, AES.MODE_CTR, counter=ctr1).encrypt(flat_data)
+            c2 = AES.new(key_mod, AES.MODE_CTR, counter=ctr2).encrypt(flat_data)
+        else:
+            return 0.0, 0.0
+            
+        img1 = np.frombuffer(c1[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        img2 = np.frombuffer(c2[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        
+        return CryptoMetrics.calculate_npcr_uaci(img1, img2)
 
 # --- 3. EXTENDED DASHBOARD PLOTTING ---
 def plot_dashboard(original, ciphered, decrypted, 
@@ -511,10 +603,9 @@ def generate_random_password(length=16, binary=False):
 # --- 4. MAIN ---
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("input")
-    parser.add_argument("exe")
+    parser.add_argument("input", help="Path to the input image")
+    parser.add_argument("--exe", help="Path to the executable", default="cuda/bin/cipher.out")
     parser.add_argument("--password", help="Use this password instead of random ones")
-
     # Optional algorithm parameters
     parser.add_argument("--rounds", type=int, default=3, help="Number of encryption rounds")
     parser.add_argument("--chaos", type=float, default=3.999, help="Chaotic map parameter")
@@ -650,11 +741,11 @@ def main():
                 'mae': CryptoMetrics.calculate_psnr_mae(tester.original_img, dec)[1]
             })
 
-            # For visual dashboard, keep the last results
             if r == args.runs - 1:
                 last_original = tester.original_img
                 last_ciph = ciph
                 last_dec = dec
+
 
         if not results:
             print("[!] No results collected.")
@@ -679,7 +770,7 @@ def main():
         m_np_cols, v_np_cols = get_stats('npcr_cols')
         m_ua_cols, v_ua_cols = get_stats('uaci_cols')
         m_np_seeds, v_np_seeds = get_stats('npcr_seeds')
-        m_ua_seeds, v_ua_seeds = get_stats('uaci_seeds')
+        m_uaci_seeds, v_uaci_seeds = get_stats('uaci_seeds')
         m_np_stego, v_np_stego = get_stats('npcr_stego')
         m_ua_stego, v_ua_stego = get_stats('uaci_stego')
 
@@ -701,6 +792,42 @@ def main():
         ent_orig = CryptoMetrics.calculate_global_entropy(tester_final.original_img)
         corr_orig = CryptoMetrics.calculate_correlations_full(tester_final.original_img)
         cont_orig, hom_orig, ene_orig = CryptoMetrics.calculate_glcm_properties(tester_final.original_img)
+
+        # --- AES COMPARISON ---
+        print("\n[>] Running AES Comparison Benchmarks (Software-Only)...")
+        aes_tester = AESCipherTester(tester_final.original_img)
+        aes_results = {}
+        
+        for mode in ['ECB', 'CBC', 'CTR']:
+            ciph_aes, t_enc_aes, t_dec_aes = aes_tester.run_benchmark(mode)
+            
+            ent_aes = CryptoMetrics.calculate_global_entropy(ciph_aes)
+            corr_aes = CryptoMetrics.calculate_correlations_full(ciph_aes)
+            npcr_aes, uaci_aes = CryptoMetrics.calculate_npcr_uaci(tester_final.original_img, ciph_aes)
+            cont_aes, hom_aes, _ = CryptoMetrics.calculate_glcm_properties(ciph_aes)
+            npcr_k, uaci_k = aes_tester.run_key_sensitivity_benchmark(mode)
+            
+            # Chi-Square for AES
+            hist_aes, _ = np.histogram(ciph_aes, bins=256, range=(0, 255))
+            chi_aes, p_aes = stats.chisquare(hist_aes)
+            
+            aes_results[mode] = {
+                'entropy': ent_aes,
+                'chi': chi_aes,
+                'p_val': p_aes,
+                'corr_h': corr_aes[0],
+                'corr_v': corr_aes[1],
+                'corr_d': corr_aes[2],
+                'contrast': cont_aes,
+                'homogeneity': hom_aes,
+                't_enc': t_enc_aes,
+                't_dec': t_dec_aes,
+                'npcr': npcr_aes,
+                'uaci': uaci_aes,
+                'npcr_k': npcr_k,
+                'uaci_k': uaci_k
+            }
+            print(f"   -> AES-{mode} (SW): Enc={t_enc_aes:.4f} ms, Entropy={ent_aes:.4f}, NPCR_K={npcr_k:.4f}%")
 
         # Performance (Using one final run for bench or using average of Runs)
         print("\n[+] Running Performance Scalability Test (1x Repeats)...")
@@ -726,27 +853,23 @@ def main():
         print(f" FINAL CRYPTOGRAPHIC REPORT (Across {args.runs} runs) ")
         print("="*85)
 
-        headers = ["Metric", "Original", "Mean", "Variance", "Ideal Ref"]
+        headers = ["Metric", "Original", "TFM (Mean/Var)", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "Ideal Ref"]
         data = [
-            ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f}",  f"{v_ent:.4f}", "~7.999"],
-            ["Chi-Square Test", "-",                   f"{m_chi:.4f} (P={m_pval:.4f})",  f"{v_chi:.4f} (P={v_pval:.4f})", "P > 0.05"],
-            ["Correlation (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f}",   f"{v_ch:.4f}",  "0.0"],
-            ["Correlation (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f}",   f"{v_cv:.4f}",  "0.0"],
-            ["Correlation (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f}",   f"{v_cd:.4f}",  "0.0"],
-            ["GLCM Contrast",   f"{cont_orig:.4f}",    f"{m_cont:.4f}", f"{v_cont:.4f}", "High"],
-            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f}",  f"{v_hom:.4f}", "~0"],
-            ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{v_npcr_p:.4f}", ">99.6%"],
-            ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{v_uaci_p:.4f}", "~33.4%"],
-            ["NPCR (Key: Cols)", "-",                  f"{m_np_cols:.4f}%", f"{v_np_cols:.4f}", ">99.6%"],
-            ["UACI (Key: Cols)", "-",                  f"{m_ua_cols:.4f}%", f"{v_ua_cols:.4f}", "~33.4%"],
-            ["NPCR (Key: Seeds)", "-",                 f"{m_np_seeds:.4f}%", f"{v_np_seeds:.4f}", ">99.6%"],
-            ["UACI (Key: Seeds)", "-",                 f"{m_ua_seeds:.4f}%", f"{v_ua_seeds:.4f}", "~33.4%"],
-            ["NPCR (Key: Stego)", "-",                 f"{m_np_stego:.4f}%", f"{v_np_stego:.4f}", ">99.6%"],
-            ["UACI (Key: Stego)", "-",                 f"{m_ua_stego:.4f}%", f"{v_ua_stego:.4f}", "~33.4%"],
-            ["Enc. Time (ms)",    "-",                 f"{m_t_enc:.4f}", f"{v_t_enc:.4f}", "Min."],
-            ["Dec. Time (ms)",    "-",                 f"{m_t_dec:.4f}", f"{v_t_dec:.4f}", "Min."],
-            ["PSNR (Dec. Quality)", "-",               f"{m_psnr:.4f} dB", f"{v_psnr:.4f}", ">50dB"],
-            ["MAE (Dec. Error)",   "-",                f"{m_mae:.4f}", f"{v_mae:.4f}", "0.0"],
+            ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f} / {v_ent:.6f}", f"{aes_results['ECB']['entropy']:.4f}", f"{aes_results['CBC']['entropy']:.4f}", f"{aes_results['CTR']['entropy']:.4f}", "~7.999"],
+            ["Chi-Square Test", "-",                   f"{m_chi:.2f} (P={m_pval:.4f})", f"{aes_results['ECB']['chi']:.2f}", f"{aes_results['CBC']['chi']:.2f}", f"{aes_results['CTR']['chi']:.2f}", "P > 0.05"],
+            ["Correlation (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f} / {v_ch:.6f}", f"{aes_results['ECB']['corr_h']:.4f}", f"{aes_results['CBC']['corr_h']:.4f}", f"{aes_results['CTR']['corr_h']:.4f}", "0.0"],
+            ["Correlation (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f} / {v_cv:.6f}", f"{aes_results['ECB']['corr_v']:.4f}", f"{aes_results['CBC']['corr_v']:.4f}", f"{aes_results['CTR']['corr_v']:.4f}", "0.0"],
+            ["Correlation (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f} / {v_cd:.6f}", f"{aes_results['ECB']['corr_d']:.4f}", f"{aes_results['CBC']['corr_d']:.4f}", f"{aes_results['CTR']['corr_d']:.4f}", "0.0"],
+            ["GLCM Contrast",   f"{cont_orig:.4f}",    f"{m_cont:.4f} / {v_cont:.6f}", f"{aes_results['ECB']['contrast']:.4f}", f"{aes_results['CBC']['contrast']:.4f}", f"{aes_results['CTR']['contrast']:.4f}", "High"],
+            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f} / {v_hom:.6f}", f"{aes_results['ECB']['homogeneity']:.4f}", f"{aes_results['CBC']['homogeneity']:.4f}", f"{aes_results['CTR']['homogeneity']:.4f}", "~0"],
+            ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{aes_results['ECB']['npcr']:.4f}%", f"{aes_results['CBC']['npcr']:.4f}%", f"{aes_results['CTR']['npcr']:.4f}%", ">99.6%"],
+            ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{aes_results['ECB']['uaci']:.4f}%", f"{aes_results['CBC']['uaci']:.4f}%", f"{aes_results['CTR']['uaci']:.4f}%", "~33.4%"],
+            ["NPCR (Key Sens.)",  "-",                 f"{m_np_seeds:.4f}%", f"{aes_results['ECB']['npcr_k']:.4f}%", f"{aes_results['CBC']['npcr_k']:.4f}%", f"{aes_results['CTR']['npcr_k']:.4f}%", ">99.6%"],
+            ["UACI (Key Sens.)",  "-",                 f"{m_uaci_seeds:.4f}%", f"{aes_results['ECB']['uaci_k']:.4f}%", f"{aes_results['CBC']['uaci_k']:.4f}%", f"{aes_results['CTR']['uaci_k']:.4f}%", "~33.4%"],
+            ["Enc. Time (ms)",  "-",                   f"{m_t_enc:.2f} (CUDA)", f"{aes_results['ECB']['t_enc']:.2f}", f"{aes_results['CBC']['t_enc']:.2f}", f"{aes_results['CTR']['t_enc']:.2f}", "Min."],
+            ["Dec. Time (ms)",  "-",                   f"{m_t_dec:.2f} (CUDA)", f"{aes_results['ECB']['t_dec']:.2f}", f"{aes_results['CBC']['t_dec']:.2f}", f"{aes_results['CTR']['t_dec']:.2f}", "Min."],
+            ["PSNR (Dec. Qual)", "-",                  f"{m_psnr:.2f} dB", "-", "-", "-", ">50"],
+            ["MAE (Dec. Error)", "-",                  f"{m_mae:.4f}", "-", "-", "-", "0.0"],
         ]
         print(tabulate(data, headers=headers, tablefmt="fancy_grid"))
 
