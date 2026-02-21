@@ -11,9 +11,9 @@
  * - Edge cases and various input configurations
  */
 
-#include <cuda_runtime.h>
 #include <cmath>
 #include <cstring>
+#include <cuda_runtime.h>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -83,8 +83,9 @@ protected:
     // Calculate required sizes based on calculate_password logic
     const size_t num_blocks_permutations = 1;
     int bytes_for_columns = dims.cols * 2;
-    // Rows are equal to cols due to padding, so we just use columns bytes or they are shared.
-    // The implementation in aux.cu only allocates bytes_for_columns.
+    // Rows are equal to cols due to padding, so we just use columns bytes or
+    // they are shared. The implementation in aux.cu only allocates
+    // bytes_for_columns.
     int bytes_for_blocks = num_blocks_permutations * 4;
     int numBlocks = (dims.cols + 256) / 256;
     int bytes_for_flow = (dims.cols + numBlocks) * 4;
@@ -97,8 +98,7 @@ protected:
 
     // Split into segments
     std::vector<std::vector<unsigned char>> segments(3);
-    segments[0].assign(password.begin(),
-                       password.begin() + bytes_for_columns);
+    segments[0].assign(password.begin(), password.begin() + bytes_for_columns);
     segments[1].assign(password.begin() + bytes_for_columns,
                        password.begin() + bytes_for_columns + bytes_for_blocks +
                            bytes_for_flow);
@@ -193,16 +193,14 @@ TEST_F(CellularAutomataTest, ConstructorRandomInitialization) {
 
 TEST_F(CellularAutomataTest, ConstructorFromVector) {
   std::vector<unsigned int> initial_state(8, 0x12345678);
-  ASSERT_NO_THROW(
-      ElementalCelularAutomata ca(initial_state, 256, 30));
+  ASSERT_NO_THROW(ElementalCelularAutomata ca(initial_state, 256, 30));
   ElementalCelularAutomata ca(initial_state, 256, 30);
   ASSERT_NE(ca.get_cuda_state(), nullptr);
 }
 
 TEST_F(CellularAutomataTest, ConstructorFromBytes) {
   std::vector<unsigned char> initial_state(32, 0xAB);
-  ASSERT_NO_THROW(
-      ElementalCelularAutomata ca(initial_state, 256, 30));
+  ASSERT_NO_THROW(ElementalCelularAutomata ca(initial_state, 256, 30));
   ElementalCelularAutomata ca(initial_state, 256, 30);
   ASSERT_NE(ca.get_cuda_state(), nullptr);
 }
@@ -311,11 +309,11 @@ class EncryptionTest : public CipherTest {};
 
 TEST_F(EncryptionTest, EncryptGrayscaleSmall) {
   cv::Mat img = create_test_image(64, 64, 1);
-  
+
   Image_dimensions dims;
   dims.rows = 64;
   dims.cols = 64;
-  
+
   std::vector<std::vector<unsigned char>> password =
       create_password_for_image(dims);
 
@@ -1027,16 +1025,226 @@ TEST_F(EdgeCaseTest, LargeImage1024x1024) {
   params.image_hash = 0;
 
   cv::Mat original = img.clone();
-  
+
   // Encrypt
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
 
   // Decrypt
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, false));
-  
+
   // Verify equality
   int diff = cv::countNonZero(original != img);
-  ASSERT_EQ(diff, 0) << "Decryption failed for 1024x1024 image. Diff pixels: " << diff;
+  if (diff > 0) {
+    for (int i = 0; i < size; i++) {
+      for (int j = 0; j < size; j++) {
+        if (original.at<unsigned char>(i, j) != img.at<unsigned char>(i, j)) {
+          std::cout << "First mismatch at (" << i << "," << j
+                    << "): " << (int)original.at<unsigned char>(i, j)
+                    << " != " << (int)img.at<unsigned char>(i, j) << std::endl;
+          goto end_diff;
+        }
+      }
+    }
+  }
+end_diff:
+  ASSERT_EQ(diff, 0) << "Decryption failed for 1024x1024 image. Diff pixels: "
+                     << diff;
+}
+
+// ============================================================================
+// TEST GROUP 12: Fused Kernel Mathematical Correctness
+// ============================================================================
+
+class FusedKernelTest : public CipherTest {
+protected:
+  // Helper to get identity permutation on GPU
+  unsigned int *get_identity_gpu(size_t n) {
+    std::vector<unsigned int> h_id(n);
+    for (size_t i = 0; i < n; ++i)
+      h_id[i] = i;
+    unsigned int *d_id;
+    cudaMalloc(&d_id, n * sizeof(unsigned int));
+    cudaMemcpy(d_id, h_id.data(), n * sizeof(unsigned int),
+               cudaMemcpyHostToDevice);
+    return d_id;
+  }
+};
+
+TEST_F(FusedKernelTest, IsolatedRowPermutation) {
+  int size = 64;
+  cv::Mat original = create_test_image(size, size, 1);
+  cv::Mat result_img = original.clone();
+
+  unsigned char *d_in, *d_out;
+  cudaMalloc(&d_in, size * size);
+  cudaMalloc(&d_out, size * size);
+  cudaMemcpy(d_in, original.data, size * size, cudaMemcpyHostToDevice);
+
+  // Identity for cols and blocks
+  unsigned int *d_id = get_identity_gpu(size);
+  unsigned int *d_id_blocks = get_identity_gpu(8 * 8);
+
+  // Simple reverse permutation for rows
+  std::vector<unsigned int> h_rows(size);
+  for (int i = 0; i < size; ++i)
+    h_rows[size - 1 - i] = i; // Map 0->63, 1->62... (Gather logic: out[y] =
+                              // in[row[y]]) Wait, gather logic is in[perm[y]].
+                              // If h_rows[0] = 63, then out[0] = in[63].
+  std::vector<unsigned int> h_perm_rows(size);
+  for (int i = 0; i < size; ++i)
+    h_perm_rows[i] = size - 1 - i;
+
+  unsigned int *d_perm_rows;
+  cudaMalloc(&d_perm_rows, size * sizeof(unsigned int));
+  cudaMemcpy(d_perm_rows, h_perm_rows.data(), size * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+
+  Image_dimensions dims = {(size_t)size, (size_t)size};
+  fused_permutation_xor(d_in, d_out, nullptr, d_perm_rows, d_id, d_id_blocks,
+                        d_id_blocks, dims, 8, false, false);
+  cudaDeviceSynchronize();
+
+  cudaMemcpy(result_img.data, d_out, size * size, cudaMemcpyDeviceToHost);
+
+  // Verify: row 0 of result should be row 63 of original
+  for (int y = 0; y < size; ++y) {
+    for (int x = 0; x < size; ++x) {
+      ASSERT_EQ(result_img.at<unsigned char>(y, x),
+                original.at<unsigned char>(size - 1 - y, x));
+    }
+  }
+
+  cudaFree(d_in);
+  cudaFree(d_out);
+  cudaFree(d_id);
+  cudaFree(d_id_blocks);
+  cudaFree(d_perm_rows);
+}
+
+TEST_F(FusedKernelTest, IsolatedColPermutation) {
+  int size = 64;
+  cv::Mat original = create_test_image(size, size, 1);
+  cv::Mat result_img = original.clone();
+
+  unsigned char *d_in, *d_out;
+  cudaMalloc(&d_in, size * size);
+  cudaMalloc(&d_out, size * size);
+  cudaMemcpy(d_in, original.data, size * size, cudaMemcpyHostToDevice);
+
+  unsigned int *d_id = get_identity_gpu(size);
+  unsigned int *d_id_blocks = get_identity_gpu(8 * 8);
+
+  std::vector<unsigned int> h_perm_cols(size);
+  for (int i = 0; i < size; ++i)
+    h_perm_cols[i] = (i + 1) % size; // out[0] = in[1], out[1] = in[2]...
+
+  unsigned int *d_perm_cols;
+  cudaMalloc(&d_perm_cols, size * sizeof(unsigned int));
+  cudaMemcpy(d_perm_cols, h_perm_cols.data(), size * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+
+  Image_dimensions dims = {(size_t)size, (size_t)size};
+  fused_permutation_xor(d_in, d_out, nullptr, d_id, d_perm_cols, d_id_blocks,
+                        d_id_blocks, dims, 8, false, false);
+  cudaDeviceSynchronize();
+
+  cudaMemcpy(result_img.data, d_out, size * size, cudaMemcpyDeviceToHost);
+
+  for (int y = 0; y < size; ++y) {
+    for (int x = 0; x < size; ++x) {
+      ASSERT_EQ(result_img.at<unsigned char>(y, x),
+                original.at<unsigned char>(y, (x + 1) % size));
+    }
+  }
+
+  cudaFree(d_in);
+  cudaFree(d_out);
+  cudaFree(d_id);
+  cudaFree(d_id_blocks);
+  cudaFree(d_perm_cols);
+}
+
+TEST_F(FusedKernelTest, InvertibilityFused) {
+  int size = 128;
+  cv::Mat original = create_test_image(size, size, 1);
+  cv::Mat img = original.clone();
+
+  unsigned char *d_in, *d_out, *d_flow;
+  cudaMalloc(&d_in, size * size);
+  cudaMalloc(&d_out, size * size);
+  cudaMalloc(&d_flow, size * size);
+
+  std::vector<unsigned char> h_flow = create_random_bytes(size * size);
+  cudaMemcpy(d_flow, h_flow.data(), size * size, cudaMemcpyHostToDevice);
+  cudaMemcpy(d_in, original.data, size * size, cudaMemcpyHostToDevice);
+
+  // Random permutations
+  std::vector<unsigned int> h_rows(size), h_cols(size), h_blocks(64);
+  std::iota(h_rows.begin(), h_rows.end(), 0);
+  std::iota(h_cols.begin(), h_cols.end(), 0);
+  std::iota(h_blocks.begin(), h_blocks.end(), 0);
+  std::shuffle(h_rows.begin(), h_rows.end(), std::mt19937{42});
+  std::shuffle(h_cols.begin(), h_cols.end(), std::mt19937{43});
+  std::shuffle(h_blocks.begin(), h_blocks.end(), std::mt19937{44});
+
+  unsigned int *d_rows, *d_cols, *d_blocks, *d_blocks_inv;
+  cudaMalloc(&d_rows, size * sizeof(unsigned int));
+  cudaMalloc(&d_cols, size * sizeof(unsigned int));
+  cudaMalloc(&d_blocks, 64 * sizeof(unsigned int));
+
+  cudaMemcpy(d_rows, h_rows.data(), size * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+  cudaMemcpy(d_cols, h_cols.data(), size * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+  cudaMemcpy(d_blocks, h_blocks.data(), 64 * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+
+  inverse_permutations(d_blocks, &d_blocks_inv, 64);
+
+  std::vector<unsigned int> h_rows_inv(size), h_cols_inv(size);
+  for (int i = 0; i < size; ++i) {
+    h_rows_inv[h_rows[i]] = i;
+    h_cols_inv[h_cols[i]] = i;
+  }
+
+  unsigned int *d_rows_inv, *d_cols_inv;
+  cudaMalloc(&d_rows_inv, size * sizeof(unsigned int));
+  cudaMalloc(&d_cols_inv, size * sizeof(unsigned int));
+  cudaMemcpy(d_rows_inv, h_rows_inv.data(), size * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+  cudaMemcpy(d_cols_inv, h_cols_inv.data(), size * sizeof(unsigned int),
+             cudaMemcpyHostToDevice);
+
+  Image_dimensions dims = {(size_t)size, (size_t)size};
+
+  // 1. Forward (Encryption Order)
+  fused_permutation_xor(d_in, d_out, d_flow, d_rows, d_cols, d_blocks,
+                        d_blocks_inv, dims, 8, true, false);
+  cudaDeviceSynchronize();
+
+  // 2. Inverse (Decryption Order)
+  // Inverse logic: I_orig = (I_out ^ Flow) @ Perm_inv
+  // First XOR back using identically symmetric inverse logic: I_orig = I_out ^
+  // Perm_fwd(Flow)
+  fused_permutation_xor(d_out, d_in, d_flow, d_rows, d_cols, d_blocks,
+                        d_blocks_inv, dims, 8, true, false);
+  cudaDeviceSynchronize();
+
+  cv::Mat final_img = original.clone();
+  cudaMemcpy(final_img.data, d_in, size * size, cudaMemcpyDeviceToHost);
+
+  int diff = cv::countNonZero(original != final_img);
+  ASSERT_EQ(diff, 0) << "Fused kernel should be reversible";
+
+  cudaFree(d_in);
+  cudaFree(d_out);
+  cudaFree(d_flow);
+  cudaFree(d_rows);
+  cudaFree(d_cols);
+  cudaFree(d_blocks);
+  cudaFree(d_blocks_inv);
+  cudaFree(d_rows_inv);
+  cudaFree(d_cols_inv);
 }
 
 // ============================================================================
@@ -1046,8 +1254,10 @@ TEST_F(EdgeCaseTest, LargeImage1024x1024) {
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
 
-  std::cout << "=== Comprehensive Unit Test Suite for Image Cipher ===" << std::endl;
-  std::cout << "Running tests for encryption functions and kernels..." << std::endl;
+  std::cout << "=== Comprehensive Unit Test Suite for Image Cipher ==="
+            << std::endl;
+  std::cout << "Running tests for encryption functions and kernels..."
+            << std::endl;
   std::cout << std::endl;
 
   return RUN_ALL_TESTS();

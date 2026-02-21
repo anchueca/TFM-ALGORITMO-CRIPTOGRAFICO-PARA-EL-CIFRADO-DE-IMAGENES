@@ -89,7 +89,8 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   int bytes_for_blocks = num_blocks_permutations * 4;
 
   // IMPORTANT: bytes_for_flow must match the allocation in
-  // generate_flow_stream_parallel numBlocks is (cols + 254) / 255 (255 effective threads)
+  // generate_flow_stream_parallel numBlocks is (cols + 254) / 255 (255
+  // effective threads)
   int numBlocks = (img_dimensions.cols + MAX_THREADS - 2) / MAX_THREADS - 1;
   int bytes_for_flow = (img_dimensions.cols + numBlocks) * 4;
 
@@ -254,12 +255,6 @@ void embed_message_caos(cv::Mat &image, unsigned short image_hash,
   }
   embed_message_caos_with_exif(image, msg_bits, key_bits, output_path);
 }
-
-#include <cmath>
-#include <opencv2/core.hpp>   // Basic structures
-#include <opencv2/imgproc.hpp> // Image processing
-#include <stdexcept>
-
 cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
                          int original_channels) {
   if (input.cols > 65535 || input.rows > 65535) {
@@ -319,12 +314,15 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
   uchar is_color_flag = dataPtr[lastByteIdx - 1];
   int original_channels = (is_color_flag == 1) ? 3 : 1;
 
-  // Validation: Check for corrupted metadata (common sign of decryption failure)
+  // Validation: Check for corrupted metadata (common sign of decryption
+  // failure)
   size_t required_pixels = (size_t)W * H;
-  if (required_pixels == 0 || required_pixels > squared.total() || W == 0 || H == 0) {
-      throw std::runtime_error("Decryption failed: Recovered image dimensions (" +
-                               std::to_string(W) + "x" + std::to_string(H) +
-                               ") are invalid or exceed buffer size. Metadata might be corrupted.");
+  if (required_pixels == 0 || required_pixels > squared.total() || W == 0 ||
+      H == 0) {
+    throw std::runtime_error(
+        "Decryption failed: Recovered image dimensions (" + std::to_string(W) +
+        "x" + std::to_string(H) +
+        ") are invalid or exceed buffer size. Metadata might be corrupted.");
   }
 
   if (out_original_channels != nullptr) {

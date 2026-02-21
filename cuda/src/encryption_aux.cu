@@ -84,23 +84,6 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
   return d_indices;
 }
 
-__host__ void block_phase_permutation(unsigned char *d_image,
-                                      unsigned char *d_image_out,
-                                      unsigned int *permutation,
-                                      unsigned int *permutation_inverse,
-                                      Image_dimensions img_dimensions,
-                                      size_t block_size) {
-  dim3 threadsPerBlock(block_size, block_size);
-  dim3 numBlocks((img_dimensions.cols + block_size - 1) / block_size,
-                 (img_dimensions.rows + block_size - 1) / block_size);
-
-  size_t sharedMemBytes = block_size * block_size * sizeof(unsigned int);
-
-  permute_blocks_kernel_simple<<<numBlocks, threadsPerBlock, sharedMemBytes>>>(
-      d_image, d_image_out, permutation, permutation_inverse, block_size,
-      img_dimensions);
-}
-
 __host__ void generate_permutation_block(D_pointers &d_pointers,
                                          Image_dimensions img_dimensions,
                                          EncryptionParams params) {
@@ -118,75 +101,12 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
                        &d_pointers.d_permutation_blocks_inverse, block_size);
 }
 
-__host__ void rows_and_columns_permutation(unsigned char *d_image,
-                                           unsigned char *d_image_out,
-                                           unsigned int *d_permutations,
-                                           unsigned int *d_permutations_inverse,
-                                           Image_dimensions img_dimensions,
-                                           bool inverse) {
-  // Define standard block size for 2D images
-  dim3 threadsPerBlock(16, 16);
-  dim3 numBlocks(
-      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-  if (!inverse) {
-    // --- ENCRYPTION: Rows -> Cols ---
-
-    // Step 1: Permute Rows (Source -> Temp)
-    permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, d_permutations, img_dimensions);
-
-    checkCudaError(cudaDeviceSynchronize(), "Row permutation kernel failed");
-
-    // Step 2: Permute Columns (Temp -> Source)
-    permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image_out, d_image, d_permutations_inverse, img_dimensions);
-
-    checkCudaError(cudaDeviceSynchronize(), "Col permutation kernel failed");
-
-  } else {
-    // --- DECRYPTION: Inverse Cols -> Inverse Rows ---
-    // Order must be strictly reversed relative to encryption
-
-    // Step 1: Inverse Permute Columns (Source -> Temp)
-    permute_columns_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image, d_image_out, d_permutations_inverse, img_dimensions);
-
-    checkCudaError(cudaDeviceSynchronize(),
-                   "Col permutation (inverse) kernel failed");
-
-    // Step 2: Inverse Permute Rows (Temp -> Source)
-    permute_rows_kernel<<<numBlocks, threadsPerBlock>>>(
-        d_image_out, d_image, d_permutations, img_dimensions);
-
-    checkCudaError(cudaDeviceSynchronize(),
-                   "Row permutation (inverse) kernel failed");
-  }
-}
-
-__host__ void flow_encrypt(D_pointers &d_pointers,
-                           Image_dimensions img_dimensions) {
-
-  dim3 threadsPerBlock(16, 16);
-
-  dim3 numBlocks(
-      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
-      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
-  image_xor<<<numBlocks, threadsPerBlock>>>(d_pointers.d_flow,
-                                            d_pointers.d_image, img_dimensions);
-
-  checkCudaError(cudaDeviceSynchronize(), "Flow encryption execution error");
-}
-
 __host__ void inverse_permutations(unsigned int *d_permutations,
                                    unsigned int **d_permutations_inverse,
                                    size_t block_length) {
 
   // Correctly calculate the total memory needed in bytes.
   size_t total_bytes = block_length * sizeof(unsigned int);
-  cudaError_t err;
 
   // Allocate memory for the output array on the device.
   checkCudaError(cudaMalloc(d_permutations_inverse, total_bytes),
@@ -228,6 +148,28 @@ __host__ void stack_channels_gpu(unsigned char *d_planar,
   checkCudaError(
       cudaDeviceSynchronize(),
       "Error during cudaDeviceSynchronize in interleave_channels_kernel");
+}
+
+__host__ void
+fused_permutation_xor(unsigned char *d_image_in, unsigned char *d_image_out,
+                      unsigned char *d_flow, unsigned int *d_permutation,
+                      unsigned int *d_permutation_inverse,
+                      unsigned int *d_blocks, unsigned int *d_blocks_inv,
+                      Image_dimensions img_dimensions, size_t block_size,
+                      bool use_xor, bool inverse) {
+
+  dim3 threadsPerBlock(32, 32);
+  dim3 numBlocks(
+      (img_dimensions.cols + threadsPerBlock.x - 1) / threadsPerBlock.x,
+      (img_dimensions.rows + threadsPerBlock.y - 1) / threadsPerBlock.y);
+
+  fused_permutation_xor_kernel<<<numBlocks, threadsPerBlock>>>(
+      d_image_in, d_image_out, d_flow, d_permutation, d_permutation_inverse,
+      d_blocks, d_blocks_inv, block_size, img_dimensions.rows, use_xor,
+      inverse);
+
+  checkCudaError(cudaDeviceSynchronize(),
+                 "Fused permutation XOR kernel failed");
 }
 
 __host__ void

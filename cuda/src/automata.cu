@@ -74,8 +74,7 @@ ElementalCelularAutomata::ElementalCelularAutomata(
   checkCudaError(cudaMemcpy(this->d_state[0], initial_state.data(),
                             size_in_bytes, cudaMemcpyHostToDevice),
                  "ECA cudaMemcpy failed");
-  checkCudaError(cudaDeviceSynchronize(),
-                 "ECA cudaDeviceSynchronize failed");
+  checkCudaError(cudaDeviceSynchronize(), "ECA cudaDeviceSynchronize failed");
 }
 
 // Construct from a pre-packed byte vector (see header for API details)
@@ -176,8 +175,7 @@ void ElementalCelularAutomata::iterate_block_level(int num_steps) {
   evolve_block_level<<<num_blocks, threads_per_block, shared_mem_size>>>(
       this->d_state[0], this->d_state[1], this->rule, num_steps);
 
-  checkCudaError(cudaDeviceSynchronize(),
-                 "ECA cudaDeviceSynchronize failed");
+  checkCudaError(cudaDeviceSynchronize(), "ECA cudaDeviceSynchronize failed");
 }
 
 // Print the automaton state (implementation; see header for docs)

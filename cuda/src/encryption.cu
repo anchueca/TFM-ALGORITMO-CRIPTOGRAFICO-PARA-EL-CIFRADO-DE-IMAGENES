@@ -116,7 +116,9 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   const size_t img_size = image.total() * image.elemSize();
 
   // Image will be unstacked and stacked on CPU, transfer directly
-  checkCudaError(cudaMemcpy(image.data, d_pointers.d_image, img_size, cudaMemcpyDeviceToHost), "Error cudaMemcpy for image");
+  checkCudaError(cudaMemcpy(image.data, d_pointers.d_image, img_size,
+                            cudaMemcpyDeviceToHost),
+                 "Error cudaMemcpy for image");
 
   cudaFree(d_pointers.d_permutation_vector);
   cudaFree(d_pointers.d_permutation_vector_inverse);
@@ -127,6 +129,10 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   cudaFree(d_pointers.d_image);
   cudaFree(d_pointers.d_image_out);
   cudaFree(d_pointers.d_automata_state);
+  if (d_pointers.d_image_automata_state != nullptr)
+    cudaFree(d_pointers.d_image_automata_state);
+  if (d_pointers.d_chaotic_values_for_permutation != nullptr)
+    cudaFree(d_pointers.d_chaotic_values_for_permutation);
 }
 
 // =================================================================================
@@ -199,20 +205,30 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
   auto transition_start = std::chrono::high_resolution_clock::now();
   generate_flow_stream_parallel(d_pointers, img_dimensions, params);
   auto transition_end = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> transition_time = transition_end - transition_start;
-  if (verbose)      std::cout << "\tInitial stream generated in " << transition_time.count() * 1000.0f << " ms" << std::endl;
+  std::chrono::duration<double> transition_time =
+      transition_end - transition_start;
+  if (verbose)
+    std::cout << "\tInitial stream generated in "
+              << transition_time.count() * 1000.0f << " ms" << std::endl;
 
   transition_start = std::chrono::high_resolution_clock::now();
   // Generate block permutations
   generate_permutation_block(d_pointers, img_dimensions, params);
   transition_end = std::chrono::high_resolution_clock::now();
   transition_time = transition_end - transition_start;
-  if (verbose)      std::cout << "\tBlock permutations generated in " << transition_time.count() * 1000.0f << " ms" << std::endl;
+  if (verbose)
+    std::cout << "\tBlock permutations generated in "
+              << transition_time.count() * 1000.0f << " ms" << std::endl;
 
   // === PHASE 1: Initial Confusion (permutation of image) ===
   if (verbose)
     std::cout << " > Performing Initial Image Permutation..." << std::endl;
-  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+  fused_permutation_xor(
+      d_pointers.d_image, d_pointers.d_image_out, nullptr,
+      d_pointers.d_permutation_vector, d_pointers.d_permutation_vector_inverse,
+      d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inverse,
+      img_dimensions, block_size, false, false);
+  std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
   // === PHASE 2: Confusion-Diffusion Rounds (permutation of keystream and
   // diffusion (XOR)) ===
@@ -226,22 +242,29 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
     generate_flow_stream_parallel(d_pointers, img_dimensions, params);
 
     auto keystream_end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> keystream_time = keystream_end - keystream_start;
-    if (verbose)      std::cout << "\t\t Keystream generated in " << keystream_time.count() * 1000.0f << " ms" << std::endl;
+    std::chrono::duration<double> keystream_time =
+        keystream_end - keystream_start;
+    if (verbose)
+      std::cout << "\t\t Keystream generated in "
+                << keystream_time.count() * 1000.0f << " ms" << std::endl;
 
     keystream_start = std::chrono::high_resolution_clock::now();
-    // Step B: Permute the keystream
-    permutation_encryption_process(d_pointers, img_dimensions, block_size);
-    keystream_end = std::chrono::high_resolution_clock::now();
-    keystream_time = keystream_end - keystream_start;
-    if (verbose)      std::cout << "\t\t Keystream permuted in " << keystream_time.count() * 1000.0f << " ms" << std::endl;
+    // Step B & C: Permute the keystream and apply Diffusion (XOR)
+    // We do one iteration of permutation normally on d_flow,
+    // and the second iteration is fused with the XOR operation on d_image.
+    fused_permutation_xor(d_pointers.d_image, d_pointers.d_image_out,
+                          d_pointers.d_flow, d_pointers.d_permutation_vector,
+                          d_pointers.d_permutation_vector_inverse,
+                          d_pointers.d_permutation_blocks,
+                          d_pointers.d_permutation_blocks_inverse,
+                          img_dimensions, block_size, true, false);
+    std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
-    keystream_start = std::chrono::high_resolution_clock::now();
-    // Step C: Diffusion - XOR image with permuted keystream
-    flow_encrypt(d_pointers, img_dimensions);
     keystream_end = std::chrono::high_resolution_clock::now();
     keystream_time = keystream_end - keystream_start;
-    if (verbose)      std::cout << "\t\t Diffusion (XOR) completed in " << keystream_time.count() * 1000.0f << " ms" << std::endl;
+    if (verbose)
+      std::cout << "\t\t Keystream permutation + Diffusion (XOR) completed in "
+                << keystream_time.count() * 1000.0f << " ms" << std::endl;
 
     auto round_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> round_time = round_end - round_start;
@@ -254,7 +277,12 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
 
   // === PHASE 3: Final Confusion (the same as the initial confusion) ===
 
-  image_permutation_encryption_process(d_pointers, img_dimensions, block_size);
+  fused_permutation_xor(
+      d_pointers.d_image, d_pointers.d_image_out, nullptr,
+      d_pointers.d_permutation_vector, d_pointers.d_permutation_vector_inverse,
+      d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inverse,
+      img_dimensions, block_size, false, false);
+  std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time = end - start;
@@ -287,87 +315,34 @@ void unencryption_process(D_pointers &d_pointers,
   generate_permutation_block(d_pointers, img_dimensions, params);
 
   // === PHASE 1: Reverse Final Confusion ===
-  image_permutation_unencryption_process(d_pointers, img_dimensions,
-                                         block_size);
+  fused_permutation_xor(
+      d_pointers.d_image, d_pointers.d_image_out, nullptr,
+      d_pointers.d_permutation_vector, d_pointers.d_permutation_vector_inverse,
+      d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inverse,
+      img_dimensions, block_size, false, true);
+  std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
   // === PHASE 2: Reverse Diffusion-Confusion Rounds ===
   for (size_t round = 0; round < params.rounds; round++) {
     // Step A: Regenerate exact same chaotic keystream
     generate_flow_stream_parallel(d_pointers, img_dimensions, params);
 
-    // Step B: Permute keystream (same as encryption)
-    permutation_encryption_process(d_pointers, img_dimensions, block_size);
-
-    // Step C: Reverse diffusion via XOR (XOR is its own inverse)
-    flow_encrypt(d_pointers, img_dimensions);
+    // Step B & C: Permute keystream and apply Fusion (XOR)
+    fused_permutation_xor(d_pointers.d_image, d_pointers.d_image_out,
+                          d_pointers.d_flow, d_pointers.d_permutation_vector,
+                          d_pointers.d_permutation_vector_inverse,
+                          d_pointers.d_permutation_blocks,
+                          d_pointers.d_permutation_blocks_inverse,
+                          img_dimensions, block_size, true, false);
+    std::swap(d_pointers.d_image, d_pointers.d_image_out);
   }
 
   // === PHASE 3: Reverse Initial Confusion ===
-  image_permutation_unencryption_process(d_pointers, img_dimensions,
-                                         block_size);
-}
 
-// =================================================================================
-//                            PERMUTATION STAGES
-// =================================================================================
-
-void image_permutation_encryption_process(D_pointers &d_pointers,
-                                          Image_dimensions img_dimensions,
-                                          size_t block_size) {
-  constexpr size_t NUM_ITERATIONS = 2;
-  for (size_t iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
-    // 1. Rows and Columns (P for Rows, P_inv for Cols)
-    rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_vector,
-                                 d_pointers.d_permutation_vector_inverse,
-                                 img_dimensions, false);
-    // 2. Blocks
-    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks,
-                            d_pointers.d_permutation_blocks_inverse,
-                            img_dimensions, block_size);
-    checkCudaError(cudaDeviceSynchronize(), "Error after Block permutation");
-
-    std::swap(d_pointers.d_image, d_pointers.d_image_out);
-  }
-}
-
-void image_permutation_unencryption_process(D_pointers &d_pointers,
-                                            Image_dimensions img_dimensions,
-                                            size_t block_size) {
-  constexpr size_t NUM_ITERATIONS = 2;
-  for (size_t iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
-    // 1. Inverse Blocks
-    block_phase_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks_inverse,
-                            d_pointers.d_permutation_blocks, img_dimensions,
-                            block_size);
-    std::swap(d_pointers.d_image, d_pointers.d_image_out);
-
-    // 2. Inverse Rows and Columns (Rows use P_inv, Cols use P)
-    rows_and_columns_permutation(d_pointers.d_image, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_vector_inverse,
-                                 d_pointers.d_permutation_vector,
-                                 img_dimensions, true);
-  }
-}
-
-void permutation_encryption_process(D_pointers &d_pointers,
-                                    Image_dimensions img_dimensions,
-                                    size_t block_size) {
-  constexpr size_t NUM_ITERATIONS = 2;
-  // Operation on d_flow, using d_image_out as temp buffer
-  for (size_t iteration = 0; iteration < NUM_ITERATIONS; iteration++) {
-    // Rows and Columns on Flow
-    rows_and_columns_permutation(d_pointers.d_flow, d_pointers.d_image_out,
-                                 d_pointers.d_permutation_vector,
-                                 d_pointers.d_permutation_vector_inverse,
-                                 img_dimensions, false);
-    // Blocks on Flow
-    block_phase_permutation(d_pointers.d_flow, d_pointers.d_image_out,
-                            d_pointers.d_permutation_blocks,
-                            d_pointers.d_permutation_blocks_inverse,
-                            img_dimensions, block_size);
-    std::swap(d_pointers.d_flow, d_pointers.d_image_out);
-  }
+  fused_permutation_xor(
+      d_pointers.d_image, d_pointers.d_image_out, nullptr,
+      d_pointers.d_permutation_vector, d_pointers.d_permutation_vector_inverse,
+      d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inverse,
+      img_dimensions, block_size, false, true);
+  std::swap(d_pointers.d_image, d_pointers.d_image_out);
 }

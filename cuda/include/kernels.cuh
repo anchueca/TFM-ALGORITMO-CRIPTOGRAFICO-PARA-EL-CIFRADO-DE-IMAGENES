@@ -8,6 +8,7 @@
 #include <cfloat>
 #include <climits>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <vector>
@@ -88,79 +89,18 @@ __global__ void keystream_generation_parallel(
  */
 __global__ void convert_bits_to_real_kernel(Real *d_seeds, size_t num_elements);
 
-/**
- * @brief Performs intra-block pixel permutation using a checkerboard pattern
- * selection.
- *
- * This kernel divides the image into square blocks of size `block_size`. For
- * each pixel, it calculates its target position within the block based on a
- * pre-computed permutation table. To increase cryptographic
- * confusion/diffusion, the specific permutation table used alternates between a
- * forward `permutation` and an `permutation_inverse` based on the block's grid
- * coordinates (a checkerboard/parity pattern).
- *
- * @note This kernel implements a "Gather" approach: threads map to the
- * *destination* (x,y) and calculate where to read the *source* pixel from. This
- * ensures the write operation to global memory is coalesced.
- *
- * @param image             Pointer to the source image data (device memory).
- * @param image_out         Pointer to the destination image data (device
- * memory).
- * @param permutation       Pointer to the primary permutation array (flat array
- * of size block_size^2).
- * @param permutation_inverse Pointer to the secondary/inverse permutation array
- * (flat array of size block_size^2).
- * @param block_size        The width/height of the square blocks (e.g., 16,
- * 32).
- * @param img_dimensions    Struct containing the image dimensions (.rows and
- * .cols).
- */
-__global__ void permute_blocks_kernel_simple(
-    const unsigned char *__restrict__ image,
+__global__ void fused_permutation_xor_kernel(
+    const unsigned char *__restrict__ image_in,
     unsigned char *__restrict__ image_out,
+    const unsigned char *__restrict__ flow,
     const unsigned int *__restrict__ permutation,
-    const unsigned int *__restrict__ permutation_inverse, size_t block_size,
-    Image_dimensions img_dimensions);
-
-/**
- * @brief Kernel that permutes columns of the image according to a permutation.
- *
- * @param image Input image buffer on device.
- * @param image_out Output image buffer on device.
- * @param permutation Column permutation array on device.
- * @param cols Number of columns.
- * @param rows Number of rows.
- */
-__global__ void permute_columns_kernel(unsigned char *image,
-                                       unsigned char *image_out,
-                                       unsigned int *permutation,
-                                       Image_dimensions img_dimensions);
-
-/**
- * @brief Kernel that permutes rows of the image according to a permutation.
- *
- * @param image Input image buffer on device.
- * @param image_out Output image buffer on device.
- * @param permutation Row permutation array on device.
- * @param cols Number of columns.
- * @param rows Number of rows.
- */
-__global__ void permute_rows_kernel(unsigned char *image,
-                                    unsigned char *image_out,
-                                    unsigned int *permutation,
-                                    Image_dimensions img_dimensions);
+    const unsigned int *__restrict__ permutation_inverse,
+    const unsigned int *__restrict__ perm_blocks,
+    const unsigned int *__restrict__ perm_blocks_inv, size_t block_size,
+    const size_t img_dim, bool use_xor, bool inverse_order);
 
 /**
  * @brief Kernel to generate chaotic values from cellular automata states.
- *
- * The kernel consumes pointers to automata states and reduces them to
- * short chaotic values which are stored in d_chaotic_values. Indices are
- * prepared for subsequent sorting.
- *
- * @param automata_states Array of device pointers to automata packed states.
- * @param d_chaotic_values Output array of reduced chaotic values on device.
- * @param indices Output indices array associated with chaotic values.
- * @param block_length Length of each block used for reduction.
  */
 __global__ void generate_automata_chaotic(const unsigned int *d_automata_state,
                                           unsigned short *d_chaotic_values,
@@ -169,8 +109,7 @@ __global__ void generate_automata_chaotic(const unsigned int *d_automata_state,
 
 /**
  * @brief De-interleaves a 3-channel image (BGRBGR...) into a planar
- * horizontally stacked layout (B...G...R...). Mapping: Input(x,y, c) ->
- * Output(x + c*width, y)
+ * horizontally stacked layout.
  */
 __global__ void deinterleave_channels_kernel(const unsigned char *input,
                                              unsigned char *output, int width,
@@ -178,8 +117,7 @@ __global__ void deinterleave_channels_kernel(const unsigned char *input,
 
 /**
  * @brief Interleaves a planar horizontally stacked image (B...G...R...) into a
- * 3-channel layout (BGRBGR...). Mapping: Input(x + c*width, y) -> Output(x,y,
- * c)
+ * 3-channel layout.
  */
 __global__ void interleave_channels_kernel(const unsigned char *input,
                                            unsigned char *output, int width,

@@ -1,5 +1,6 @@
 #ifndef CUDA_PERMUTATION_CUH
 #define CUDA_PERMUTATION_CUH
+#include <cstdint>
 
 #include <algorithm>
 #include <chrono>

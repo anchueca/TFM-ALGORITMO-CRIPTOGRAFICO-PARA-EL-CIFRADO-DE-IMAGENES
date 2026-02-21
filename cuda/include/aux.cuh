@@ -1,6 +1,8 @@
 #ifndef AUX_CUH
 #define AUX_CUH
+#include <cstdint>
 
+#include <cstdint> // Moved here
 #include <istream>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -8,13 +10,15 @@
 #include <openssl/evp.h>
 #include <vector>
 
+#include <cmath>
+#include <stdexcept>
+
 #include <iostream>
 
 #include "encryption_aux.cuh"
 #include "kernels_aux.cuh"
-#include "structs.cuh"
 #include "steganography.hpp"
-
+#include "structs.cuh"
 
 /**
  * @brief Generates a SHA-256 hash of the input string.

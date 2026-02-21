@@ -1,65 +1,20 @@
 #ifndef ENCRYPTION_AUX_CUH
 #define ENCRYPTION_AUX_CUH
-
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdio>
 #include <iostream>
 #include <vector>
-#include <cstdio>
+
+#include <cstdint>
 
 #include "CudaPermutation.cuh"
 #include "automata.cuh"
 #include "kernels.cuh"
 #include "structs.cuh"
 
-
 #define MAX_THREADS 64
-
-/**
- * @brief Applies a simplified block permutation to the image.
- *
- * This function applies a permutation to each block of the image. It uses a
- * checkerboard pattern where some blocks use the forward permutation and others
- * use the inverse permutation to increase diffusion.
- *
- * @param d_image Input device image buffer.
- * @param d_image_out Output device image buffer.
- * @param permutation Device pointer to the forward permutation array.
- * @param permutation_inverse Device pointer to the inverse permutation array.
- * @param img_dimensions Struct containing the image dimensions.
- * @param block_size The size of the blocks used for permutation.
- */
-__host__ void block_phase_permutation(unsigned char *d_image,
-                                      unsigned char *d_image_out,
-                                      unsigned int *permutation,
-                                      unsigned int *permutation_inverse,
-                                      Image_dimensions img_dimensions,
-                                      size_t block_size);
-
-/**
- * @brief Executes row and column permutations on the GPU.
- * * @note MEMORY FLOW WARNING:
- * This function performs a "ping-pong" operation.
- * 1. Row Permutation: Input -> Output (buffer)
- * 2. Col Permutation: Output (buffer) -> Input
- * * RESULT: The final permutated image resides in 'd_image' (the input
- * pointer), NOT in 'd_image_out'. 'd_image_out' is used only as a temporary
- * scratchpad.
- * * @param d_image Input image data (and final destination).
- * @param d_image_out Temporary buffer for intermediate step.
- * @param d_row_permutations Device pointer to row permutation vector.
- * @param d_col_permutations Device pointer to col permutation vector.
- * @param img_dimensions Struct containing width and height.
- * @param inverse If true, applies inverse permutations in reverse order (Cols
- * then Rows).
- */
-__host__ void rows_and_columns_permutation(unsigned char *d_image,
-                                           unsigned char *d_image_out,
-                                           unsigned int *d_row_permutations,
-                                           unsigned int *d_col_permutations,
-                                           Image_dimensions img_dimensions,
-                                           bool inverse);
 
 /**
  * @brief Inverts a batch of permutations stored on the GPU.
@@ -91,20 +46,6 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
 __host__ void
 convert_bits_to_real(const std::vector<unsigned char> &password_segment,
                      Real **d_seeds);
-
-/**
- * @brief Applies the flow encryption stage using provided seeds and chaotic
- * parameter.
- * @param image Device pointer to the input image.
- * @param image_out Device pointer to the output image.
- * @param seeds Flow seeds per block.
- * @param cols Image width in blocks or pixels depending on the pipeline.
- * @param rows Image height in blocks or pixels depending on the pipeline.
- * @param r Chaotic map parameter.
- * @param rounds Number of flow rounds to perform.
- */
-__host__ void flow_encrypt(D_pointers &d_pointers,
-                           Image_dimensions img_dimensions);
 
 /**
  * @brief Generates the flow keystream in parallel using a Block-Parallel CML.
@@ -170,5 +111,28 @@ __host__ void unstack_channels_gpu(unsigned char *d_interleaved,
 __host__ void stack_channels_gpu(unsigned char *d_planar,
                                  unsigned char *d_interleaved, int width,
                                  int height);
+
+/**
+ * @brief Host wrapper for the unified permutation and XOR kernel.
+ *
+ * @param d_image_in Input image buffer.
+ * @param d_image_out Output image buffer.
+ * @param d_flow Keystream buffer (optional, can be nullptr).
+ * @param d_permutations permutation vector.
+ * @param d_permutations_inverse Inverse permutation vector.
+ * @param d_blocks Block permutation vector.
+ * @param d_blocks_inv Inverse block permutation vector.
+ * @param img_dimensions Image dimensions.
+ * @param block_size Block size for intra-block permutation.
+ * @param use_xor Whether to apply XOR with the flow.
+ * @param inverse If true, applies transformations in reverse order.
+ */
+__host__ void
+fused_permutation_xor(unsigned char *d_image_in, unsigned char *d_image_out,
+                      unsigned char *d_flow, unsigned int *d_permutations,
+                      unsigned int *d_permutations_inverse, unsigned int *d_blocks,
+                      unsigned int *d_blocks_inv,
+                      Image_dimensions img_dimensions, size_t block_size,
+                      bool use_xor, bool inverse);
 
 #endif // ENCRYPTION_AUX_CUH

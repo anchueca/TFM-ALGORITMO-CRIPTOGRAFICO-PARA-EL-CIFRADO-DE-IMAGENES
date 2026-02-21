@@ -853,7 +853,7 @@ def main():
         print(f" FINAL CRYPTOGRAPHIC REPORT (Across {args.runs} runs) ")
         print("="*85)
 
-        headers = ["Metric", "Original", "TFM (Mean/Var)", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "Ideal Ref"]
+        headers = ["Metric", "Original", "Chaotic scheme (Mean/Var)", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "Ideal Ref"]
         data = [
             ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f} / {v_ent:.6f}", f"{aes_results['ECB']['entropy']:.4f}", f"{aes_results['CBC']['entropy']:.4f}", f"{aes_results['CTR']['entropy']:.4f}", "~7.999"],
             ["Chi-Square Test", "-",                   f"{m_chi:.2f} (P={m_pval:.4f})", f"{aes_results['ECB']['chi']:.2f}", f"{aes_results['CBC']['chi']:.2f}", f"{aes_results['CTR']['chi']:.2f}", "P > 0.05"],

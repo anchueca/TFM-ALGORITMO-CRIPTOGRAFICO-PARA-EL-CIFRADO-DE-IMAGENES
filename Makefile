@@ -2,7 +2,7 @@
 NVCC = nvcc
 
 # Normal flags
-NVCCFLAGS_NORMAL = -O3 -rdc=true #-use_fast_math
+NVCCFLAGS_NORMAL = -O3 -rdc=true -arch=sm_89 #-use_fast_math
 
 # Debug fags
 NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
@@ -39,7 +39,7 @@ ifeq ($(PRECISION),double)
     NVCCFLAGS += -DUSE_DOUBLE_PRECISION
 endif
 
-NVCCFLAGS += -ccbin g++-12
+ NVCCFLAGS += -ccbin g++-14
 
 # main rule
 $(TARGET):  $(OBJS)

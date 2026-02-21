@@ -1,6 +1,7 @@
 #ifndef STEGANOGRAPHY_HPP
 #define STEGANOGRAPHY_HPP
 
+#include <cstdint>
 #include <opencv2/core.hpp>
 #include <string>
 #include <vector>

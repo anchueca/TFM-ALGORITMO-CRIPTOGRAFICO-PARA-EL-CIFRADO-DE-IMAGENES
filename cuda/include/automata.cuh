@@ -1,6 +1,7 @@
 #ifndef AUTOMATA_CUH
 #define AUTOMATA_CUH
 
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <random>

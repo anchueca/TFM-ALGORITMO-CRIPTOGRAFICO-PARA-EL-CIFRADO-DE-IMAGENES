@@ -5,7 +5,6 @@
  */
 
 #include "../include/kernels.cuh"
-#include <climits>
 
 __device__ __forceinline__ Real coupled_map(Real c_next, Real *r_next,
                                             Real *l_next,
@@ -31,63 +30,105 @@ __device__ __forceinline__ Real coupled_map(Real c_next, Real *r_next,
          (*l_next * l_influence);
 }
 
-__global__ void permute_blocks_kernel_simple(
-    const unsigned char *__restrict__ image,
+/**
+ * @brief Unified kernel that performs row, column, and block permutations
+ * along with an optional XOR diffusion step.
+ *
+ * This kernel uses a "Gather" approach to ensure coalesced writes to global
+ * memory. The sequence of operations (Rows -> Cols -> Blocks) is composed
+ * such that we calculate the final source pixel for each destination pixel.
+ *
+ * Gather Logic (Encryption Order):
+ *  1. Apply Block Permutation to get intermediate source (src_x_b, src_y_b).
+ *  2. Apply Row and Column Permutations to (src_x_b, src_y_b) to get
+ *     final source indices.
+ *  3. (Optional) XOR the value with keystream.
+ */
+__global__ void fused_permutation_xor_kernel(
+    const unsigned char *__restrict__ image_in,
     unsigned char *__restrict__ image_out,
+    const unsigned char *__restrict__ flow,
     const unsigned int *__restrict__ permutation,
-    const unsigned int *__restrict__ permutation_inverse, size_t block_size,
-    Image_dimensions img_dimensions) {
-  int local_x = threadIdx.x;
-  int local_y = threadIdx.y;
+    const unsigned int *__restrict__ permutation_inverse,
+    const unsigned int *__restrict__ perm_blocks,
+    const unsigned int *__restrict__ perm_blocks_inv, size_t block_size,
+    const size_t img_dim, bool use_xor, bool inverse_order) {
 
-  int block_x = blockIdx.x;
-  int block_y = blockIdx.y;
+  // Global thread coordinates (Destination pixel mapping)
+  const int x = blockIdx.x * blockDim.x + threadIdx.x;
+  const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-  int x = block_x * block_size + local_x;
-  int y = block_y * block_size + local_y;
-
-  if (x >= img_dimensions.cols || y >= img_dimensions.rows)
+  // Boundary check to prevent out-of-bounds memory access
+  if (x >= img_dim || y >= img_dim)
     return;
 
-  bool use_inverse = (block_x + block_y) & 1;
-  const unsigned int *perm = use_inverse ? permutation_inverse : permutation;
+  // Unified linear index for fully coalesced memory writes/reads
+  const int idx = y * img_dim + x;
+  int src_x, src_y;
 
-  int permuted_index = perm[local_y * block_size + local_x];
+  // CASE 1: Flow Permutation (XOR) OR Forward Image Permutation
+  if (use_xor || !inverse_order) {
+    // We need to find the source pixel that maps to (x, y).
+    // Since the forward order is Rows -> Cols -> Blocks,
+    // we must undo them in reverse order: Blocks^-1 -> Cols^-1 -> Rows^-1.
 
-  int src_local_x = permuted_index % block_size;
-  int src_local_y = permuted_index / block_size;
+    // 1. Undo Blocks
+    int bx = x / block_size;
+    int by = y / block_size;
+    int lx = x % block_size;
+    int ly = y % block_size;
 
-  int src_x = block_x * block_size + src_local_x;
-  int src_y = block_y * block_size + src_local_y;
+    // Checkerboard pattern: Even sum uses perm_blocks in forward mode.
+    // Therefore, to UNDO an even block, we use perm_blocks_inv.
+    bool is_odd_parity = ((bx + by) & 1);
+    const unsigned int *gather_block_undo =
+        is_odd_parity ? perm_blocks : perm_blocks_inv;
+    unsigned int pi = gather_block_undo[ly * block_size + lx];
 
-  if (src_x < img_dimensions.cols && src_y < img_dimensions.rows) {
-    image_out[y * img_dimensions.cols + x] =
-        image[src_y * img_dimensions.cols + src_x];
+    int temp_x = bx * block_size + (pi % block_size);
+    int temp_y = by * block_size + (pi / block_size);
+
+    // 2 & 3. Undo Columns and Rows
+    // To undo the mappings, we use the opposite permutation array.
+    src_x = permutation[temp_x];         // Undo Column permutation
+    src_y = permutation_inverse[temp_y]; // Undo Row permutation
+
+    if (use_xor) {
+      // Image remains static; apply XOR with the dynamically permuted flow key
+      image_out[idx] = image_in[idx] ^ flow[src_y * img_dim + src_x];
+    } else {
+      // Permute the image by copying the source pixel to the target destination
+      image_out[idx] = image_in[src_y * img_dim + src_x];
+    }
   }
-}
+  // CASE 2: Image Permutation Decryption (No XOR, inverse mode)
+  else {
+    // We want to find where the original pixel at (x,y) ended up in the
+    // ciphered image. We apply the forward transformation route: Rows -> Cols
+    // -> Blocks.
 
-__global__ void permute_rows_kernel(unsigned char *image,
-                                    unsigned char *image_out,
-                                    unsigned int *permutation,
-                                    Image_dimensions img_dimensions) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < img_dimensions.cols && y < img_dimensions.rows) {
-    image_out[y * img_dimensions.cols + x] =
-        image[permutation[y] * img_dimensions.cols + x];
-  }
-}
+    // 1 & 2. Apply Rows and Columns
+    int temp_y = permutation[y];         // Apply Row permutation
+    int temp_x = permutation_inverse[x]; // Apply Column permutation
 
-__global__ void permute_columns_kernel(unsigned char *image,
-                                       unsigned char *image_out,
-                                       unsigned int *permutation,
-                                       Image_dimensions img_dimensions) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
+    // 3. Apply Blocks
+    int bx = temp_x / block_size;
+    int by = temp_y / block_size;
+    int lx = temp_x % block_size;
+    int ly = temp_y % block_size;
 
-  if (x < img_dimensions.cols && y < img_dimensions.rows) {
-    image_out[y * img_dimensions.cols + x] =
-        image[y * img_dimensions.cols + permutation[x]];
+    // Apply forward block permutation using the checkerboard logic
+    bool is_odd_parity = ((bx + by) & 1);
+    const unsigned int *gather_block_fwd =
+        is_odd_parity ? perm_blocks_inv : perm_blocks;
+    unsigned int pi = gather_block_fwd[ly * block_size + lx];
+
+    src_x = bx * block_size + (pi % block_size);
+    src_y = by * block_size + (pi / block_size);
+
+    // Retrieve the ciphered pixel and restore it to its original unencrypted
+    // position
+    image_out[idx] = image_in[src_y * img_dim + src_x];
   }
 }
 

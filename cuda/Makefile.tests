@@ -9,7 +9,7 @@ TEST_BIN = test/$(TEST_NAME).out
 # Compiler settings
 NVCC = nvcc
 NVCC_FLAGS = -std=c++17 -rdc=true -O2 -G -g
-NVCC_ARCH = -arch=sm_70
+NVCC_ARCH = -arch=sm_89
 
 # Library paths and flags
 OPENCV_LIBS = $(shell pkg-config --libs opencv4)
@@ -24,7 +24,7 @@ INCLUDE_PATHS = -I./include -I./src
 OPENCV_INCLUDE = $(OPENCV_CFLAGS)
 
 # Linking settings
-CCBIN = -ccbin g++-12
+CCBIN = -ccbin g++
 LDFLAGS = $(CUDA_LIBS) $(OPENCV_LIBS) $(GTEST_FLAGS) -lssl -lcrypto
 
 # Source files from main library (excluding main.cu and aux.cu)

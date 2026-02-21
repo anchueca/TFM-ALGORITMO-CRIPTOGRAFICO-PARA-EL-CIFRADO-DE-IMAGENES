@@ -62,20 +62,4 @@ invert_permutations_kernel(const unsigned int *__restrict__ d_permutations,
                            unsigned int *__restrict__ inverses,
                            size_t block_length);
 
-/**
- * @brief XOR an image buffer with a keystream buffer in-place (per-pixel XOR).
- *
- * This CUDA kernel applies a simple XOR operation between a keystream and an
- * image buffer. The kernel is intended to be launched with a 2D grid matching
- * the image dimensions (or a flattened 1D grid treating width*height as
- * length).
- *
- * @param keystream Device pointer to keystream bytes (one byte per pixel).
- * @param image Device pointer to image bytes (will be modified in-place).
- * @param width Image width in pixels (columns).
- * @param height Image height in pixels (rows).
- */
-__global__ void image_xor(unsigned char *keystream, unsigned char *image,
-                          Image_dimensions img_dimensions);
-
 #endif // KERNELS_AUX_CUH

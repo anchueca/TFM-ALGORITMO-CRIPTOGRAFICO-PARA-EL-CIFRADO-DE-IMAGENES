@@ -1,7 +1,7 @@
 #ifndef CLI_CONFIG_CUH
 #define CLI_CONFIG_CUH
-
 #include "structs.cuh"
+#include <cstdint>
 #include <opencv2/core.hpp>
 #include <string>
 

@@ -192,12 +192,14 @@ __global__ void evolve_block_level(unsigned int *state,
 
       // Apply rule
       int neighborhood = (left_val << 2) | (center_val << 1) | right_val;
-      if ((rule >> neighborhood) & 1) {
-        // Set bit in next state
-        // MUST use atomic: concurrent writes from multiple threads
-        // ~2% overhead but ensures correctness
-        unsigned int mask = (1U << (31 - center_bit));
-        atomicOr(&s_next[center_uint], mask);
+
+      // OPTIMIZATION: Use warp-sync bit manipulation to avoid atomicOr
+      // contention
+      unsigned int is_alive = ((rule >> neighborhood) & 1);
+      unsigned int warp_mask = __ballot_sync(0xFFFFFFFF, is_alive);
+
+      if (center_bit == 0) {
+        s_next[center_uint] = warp_mask;
       }
     }
 

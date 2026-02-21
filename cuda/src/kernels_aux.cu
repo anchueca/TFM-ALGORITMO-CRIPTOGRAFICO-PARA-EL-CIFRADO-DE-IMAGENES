@@ -19,20 +19,6 @@ invert_permutations_kernel(const unsigned int *__restrict__ permutations,
   }
 }
 
-__global__ void image_xor(unsigned char *keystream, unsigned char *image,
-                          Image_dimensions img_dimensions) {
-  int x = blockIdx.x * blockDim.x + threadIdx.x;
-  int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-  if (x >= img_dimensions.cols || y >= img_dimensions.rows) {
-    return;
-  }
-
-  int idx = y * img_dimensions.cols + x;
-
-  image[idx] ^= keystream[idx];
-}
-
 __device__ unsigned char convertToBitStream(double value) {
 
   unsigned long long raw_bits = __double_as_longlong(value);
