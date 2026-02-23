@@ -222,7 +222,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   size_t block_size = params.block_size * params.block_size;
 
   size_t transition_length;
-  Real *chaotic_values;
+  Real *chaotic_values = nullptr;
 
   // Initialization logic for first run (checked via d_image_automata_state)
   if (d_pointers.d_image_automata_state == nullptr) {
@@ -235,7 +235,6 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
     }
 
     transition_length = params.transition_length;
-    chaotic_values = d_pointers.d_chaotic_values_for_permutation;
 
     // Allocate and initialize automata state
     checkCudaError(cudaMalloc(&d_pointers.d_image_automata_state,
@@ -252,7 +251,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   } else {
     // Subsequent runs
     transition_length = threadsPerBlock.x / 2;
-    chaotic_values = nullptr;
+    chaotic_values = d_pointers.d_chaotic_values_for_permutation;
   }
 
   // Shared memory needs to hold the block's seeds plus extra seeds

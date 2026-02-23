@@ -55,8 +55,8 @@ __global__ void fused_permutation_xor_kernel(
     const size_t img_dim, bool use_xor, bool inverse_order) {
 
   // Global thread coordinates (Destination pixel mapping)
-  const int x = blockIdx.x * blockDim.x + threadIdx.x;
-  const int y = blockIdx.y * blockDim.y + threadIdx.y;
+  int x = blockIdx.x * blockDim.x + threadIdx.x;
+  int y = blockIdx.y * blockDim.y + threadIdx.y;
 
   // Boundary check to prevent out-of-bounds memory access
   if (x >= img_dim || y >= img_dim)
@@ -64,71 +64,73 @@ __global__ void fused_permutation_xor_kernel(
 
   // Unified linear index for fully coalesced memory writes/reads
   const int idx = y * img_dim + x;
-  int src_x, src_y;
 
   // CASE 1: Flow Permutation (XOR) OR Forward Image Permutation
   if (use_xor || !inverse_order) {
-    // We need to find the source pixel that maps to (x, y).
-    // Since the forward order is Rows -> Cols -> Blocks,
-    // we must undo them in reverse order: Blocks^-1 -> Cols^-1 -> Rows^-1.
+    for(int i=0;i<2;i++){
+      // We need to find the source pixel that maps to (x, y).
+      // Since the forward order is Rows -> Cols -> Blocks,
+      // we must undo them in reverse order: Blocks^-1 -> Cols^-1 -> Rows^-1.
 
-    // 1. Undo Blocks
-    int bx = x / block_size;
-    int by = y / block_size;
-    int lx = x % block_size;
-    int ly = y % block_size;
+      // 1. Undo Blocks
+      int bx = x / block_size;
+      int by = y / block_size;
+      int lx = x % block_size;
+      int ly = y % block_size;
 
-    // Checkerboard pattern: Even sum uses perm_blocks in forward mode.
-    // Therefore, to UNDO an even block, we use perm_blocks_inv.
-    bool is_odd_parity = ((bx + by) & 1);
-    const unsigned int *gather_block_undo =
-        is_odd_parity ? perm_blocks : perm_blocks_inv;
-    unsigned int pi = gather_block_undo[ly * block_size + lx];
+      // Checkerboard pattern: Even sum uses perm_blocks in forward mode.
+      // Therefore, to UNDO an even block, we use perm_blocks_inv.
+      bool is_odd_parity = ((bx + by) & 1);
+      const unsigned int *gather_block_undo =
+          is_odd_parity ? perm_blocks : perm_blocks_inv;
+      unsigned int pi = gather_block_undo[ly * block_size + lx];
 
-    int temp_x = bx * block_size + (pi % block_size);
-    int temp_y = by * block_size + (pi / block_size);
+      int temp_x = bx * block_size + (pi % block_size);
+      int temp_y = by * block_size + (pi / block_size);
 
-    // 2 & 3. Undo Columns and Rows
-    // To undo the mappings, we use the opposite permutation array.
-    src_x = permutation[temp_x];         // Undo Column permutation
-    src_y = permutation_inverse[temp_y]; // Undo Row permutation
-
+      // 2 & 3. Undo Columns and Rows
+      // To undo the mappings, we use the opposite permutation array.
+      x = permutation[temp_x];         // Undo Column permutation
+      y = permutation_inverse[temp_y]; // Undo Row permutation
+    }
     if (use_xor) {
       // Image remains static; apply XOR with the dynamically permuted flow key
-      image_out[idx] = image_in[idx] ^ flow[src_y * img_dim + src_x];
+      image_out[idx] = image_in[idx] ^ flow[y * img_dim + x];
     } else {
       // Permute the image by copying the source pixel to the target destination
-      image_out[idx] = image_in[src_y * img_dim + src_x];
+      image_out[idx] = image_in[y * img_dim + x];
     }
+    
   }
   // CASE 2: Image Permutation Decryption (No XOR, inverse mode)
   else {
-    // We want to find where the original pixel at (x,y) ended up in the
-    // ciphered image. We apply the forward transformation route: Rows -> Cols
-    // -> Blocks.
+    for(int i=0;i<2;i++){
+      // We want to find where the original pixel at (x,y) ended up in the
+      // ciphered image. We apply the forward transformation route: Rows -> Cols
+      // -> Blocks.
 
-    // 1 & 2. Apply Rows and Columns
-    int temp_y = permutation[y];         // Apply Row permutation
-    int temp_x = permutation_inverse[x]; // Apply Column permutation
+      // 1 & 2. Apply Rows and Columns
+      int temp_y = permutation[y];         // Apply Row permutation
+      int temp_x = permutation_inverse[x]; // Apply Column permutation
 
-    // 3. Apply Blocks
-    int bx = temp_x / block_size;
-    int by = temp_y / block_size;
-    int lx = temp_x % block_size;
-    int ly = temp_y % block_size;
+      // 3. Apply Blocks
+      int bx = temp_x / block_size;
+      int by = temp_y / block_size;
+      int lx = temp_x % block_size;
+      int ly = temp_y % block_size;
 
-    // Apply forward block permutation using the checkerboard logic
-    bool is_odd_parity = ((bx + by) & 1);
-    const unsigned int *gather_block_fwd =
-        is_odd_parity ? perm_blocks_inv : perm_blocks;
-    unsigned int pi = gather_block_fwd[ly * block_size + lx];
+      // Apply forward block permutation using the checkerboard logic
+      bool is_odd_parity = ((bx + by) & 1);
+      const unsigned int *gather_block_fwd =
+          is_odd_parity ? perm_blocks_inv : perm_blocks;
+      unsigned int pi = gather_block_fwd[ly * block_size + lx];
 
-    src_x = bx * block_size + (pi % block_size);
-    src_y = by * block_size + (pi / block_size);
-
+      x = bx * block_size + (pi % block_size);
+      y = by * block_size + (pi / block_size);
+    }
     // Retrieve the ciphered pixel and restore it to its original unencrypted
     // position
-    image_out[idx] = image_in[src_y * img_dim + src_x];
+    image_out[idx] = image_in[y * img_dim + x];
   }
 }
 

@@ -122,6 +122,9 @@ struct D_pointers {
   unsigned int *d_permutation_blocks = nullptr; ///< Forward block permutation
   unsigned int *d_permutation_blocks_inverse =
       nullptr; ///< Inverse block permutation
+  unsigned int *d_permutation_blocks_inital = nullptr; ///< Forward block permutation
+  unsigned int *d_permutation_blocks_inverse_initial =
+      nullptr; ///< Inverse block permutation
   
   // Unified permutation vector (P) and its inverse (P^-1)
   // Used for both rows and columns (Row=P, Col=P^-1)
@@ -130,7 +133,7 @@ struct D_pointers {
   Real *d_chaotic_values_for_permutation =
       nullptr;                    // For block permutation generation
   unsigned int *d_automata_state = nullptr; // For automata iteration in flow generation
-  unsigned short *d_image_automata_state = nullptr; // Automata state for extra seeds.
+  unsigned short *d_image_automata_state = nullptr; // Automata state for extra seeds. The same in all blocks.
 };
 
 #endif // STRUCT_CUH

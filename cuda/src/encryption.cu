@@ -129,10 +129,11 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   cudaFree(d_pointers.d_image);
   cudaFree(d_pointers.d_image_out);
   cudaFree(d_pointers.d_automata_state);
-  if (d_pointers.d_image_automata_state != nullptr)
-    cudaFree(d_pointers.d_image_automata_state);
-  if (d_pointers.d_chaotic_values_for_permutation != nullptr)
-    cudaFree(d_pointers.d_chaotic_values_for_permutation);
+  cudaFree(d_pointers.d_image_automata_state);
+  cudaFree(d_pointers.d_chaotic_values_for_permutation);
+  cudaFree(d_pointers.d_permutation_blocks_inital);
+  cudaFree(d_pointers.d_permutation_blocks_inverse_initial);
+
 }
 
 // =================================================================================
@@ -230,6 +231,10 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
       img_dimensions, block_size, false, false);
   std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
+  // Inital permutation for image must be preserved for final confussion.
+  std::swap(d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inital);
+  std::swap(d_pointers.d_permutation_blocks_inverse, d_pointers.d_permutation_blocks_inverse_initial);
+
   // === PHASE 2: Confusion-Diffusion Rounds (permutation of keystream and
   // diffusion (XOR)) ===
   if (verbose)
@@ -240,13 +245,20 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
     auto keystream_start = std::chrono::high_resolution_clock::now();
     // Step A: Generate chaotic keystream
     generate_flow_stream_parallel(d_pointers, img_dimensions, params);
-
     auto keystream_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> keystream_time =
         keystream_end - keystream_start;
     if (verbose)
       std::cout << "\t\t Keystream generated in "
                 << keystream_time.count() * 1000.0f << " ms" << std::endl;
+    
+    keystream_start = std::chrono::high_resolution_clock::now();            
+    generate_permutation_block(d_pointers, img_dimensions, params);
+    keystream_end = std::chrono::high_resolution_clock::now();
+    keystream_time = keystream_end - keystream_start;
+    if (verbose)
+      std::cout << "\tBlock permutations generated in "
+              << transition_time.count() * 1000.0f << " ms" << std::endl;
 
     keystream_start = std::chrono::high_resolution_clock::now();
     // Step B & C: Permute the keystream and apply Diffusion (XOR)
@@ -274,6 +286,9 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
                 << " complete. Time: " << round_time.count() * 1000.0f << " ms"
                 << std::endl;
   }
+  // Restore initial block permutations for final confusion
+  std::swap(d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inital);
+  std::swap(d_pointers.d_permutation_blocks_inverse, d_pointers.d_permutation_blocks_inverse_initial);
 
   // === PHASE 3: Final Confusion (the same as the initial confusion) ===
 
@@ -322,10 +337,15 @@ void unencryption_process(D_pointers &d_pointers,
       img_dimensions, block_size, false, true);
   std::swap(d_pointers.d_image, d_pointers.d_image_out);
 
+  std::swap(d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inital);
+  std::swap(d_pointers.d_permutation_blocks_inverse, d_pointers.d_permutation_blocks_inverse_initial);
+
   // === PHASE 2: Reverse Diffusion-Confusion Rounds ===
   for (size_t round = 0; round < params.rounds; round++) {
     // Step A: Regenerate exact same chaotic keystream
     generate_flow_stream_parallel(d_pointers, img_dimensions, params);
+
+    generate_permutation_block(d_pointers, img_dimensions, params);
 
     // Step B & C: Permute keystream and apply Fusion (XOR)
     fused_permutation_xor(d_pointers.d_image, d_pointers.d_image_out,
@@ -338,6 +358,9 @@ void unencryption_process(D_pointers &d_pointers,
   }
 
   // === PHASE 3: Reverse Initial Confusion ===
+
+  std::swap(d_pointers.d_permutation_blocks, d_pointers.d_permutation_blocks_inital);
+  std::swap(d_pointers.d_permutation_blocks_inverse, d_pointers.d_permutation_blocks_inverse_initial);
 
   fused_permutation_xor(
       d_pointers.d_image, d_pointers.d_image_out, nullptr,
