@@ -273,7 +273,10 @@ class ExternalCipherTester:
         else:
             # Binary key segments (matching aux.cu segments)
             bits_cols = (self.padded_cols * 2) * 8
-            numBlocks_gpu = (self.padded_cols + 256) // 256
+            # Align numBlocks calculation with C++ aux.cu (uses MAX_THREADS=64)
+            MAX_THREADS = 64
+            numBlocks_gpu = (self.padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
+            if numBlocks_gpu < 1: numBlocks_gpu = 1
             bits_flow = (4 + (self.padded_cols + numBlocks_gpu) * 4) * 8
             
             if segment == 'cols':
@@ -390,7 +393,10 @@ class ExternalCipherTester:
                 
                 padded_cols = S
                 padded_rows = S
-                num_blocks = (padded_cols + 64) // 64
+                # Align num_blocks with C++ aux.cu (uses MAX_THREADS=64)
+                MAX_THREADS = 64
+                num_blocks = (padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
+                if num_blocks < 1: num_blocks = 1
                 # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
                 total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
                 required_bits = total_bytes * 8
@@ -668,7 +674,10 @@ def main():
         padded_rows = S
         
         # Now calculate required key length based on PADDED dimensions
-        num_blocks = (padded_cols + 256) // 256
+        # Align num_blocks with C++ aux.cu (uses MAX_THREADS=64)
+        MAX_THREADS = 64
+        num_blocks = (padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
+        if num_blocks < 1: num_blocks = 1
         # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
         total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
         required_bits = total_bytes * 8
