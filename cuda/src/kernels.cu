@@ -6,28 +6,28 @@
 
 #include "../include/kernels.cuh"
 
-__device__ __forceinline__ Real coupled_map(Real c_next, Real *r_next,
-                                            Real *l_next,
-                                            unsigned short *cellular_automata) {
+__device__ __forceinline__ CoupledResult coupled_map(Real c_next, Real *r_next,
+                                                    Real *l_next,
+                                                    unsigned short ca_state) {
 
-  evolve_16bit_isolated(cellular_automata, 30, 1); // Evolution of the 16-bit CA
+  // Evolve CA by-value to avoid requiring callers to pass the address of
+  // a local variable (which would force a spill to local memory).
+  unsigned short evolved = evolve_16bit_isolated(ca_state, 30, 1);
 
-  // Extract weights from the CA state
-  unsigned short ca_val = *cellular_automata;
-  Real v1 = static_cast<Real>((ca_val >> 8) & 0xFF) /
-            255.0; // First 8 bits normalized (0, 1)
-  Real v2 =
-      static_cast<Real>(ca_val & 0xFF) / 255.0; // Last 8 bits normalized (0, 1)
+  // Extract weights from the evolved CA state
+  Real v1 = static_cast<Real>((evolved >> 8) & 0xFF) / 255.0;
+  Real v2 = static_cast<Real>(evolved & 0xFF) / 255.0;
 
-  // Distribution of influence:
-  // v1 determines the proportion of c_next.
-  // v2 determines the proportion of r_next and l_next of the rest (1 - v1).
   Real c_influence = v1;
   Real rest = (Real)1.0 - v1;
   Real r_influence = rest * v2;
   Real l_influence = rest * ((Real)1.0 - v2);
-  return (c_next * c_influence) + (*r_next * r_influence) +
-         (*l_next * l_influence);
+
+  CoupledResult res;
+  res.mixed = (c_next * c_influence) + (*r_next * r_influence) +
+              (*l_next * l_influence);
+  res.new_ca = evolved;
+  return res;
 }
 
 /**
@@ -75,8 +75,8 @@ __global__ void fused_permutation_xor_kernel(
       // 1. Undo Blocks
       int bx = x / block_size;
       int by = y / block_size;
-      int lx = x % block_size;
-      int ly = y % block_size;
+      int lx = x - bx * block_size;
+      int ly = y - by * block_size;
 
       // Checkerboard pattern: Even sum uses perm_blocks in forward mode.
       // Therefore, to UNDO an even block, we use perm_blocks_inv.
@@ -113,11 +113,11 @@ __global__ void fused_permutation_xor_kernel(
       int temp_y = permutation[y];         // Apply Row permutation
       int temp_x = permutation_inverse[x]; // Apply Column permutation
 
-      // 3. Apply Blocks
+      // 3. Apply Blocks (use subtraction to compute modulo)
       int bx = temp_x / block_size;
       int by = temp_y / block_size;
-      int lx = temp_x % block_size;
-      int ly = temp_y % block_size;
+      int lx = temp_x - bx * block_size;
+      int ly = temp_y - by * block_size;
 
       // Apply forward block permutation using the checkerboard logic
       bool is_odd_parity = ((bx + by) & 1);
@@ -290,8 +290,12 @@ __global__ void keystream_generation_parallel(
     __syncthreads();
 
     if (is_active) {
-      next_val =
-          coupled_map(next_val, r_seed, l_seed, &cellular_automata_value);
+      {
+        CoupledResult _cr = coupled_map(next_val, r_seed, l_seed,
+                                         cellular_automata_value);
+        next_val = _cr.mixed;
+        cellular_automata_value = _cr.new_ca;
+      }
 
       // Write chaotic values to buffer using all threads if buffer is provided
       if (d_chaotic_values_for_permutation != nullptr) {

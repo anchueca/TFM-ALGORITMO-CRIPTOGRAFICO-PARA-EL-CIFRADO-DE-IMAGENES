@@ -217,30 +217,3 @@ __global__ void evolve_block_level(unsigned int *state,
     state[global_uint_idx] = s_current[uint_idx_in_block];
   }
 }
-
-__device__ void evolve_16bit_isolated(unsigned short *state, int rule,
-                                      int num_steps) {
-  unsigned int current = *state;
-
-  for (int iter = 0; iter < num_steps; iter++) {
-    // Current state bitwise: Left (p+1), Center (p), Right (p-1)
-    // Periodic boundary 15 -> 0, 0 -> 15
-    unsigned int L = ((current >> 1) | (current << 15)) & 0xFFFF;
-    unsigned int R = ((current << 1) | (current >> 15)) & 0xFFFF;
-    unsigned int C = current & 0xFFFF;
-
-    unsigned int next = 0;
-    // Apply rule bitwise (SOP form)
-    for (int p = 0; p < 8; p++) {
-      if ((rule >> p) & 1) {
-        unsigned int term = 0xFFFF;
-        term &= (p & 4) ? L : ~L;
-        term &= (p & 2) ? C : ~C;
-        term &= (p & 1) ? R : ~R;
-        next |= term;
-      }
-    }
-    current = next & 0xFFFF;
-  }
-  *state = (unsigned short)current;
-}

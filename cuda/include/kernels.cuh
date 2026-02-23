@@ -41,9 +41,22 @@ __device__ __forceinline__ float chaotic_function<float>(float x, float r) {
   // return 4.0f * x * (1.0f - x);
 }
 
-__device__ __forceinline__ Real coupled_map(Real c_next, Real *r_next,
-                                            Real *l_next,
-                                            unsigned short *cellular_automata);
+/**
+ * @brief Result of `coupled_map`: mixed value and updated 16-bit CA state.
+ */
+struct CoupledResult {
+  Real mixed;
+  unsigned short new_ca;
+};
+
+/**
+ * @brief Coupled map helper that returns both the mixed value and the
+ * evolved automata state by value to avoid taking addresses of local
+ * variables (which can force spills to local memory).
+ */
+__device__ __forceinline__ CoupledResult coupled_map(Real c_next, Real *r_next,
+                                                     Real *l_next,
+                                                     unsigned short ca_state);
 
 /**
  * @brief Kernel to generate keystream using a Block-Parallel Coupled Map
