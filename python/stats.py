@@ -26,6 +26,14 @@ except ImportError:
     from Cryptodome.Util import Counter
     from Cryptodome.Random import get_random_bytes
 
+try:
+    import fast_ascon as ascon
+except ImportError:
+    try:
+        import ascon
+    except ImportError:
+        ascon = None
+
 # Use 'Agg' backend if headless (no screen), otherwise 'TkAgg'
 try:
     matplotlib.use('TkAgg') 
@@ -518,11 +526,59 @@ class AESCipherTester:
         
         return CryptoMetrics.calculate_npcr_uaci(img1, img2)
 
+class ASCONCipherTester:
+    def __init__(self, image):
+        self.original_img = image
+        self.key = get_random_bytes(16) # 128-bit ASCON
+        self.nonce = get_random_bytes(16)
+        self.ad = b"" # Associated data
+
+    def run_benchmark(self):
+        if ascon is None:
+            return None, 0.0, 0.0
+            
+        flat_data = self.original_img.tobytes()
+        
+        # Encrypt
+        start = time.perf_counter()
+        ciph_bytes = ascon.encrypt(self.key, self.nonce, self.ad, flat_data, variant="Ascon-128")
+        t_enc = (time.perf_counter() - start) * 1000.0
+
+        # Decrypt
+        start = time.perf_counter()
+        dec_bytes = ascon.decrypt(self.key, self.nonce, self.ad, ciph_bytes, variant="Ascon-128")
+        t_dec = (time.perf_counter() - start) * 1000.0
+
+        # Reconstruct image for metrics
+        ciph_img = np.frombuffer(ciph_bytes[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        
+        return ciph_img, t_enc, t_dec
+
+    def run_key_sensitivity_benchmark(self):
+        if ascon is None:
+            return 0.0, 0.0
+            
+        key_list = list(self.key)
+        key_list[0] ^= 0x01
+        key_mod = bytes(key_list)
+        
+        flat_data = self.original_img.tobytes()
+        
+        # fast-ascon and ascon have same interface for encrypt
+        c1 = ascon.encrypt(self.key, self.nonce, self.ad, flat_data, variant="Ascon-128")
+        c2 = ascon.encrypt(key_mod, self.nonce, self.ad, flat_data, variant="Ascon-128")
+        
+        img1 = np.frombuffer(c1[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        img2 = np.frombuffer(c2[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        
+        return CryptoMetrics.calculate_npcr_uaci(img1, img2)
+
 # --- 3. EXTENDED DASHBOARD PLOTTING ---
 def plot_dashboard(original, ciphered, decrypted, 
                    occluded_input, occluded_output,
                    key_sens_diff_img,
-                   benchmark_data):
+                   benchmark_data,
+                   ascon_benchmark_data=None):
     
     # Create a 5-Row Dashboard (Compact)
     fig = plt.figure(figsize=(16, 20)) 
@@ -585,6 +641,12 @@ def plot_dashboard(original, ciphered, decrypted,
     ax_perf.plot(mp_pixels, t_enc, 'r-o', label='Encryption', linewidth=2)
     ax_perf.plot(mp_pixels, t_dec, 'b-s', label='Decryption', linewidth=2)
     
+    if ascon_benchmark_data:
+        p_px, p_enc, p_dec = ascon_benchmark_data
+        mp_p = [p / 1_000_000.0 for p in p_px]
+        ax_perf.plot(mp_p, p_enc, 'g--v', label='ASCON Enc.', linewidth=1.5, alpha=0.7)
+        ax_perf.plot(mp_p, p_dec, 'm--^', label='ASCON Dec.', linewidth=1.5, alpha=0.7)
+
     ax_perf.set_title(f"Performance Scalability (0.5x to 10.0x)", fontsize=10)
     ax_perf.set_xlabel("Image Size (Megapixels)")
     ax_perf.set_ylabel("Time (Milliseconds)")
@@ -838,9 +900,66 @@ def main():
             }
             print(f"   -> AES-{mode} (SW): Enc={t_enc_aes:.4f} ms, Entropy={ent_aes:.4f}, NPCR_K={npcr_k:.4f}%")
 
+        # --- ASCON COMPARISON ---
+        ascon_results = None
+        if ascon:
+            print("\n[>] Running ASCON-128 Comparison Benchmarks (Software-Only)...")
+            ascon_tester = ASCONCipherTester(tester_final.original_img)
+            ciph_ascon, t_enc_ascon, t_dec_ascon = ascon_tester.run_benchmark()
+            
+            ent_ascon = CryptoMetrics.calculate_global_entropy(ciph_ascon)
+            corr_ascon = CryptoMetrics.calculate_correlations_full(ciph_ascon)
+            npcr_ascon, uaci_ascon = CryptoMetrics.calculate_npcr_uaci(tester_final.original_img, ciph_ascon)
+            cont_ascon, hom_ascon, _ = CryptoMetrics.calculate_glcm_properties(ciph_ascon)
+            npcr_k_ascon, uaci_k_ascon = ascon_tester.run_key_sensitivity_benchmark()
+            
+            # Chi-Square for ASCON
+            hist_ascon, _ = np.histogram(ciph_ascon, bins=256, range=(0, 255))
+            chi_ascon, p_ascon = stats.chisquare(hist_ascon)
+            
+            ascon_results = {
+                'entropy': ent_ascon,
+                'chi': chi_ascon,
+                'p_val': p_ascon,
+                'corr_h': corr_ascon[0],
+                'corr_v': corr_ascon[1],
+                'corr_d': corr_ascon[2],
+                'contrast': cont_ascon,
+                'homogeneity': hom_ascon,
+                't_enc': t_enc_ascon,
+                't_dec': t_dec_ascon,
+                'npcr': npcr_ascon,
+                'uaci': uaci_ascon,
+                'npcr_k': npcr_k_ascon,
+                'uaci_k': uaci_k_ascon
+            }
+            print(f"   -> ASCON-128 (SW): Enc={t_enc_ascon:.4f} ms, Entropy={ent_ascon:.4f}, NPCR_K={npcr_k_ascon:.4f}%")
+        else:
+            print("\n[!] ASCON library not found. Skipping ASCON benchmarks.")
+
         # Performance (Using one final run for bench or using average of Runs)
         print("\n[+] Running Performance Scalability Test (1x Repeats)...")
         benchmark_data = tester_final.run_scalability_test(repeats=1)
+
+        ascon_benchmark_data = None
+        if ascon:
+            print("\n[+] Running ASCON-128 Performance Scalability Test...")
+            ascon_px_counts = []
+            ascon_enc_ts = []
+            ascon_dec_ts = []
+            scales = [1.0, 2.0, 4.0]
+            for s in scales:
+                new_w = int(tester_final.original_img.shape[1] * s)
+                new_h = int(tester_final.original_img.shape[0] * s)
+                if new_w < 16 or new_h < 16 or (new_w * new_h) > 5_000_000: continue
+                
+                resized = cv2.resize(tester_final.original_img, (new_w, new_h))
+                tester_resize = ASCONCipherTester(resized)
+                _, te, td = tester_resize.run_benchmark()
+                ascon_px_counts.append(new_w * new_h)
+                ascon_enc_ts.append(te)
+                ascon_dec_ts.append(td)
+            ascon_benchmark_data = (ascon_px_counts, ascon_enc_ts, ascon_dec_ts)
 
         # Key Sensitivity Diff Image (One final sample)
         # Use a new random binary password of correct length
@@ -862,30 +981,39 @@ def main():
         print(f" FINAL CRYPTOGRAPHIC REPORT (Across {args.runs} runs) ")
         print("="*85)
 
-        headers = ["Metric", "Original", "Chaotic scheme (Mean/Var)", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "Ideal Ref"]
+        headers = ["Metric", "Original", "Chaotic scheme (Mean/Var)", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "ASCON-128 (SW)", "Ideal Ref"]
+        
+        def fmt_ascon(key):
+            if ascon_results is None: return "N/A"
+            val = ascon_results[key]
+            if key in ['npcr', 'uaci', 'npcr_k', 'uaci_k']: return f"{val:.4f}%"
+            if key in ['t_enc', 't_dec']: return f"{val:.2f}"
+            return f"{val:.4f}"
+
         data = [
-            ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f} / {v_ent:.6f}", f"{aes_results['ECB']['entropy']:.4f}", f"{aes_results['CBC']['entropy']:.4f}", f"{aes_results['CTR']['entropy']:.4f}", "~7.999"],
-            ["Chi-Square Test", "-",                   f"{m_chi:.2f} (P={m_pval:.4f})", f"{aes_results['ECB']['chi']:.2f}", f"{aes_results['CBC']['chi']:.2f}", f"{aes_results['CTR']['chi']:.2f}", "P > 0.05"],
-            ["Correlation (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f} / {v_ch:.6f}", f"{aes_results['ECB']['corr_h']:.4f}", f"{aes_results['CBC']['corr_h']:.4f}", f"{aes_results['CTR']['corr_h']:.4f}", "0.0"],
-            ["Correlation (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f} / {v_cv:.6f}", f"{aes_results['ECB']['corr_v']:.4f}", f"{aes_results['CBC']['corr_v']:.4f}", f"{aes_results['CTR']['corr_v']:.4f}", "0.0"],
-            ["Correlation (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f} / {v_cd:.6f}", f"{aes_results['ECB']['corr_d']:.4f}", f"{aes_results['CBC']['corr_d']:.4f}", f"{aes_results['CTR']['corr_d']:.4f}", "0.0"],
-            ["GLCM Contrast",   f"{cont_orig:.4f}",    f"{m_cont:.4f} / {v_cont:.6f}", f"{aes_results['ECB']['contrast']:.4f}", f"{aes_results['CBC']['contrast']:.4f}", f"{aes_results['CTR']['contrast']:.4f}", "High"],
-            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f} / {v_hom:.6f}", f"{aes_results['ECB']['homogeneity']:.4f}", f"{aes_results['CBC']['homogeneity']:.4f}", f"{aes_results['CTR']['homogeneity']:.4f}", "~0"],
-            ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{aes_results['ECB']['npcr']:.4f}%", f"{aes_results['CBC']['npcr']:.4f}%", f"{aes_results['CTR']['npcr']:.4f}%", ">99.6%"],
-            ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{aes_results['ECB']['uaci']:.4f}%", f"{aes_results['CBC']['uaci']:.4f}%", f"{aes_results['CTR']['uaci']:.4f}%", "~33.4%"],
-            ["NPCR (Key Sens.)",  "-",                 f"{m_np_seeds:.4f}%", f"{aes_results['ECB']['npcr_k']:.4f}%", f"{aes_results['CBC']['npcr_k']:.4f}%", f"{aes_results['CTR']['npcr_k']:.4f}%", ">99.6%"],
-            ["UACI (Key Sens.)",  "-",                 f"{m_uaci_seeds:.4f}%", f"{aes_results['ECB']['uaci_k']:.4f}%", f"{aes_results['CBC']['uaci_k']:.4f}%", f"{aes_results['CTR']['uaci_k']:.4f}%", "~33.4%"],
-            ["Enc. Time (ms)",  "-",                   f"{m_t_enc:.2f} (CUDA)", f"{aes_results['ECB']['t_enc']:.2f}", f"{aes_results['CBC']['t_enc']:.2f}", f"{aes_results['CTR']['t_enc']:.2f}", "Min."],
-            ["Dec. Time (ms)",  "-",                   f"{m_t_dec:.2f} (CUDA)", f"{aes_results['ECB']['t_dec']:.2f}", f"{aes_results['CBC']['t_dec']:.2f}", f"{aes_results['CTR']['t_dec']:.2f}", "Min."],
-            ["PSNR (Dec. Qual)", "-",                  f"{m_psnr:.2f} dB", "-", "-", "-", ">50"],
-            ["MAE (Dec. Error)", "-",                  f"{m_mae:.4f}", "-", "-", "-", "0.0"],
+            ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f} / {v_ent:.6f}", f"{aes_results['ECB']['entropy']:.4f}", f"{aes_results['CBC']['entropy']:.4f}", f"{aes_results['CTR']['entropy']:.4f}", fmt_ascon('entropy'), "~7.999"],
+            ["Chi-Square Test", "-",                   f"{m_chi:.2f} (P={m_pval:.4f})", f"{aes_results['ECB']['chi']:.2f}", f"{aes_results['CBC']['chi']:.2f}", f"{aes_results['CTR']['chi']:.2f}", f"{ascon_results['chi']:.2f}" if ascon_results else "N/A", "P > 0.05"],
+            ["Correlation (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f} / {v_ch:.6f}", f"{aes_results['ECB']['corr_h']:.4f}", f"{aes_results['CBC']['corr_h']:.4f}", f"{aes_results['CTR']['corr_h']:.4f}", fmt_ascon('corr_h'), "0.0"],
+            ["Correlation (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f} / {v_cv:.6f}", f"{aes_results['ECB']['corr_v']:.4f}", f"{aes_results['CBC']['corr_v']:.4f}", f"{aes_results['CTR']['corr_v']:.4f}", fmt_ascon('corr_v'), "0.0"],
+            ["Correlation (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f} / {v_cd:.6f}", f"{aes_results['ECB']['corr_d']:.4f}", f"{aes_results['CBC']['corr_d']:.4f}", f"{aes_results['CTR']['corr_d']:.4f}", fmt_ascon('corr_d'), "0.0"],
+            ["GLCM Contrast",   f"{cont_orig:.4f}",    f"{m_cont:.4f} / {v_cont:.6f}", f"{aes_results['ECB']['contrast']:.4f}", f"{aes_results['CBC']['contrast']:.4f}", f"{aes_results['CTR']['contrast']:.4f}", fmt_ascon('contrast'), "High"],
+            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f} / {v_hom:.6f}", f"{aes_results['ECB']['homogeneity']:.4f}", f"{aes_results['CBC']['homogeneity']:.4f}", f"{aes_results['CTR']['homogeneity']:.4f}", fmt_ascon('homogeneity'), "~0"],
+            ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{aes_results['ECB']['npcr']:.4f}%", f"{aes_results['CBC']['npcr']:.4f}%", f"{aes_results['CTR']['npcr']:.4f}%", fmt_ascon('npcr'), ">99.6%"],
+            ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{aes_results['ECB']['uaci']:.4f}%", f"{aes_results['CBC']['uaci']:.4f}%", f"{aes_results['CTR']['uaci']:.4f}%", fmt_ascon('uaci'), "~33.4%"],
+            ["NPCR (Key Sens.)",  "-",                 f"{m_np_seeds:.4f}%", f"{aes_results['ECB']['npcr_k']:.4f}%", f"{aes_results['CBC']['npcr_k']:.4f}%", f"{aes_results['CTR']['npcr_k']:.4f}%", fmt_ascon('npcr_k'), ">99.6%"],
+            ["UACI (Key Sens.)",  "-",                 f"{m_uaci_seeds:.4f}%", f"{aes_results['ECB']['uaci_k']:.4f}%", f"{aes_results['CBC']['uaci_k']:.4f}%", f"{aes_results['CTR']['uaci_k']:.4f}%", fmt_ascon('uaci_k'), "~33.4%"],
+            ["Enc. Time (ms)",  "-",                   f"{m_t_enc:.2f} (CUDA)", f"{aes_results['ECB']['t_enc']:.2f}", f"{aes_results['CBC']['t_enc']:.2f}", f"{aes_results['CTR']['t_enc']:.2f}", fmt_ascon('t_enc'), "Min."],
+            ["Dec. Time (ms)",  "-",                   f"{m_t_dec:.2f} (CUDA)", f"{aes_results['ECB']['t_dec']:.2f}", f"{aes_results['CBC']['t_dec']:.2f}", f"{aes_results['CTR']['t_dec']:.2f}", fmt_ascon('t_dec'), "Min."],
+            ["PSNR (Dec. Qual)", "-",                  f"{m_psnr:.2f} dB", "-", "-", "-", "-", ">50"],
+            ["MAE (Dec. Error)", "-",                  f"{m_mae:.4f}", "-", "-", "-", "-", "0.0"],
         ]
         print(tabulate(data, headers=headers, tablefmt="fancy_grid"))
 
         plot_dashboard(tester_final.original_img, last_ciph, last_dec,
                        occ_input, occ_output,
                        key_diff_img,
-                       benchmark_data)
+                       benchmark_data,
+                       ascon_benchmark_data)
 
     except Exception as e:
         print(f"[!] Critical Error: {e}")
