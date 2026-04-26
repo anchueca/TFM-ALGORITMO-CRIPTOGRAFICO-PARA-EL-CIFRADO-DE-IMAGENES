@@ -96,14 +96,16 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
 
   // Total length
   int bytes_for_stego = 8; // 64 bits for stego seed
+  int bytes_for_r_params = (img_dimensions.cols + numBlocks) * 4; // per-seed chaotic r
   int length_bytes =
-      bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego;
+      bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego;
 
   if (verbose)
     std::cout << "[DEBUG] Key Requirements:" << std::endl
               << "  Columns bytes: " << bytes_for_columns << std::endl
               << "  Blocks bytes:  " << bytes_for_blocks << std::endl
               << "  Flow bytes:    " << bytes_for_flow << std::endl
+              << "  R params bytes:" << bytes_for_r_params << std::endl
               << "  Stego bytes:   " << bytes_for_stego << std::endl
               << "  Total bytes:   " << length_bytes << " (" << length_bytes * 8
               << " bits)" << std::endl;
@@ -126,7 +128,7 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
     password = generate_hash(input, length_bytes);
   }
 
-  std::vector<std::vector<unsigned char>> password_segments(3);
+  std::vector<std::vector<unsigned char>> password_segments(4);
 
   // construct segments (all sizes in bytes)
   password_segments[0].assign(password.begin(),
@@ -137,6 +139,12 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
                                   bytes_for_flow); // Blocks and flow
   password_segments[2].assign(password.begin() + bytes_for_columns +
                                   bytes_for_blocks + bytes_for_flow,
+                              password.begin() + bytes_for_columns +
+                                  bytes_for_blocks + bytes_for_flow +
+                                  bytes_for_r_params); // R params
+  password_segments[3].assign(password.begin() + bytes_for_columns +
+                                  bytes_for_blocks + bytes_for_flow +
+                                  bytes_for_r_params,
                               password.end()); // Steganography
   return password_segments;
 }

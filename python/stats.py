@@ -235,12 +235,11 @@ class CryptoMetrics:
 
 # --- 2. EXECUTION WRAPPER ---
 class ExternalCipherTester:
-    def __init__(self, exe_path, input_path, password, rounds, chaos, block_size, automata_steps, transition, is_binary=False):
+    def __init__(self, exe_path, input_path, password, rounds, block_size, automata_steps, transition, is_binary=False):
         self.exe = exe_path
         self.input_path = input_path
         self.password = password
         self.rounds = str(rounds)
-        self.chaos = str(chaos)
         self.block_size = str(block_size)
         self.automata_steps = str(automata_steps)
         self.transition = str(transition)
@@ -272,7 +271,7 @@ class ExternalCipherTester:
         cmd = [
             self.exe, "STDIN", "STDOUT",
             password_to_use, self.rounds, mode_flag,
-            self.block_size, self.automata_steps, self.transition, self.chaos, "0",
+            self.block_size, self.automata_steps, self.transition, "0",
             binary_flag
         ]
 
@@ -344,6 +343,7 @@ class ExternalCipherTester:
             numBlocks_gpu = (self.padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
             if numBlocks_gpu < 1: numBlocks_gpu = 1
             bits_flow = (4 + (self.padded_cols + numBlocks_gpu) * 4) * 8
+            bits_r_params = ((self.padded_cols + numBlocks_gpu) * 4) * 8
             
             if segment == 'cols':
                 range_start, range_end = 0, bits_cols
@@ -352,7 +352,7 @@ class ExternalCipherTester:
                 active_bits = min(bits_flow, (numBlocks_gpu + 1) * 32)
                 range_start, range_end = bits_cols + 32, bits_cols + active_bits
             elif segment == 'stego':
-                range_start, range_end = bits_cols + bits_flow, len(original_pw)
+                range_start, range_end = bits_cols + bits_flow + bits_r_params, len(original_pw)
             else: # 'any'
                 range_start, range_end = 0, len(original_pw)
             
@@ -460,8 +460,8 @@ class ExternalCipherTester:
                 MAX_THREADS = 64
                 num_blocks = (padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
                 if num_blocks < 1: num_blocks = 1
-                # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
-                total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
+                # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego
+                total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + (padded_cols + num_blocks) * 4 + 8
                 required_bits = total_bytes * 8
                 
                 # Generate a key of the correct length for this image
@@ -732,7 +732,6 @@ def main():
     parser.add_argument("--password", help="Use this password instead of random ones")
     # Optional algorithm parameters
     parser.add_argument("--rounds", type=int, default=3, help="Number of encryption rounds")
-    parser.add_argument("--chaos", type=float, default=3.999, help="Chaotic map parameter")
     parser.add_argument("--block-size", type=int, default=8, help="Block size in pixels")
     parser.add_argument("--steps", type=int, default=20, help="Automata evolution steps")
     parser.add_argument("--trans", type=int, default=20, help="Transition length")
@@ -758,7 +757,7 @@ def main():
         # We need a temporary tester to load the image
         temp_tester = ExternalCipherTester(
             args.exe, args.input, "dummy",
-            args.rounds, args.chaos, 
+            args.rounds,
             args.block_size, args.steps, args.trans,
             is_binary=False
         )
@@ -796,8 +795,8 @@ def main():
         MAX_THREADS = 64
         num_blocks = (padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
         if num_blocks < 1: num_blocks = 1
-        # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego
-        total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
+        # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego
+        total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + (padded_cols + num_blocks) * 4 + 8
         required_bits = total_bytes * 8
         
         # print(f"[+] Original dimensions: {base_cols}x{rows} (channels={channels})")
@@ -816,7 +815,7 @@ def main():
 
             tester = ExternalCipherTester(
                 args.exe, args.input, run_pw,
-                args.rounds, args.chaos,
+                args.rounds,
                 args.block_size, args.steps, args.trans,
                 is_binary=(user_pw_is_binary if args.password else True)
             )
@@ -902,7 +901,7 @@ def main():
         final_pw_for_metrics = args.password if args.password else generate_random_password(length=required_bits, binary=True)
         tester_final = ExternalCipherTester(
             args.exe, args.input, final_pw_for_metrics,
-            args.rounds, args.chaos,
+            args.rounds,
             args.block_size, args.steps, args.trans,
             is_binary=(user_pw_is_binary if args.password else True)
         )
@@ -1014,7 +1013,7 @@ def main():
         final_pw_for_key_sens = args.password if args.password else generate_random_password(length=required_bits, binary=True)
         tester_final_key_sens = ExternalCipherTester(
             args.exe, args.input, final_pw_for_key_sens,
-            args.rounds, args.chaos,
+            args.rounds,
             args.block_size, args.steps, args.trans,
             is_binary=(user_pw_is_binary if args.password else True)
         )

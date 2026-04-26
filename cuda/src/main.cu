@@ -100,7 +100,7 @@ int main(int argc, char **argv) {
     } else {
       // Recovery the ophuscated image hash
       config.params.image_hash =
-          extract_message_caos(processed_image, password_segments[2],
+          extract_message_caos(processed_image, password_segments[3],
                                config.input_image_path, config.exif_hex);
       if (config.verbose)
         std::cerr << " [INFO] Recovered Image Hash: "
@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
       image = processed_image;
 
       // Embed the image hash in the image
-      embed_message_caos(image, config.params.image_hash, password_segments[2],
+      embed_message_caos(image, config.params.image_hash, password_segments[3],
                          config.output_arg);
     }
   } catch (const std::exception &e) {

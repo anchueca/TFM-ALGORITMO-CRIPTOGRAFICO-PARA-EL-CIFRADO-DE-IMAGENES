@@ -203,6 +203,15 @@ convert_bits_to_real(const std::vector<unsigned char> &password_segment,
                  "Error during cudaDeviceSynchronize in convert_bits_to_real");
 }
 
+__host__ void
+convert_bits_to_r_params(const std::vector<unsigned char> &password_segment,
+                         Real **d_r_params) {
+  // Reuse the same logic as convert_bits_to_real:
+  // interpret bytes as uint32_t, normalize to [0, 1].
+  // The final scaling to [3, 7] is done inline in the kernel.
+  convert_bits_to_real(password_segment, d_r_params);
+}
+
 __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                             Image_dimensions img_dimensions,
                                             EncryptionParams params) {
@@ -262,7 +271,7 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                                   shared_mem_size>>>(
       d_pointers.d_flow, d_pointers.d_seeds,
       reinterpret_cast<unsigned short *>(d_pointers.d_automata_state),
-      d_pointers.d_image_automata_state, img_dimensions, params.chaos_parameter,
+      d_pointers.d_image_automata_state, img_dimensions, d_pointers.d_r_params,
       img_dimensions.rows + transition_length, chaotic_values, block_size,
       transition_length, numBlocks.x);
 

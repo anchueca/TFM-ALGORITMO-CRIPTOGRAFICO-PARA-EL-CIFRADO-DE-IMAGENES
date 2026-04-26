@@ -45,7 +45,7 @@ fi
 
 # Encrypt the test image
 echo "[SCRIPT] Running encryption..."
-ENCRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./repositorio/set3/lena3.tif ./cuda/bin/salida.tif password9 $ROUNDS 1 8 20 10 3.9 1 0"
+ENCRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./repositorio/set3/lena3.tif ./cuda/bin/salida.tif password9 $ROUNDS 1 8 20 10 1 0"
 ENCRYPT_OUTPUT=$(eval $ENCRYPT_CMD 2>&1)
 echo "$ENCRYPT_OUTPUT"
 
@@ -61,5 +61,5 @@ fi
 
 # Decrypt the encrypted image
 echo -e "\n[SCRIPT] Running decryption..."
-DECRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password9 $ROUNDS 0 8 20 10 3.9 0 0 $RECOVERY_HEX"
+DECRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password9 $ROUNDS 0 8 20 10 0 0 $RECOVERY_HEX"
 eval $DECRYPT_CMD

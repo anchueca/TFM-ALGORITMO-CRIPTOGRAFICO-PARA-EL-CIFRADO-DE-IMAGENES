@@ -246,7 +246,6 @@ void test_actual_block_permutation() {
   Image_dimensions dims = {(size_t)size, (size_t)size};
   EncryptionParams params;
   params.block_size = block_size;
-  params.chaos_parameter = 3.9;
   params.transition_length = 50;
 
   cudaMalloc(&d_ptrs.d_image, size * size);
@@ -315,7 +314,6 @@ void test_keystream_diffusion() {
 
   Image_dimensions dims = {(size_t)size, (size_t)size};
   EncryptionParams params;
-  params.chaos_parameter = 3.99;
   params.transition_length = 100;
   params.block_size = 8;
   params.rounds = 1;
@@ -340,6 +338,16 @@ void test_keystream_diffusion() {
              cudaMemcpyDeviceToDevice);
 
   std::cout << "► Generating actual keystream (CML)..." << std::endl;
+
+  // Setup per-seed r params (fill with 0.5 -> maps to r=5.0 in kernel)
+  int effective_threads = 63;
+  int r_numBlocks = (dims.cols + effective_threads - 1) / effective_threads;
+  size_t r_count = dims.cols + r_numBlocks;
+  std::vector<Real> h_r_params(r_count, 0.5f);
+  cudaMalloc(&d_ptrs.d_r_params, r_count * sizeof(Real));
+  cudaMemcpy(d_ptrs.d_r_params, h_r_params.data(), r_count * sizeof(Real),
+             cudaMemcpyHostToDevice);
+
   generate_flow_stream_parallel(d_ptrs, dims, params);
 
   cv::Mat keystream(size, size, CV_8U);
@@ -373,6 +381,7 @@ void test_keystream_diffusion() {
   cudaFree(d_ptrs.d_seeds);
   cudaFree(d_ptrs.d_automata_state);
   cudaFree(d_ptrs.d_image_automata_state);
+  cudaFree(d_ptrs.d_r_params);
   if (d_ptrs.d_chaotic_values_for_permutation)
     cudaFree(d_ptrs.d_chaotic_values_for_permutation);
 

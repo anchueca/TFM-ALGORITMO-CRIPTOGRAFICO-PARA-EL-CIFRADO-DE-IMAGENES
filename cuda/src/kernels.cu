@@ -225,7 +225,8 @@ __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
     unsigned short *__restrict__ cellular_automata,
     unsigned short *__restrict__ image_automata_state,
-    Image_dimensions img_dimensions, Real r, const size_t total_steps,
+    Image_dimensions img_dimensions,
+    const Real *__restrict__ d_r_params, const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks) {
 
@@ -254,6 +255,7 @@ __global__ void keystream_generation_parallel(
   unsigned short cellular_automata_value;
   size_t state_idx;
   Real next_val;
+  Real my_r; // Per-thread chaotic parameter
 
   if (is_active) {
     c_seed = &s_seeds[tid];
@@ -272,11 +274,13 @@ __global__ void keystream_generation_parallel(
       cellular_automata_value = cellular_automata[state_idx];
     }
     next_val = *c_seed;
+    // Load per-thread r from key-derived array (already in [0, 1], scale to [3, 7])
+    my_r = (Real)3.0 + d_r_params[state_idx] * (Real)4.0;
   }
 
   for (size_t step = 0; step < total_steps; ++step) {
     if (is_active)
-      next_val = chaotic_function(next_val, r);
+      next_val = chaotic_function(next_val, my_r);
 
     // Initial synchronization to ensure shared memory is populated (at first
     // iteration) or updated (in subsequent iterations) before any thread reads

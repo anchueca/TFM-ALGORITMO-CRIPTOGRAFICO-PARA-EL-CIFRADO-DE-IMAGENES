@@ -72,7 +72,7 @@ __device__ __forceinline__ CoupledResult coupled_map(Real c_next, Real *r_next,
  * @param celular_automata Checksum/automata state (unused in this kernel logic
  * but passed).
  * @param img_dimensions Struct containing the image dimensions.
- * @param r The chaotic parameter.
+ * @param d_r_params Per-seed chaotic parameter array (values in [0,1], scaled to [3,7] in kernel).
  * @param total_steps Total number of evolution steps (transition + rows).
  * @param d_chaotic_values Output buffer for chaotic values used in
  * permutations.
@@ -84,7 +84,8 @@ __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
     unsigned short *__restrict__ cellular_automata,
     unsigned short *__restrict__ d_image_automata_state,
-    Image_dimensions img_dimensions, Real r, const size_t total_steps,
+    Image_dimensions img_dimensions,
+    const Real *__restrict__ d_r_params, const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks);
 

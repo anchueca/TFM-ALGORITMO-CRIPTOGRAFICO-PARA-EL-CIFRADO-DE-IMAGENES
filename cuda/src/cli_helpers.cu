@@ -9,7 +9,7 @@ void print_usage(const char *prog_name) {
   cout << "Usage: " << prog_name
        << " <InputPath> <OutputPath|SHOW|STDOUT> <Password> "
        << "<Rounds> <Mode(1=Enc/0=Dec)> <BlockSize> "
-       << "<AutoSteps> <TransLen> <chaosParam> <Verbose(0/1)> <Bitstring(0/1)> "
+       << "<AutoSteps> <TransLen> <Verbose(0/1)> <Bitstring(0/1)> "
        << "[ExifHex]" << endl;
   cout << "\nOutput Options:" << endl;
   cout << "  <Path>   : Saves to file (e.g., output.tif)" << endl;
@@ -19,8 +19,8 @@ void print_usage(const char *prog_name) {
 }
 
 bool parse_arguments(int argc, char **argv, AppConfig &config) {
-  const size_t min_args = 12;
-  const size_t max_args = 13;
+  const size_t min_args = 11;
+  const size_t max_args = 12;
   if (argc < min_args || argc > max_args) {
     cerr << "[ERROR] Invalid number of arguments! " << argc << " received, "
          << "expected " << min_args << " or " << max_args << "." << endl;
@@ -36,13 +36,8 @@ bool parse_arguments(int argc, char **argv, AppConfig &config) {
     config.params.block_size = stoi(argv[6]);
     config.params.automata_steps = stoi(argv[7]);
     config.params.transition_length = stoi(argv[8]);
-#ifdef USE_DOUBLE_PRECISION
-    config.params.chaos_parameter = stod(argv[9]);
-#else
-    config.params.chaos_parameter = stof(argv[9]);
-#endif
-    config.verbose = (strcmp(argv[10], "1") == 0);
-    config.use_raw_key = (strcmp(argv[11], "1") == 0);
+    config.verbose = (strcmp(argv[9], "1") == 0);
+    config.use_raw_key = (strcmp(argv[10], "1") == 0);
 
     if (config.output_arg == "SHOW" || config.output_arg == "NULL") {
       config.output_mode = OutputMode::DISPLAY_WINDOW;
@@ -53,8 +48,8 @@ bool parse_arguments(int argc, char **argv, AppConfig &config) {
       config.output_mode = OutputMode::FILE_SAVE;
     }
 
-    if (argc == 13) {
-      config.exif_hex = argv[12];
+    if (argc == 12) {
+      config.exif_hex = argv[11];
     }
   } catch (const std::exception &e) {
     cerr << "[ERROR] Parsing arguments failed: " << e.what() << endl;

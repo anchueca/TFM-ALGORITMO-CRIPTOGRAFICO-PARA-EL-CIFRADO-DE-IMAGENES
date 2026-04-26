@@ -120,15 +120,12 @@ TEST_F(ParameterValidationTest, ValidEncryptionParams) {
   params.block_size = 8;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_GT(params.rounds, 0);
   ASSERT_GT(params.block_size, 0);
   ASSERT_GT(params.automata_steps, 0);
   ASSERT_GT(params.transition_length, 0);
-  ASSERT_GE(params.chaos_parameter, 3.5f);
-  ASSERT_LE(params.chaos_parameter, 4.0f);
 }
 
 TEST_F(ParameterValidationTest, BlockSizePowerOfTwo) {
@@ -146,9 +143,6 @@ TEST_F(ParameterValidationTest, ChaosParameterRange) {
   std::vector<float> valid_params = {3.6f, 3.7f, 3.8f, 3.9f, 4.0f};
   for (float r : valid_params) {
     EncryptionParams params;
-    params.chaos_parameter = r;
-    ASSERT_GE(params.chaos_parameter, 3.5f);
-    ASSERT_LE(params.chaos_parameter, 4.0f);
   }
 }
 
@@ -271,7 +265,6 @@ TEST_F(MemoryTest, AllocateSmallImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
 
   ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params));
 
@@ -293,7 +286,6 @@ TEST_F(MemoryTest, AllocateLargeImage) {
   params.block_size = 16;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
 
   ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params));
   ASSERT_NE(d_ptrs.d_image, nullptr);
@@ -308,7 +300,6 @@ TEST_F(MemoryTest, TransferBackAndCleanup) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
 
   allocate_and_transfer_image(d_ptrs, img, params);
   ASSERT_NO_THROW(transfer_back_and_cleanup(d_ptrs, img));
@@ -525,7 +516,6 @@ TEST_F(EncryptionTest, EncryptGrayscaleSmall) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -547,7 +537,6 @@ TEST_F(EncryptionTest, EncryptDecryptInvertible) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Encrypt
@@ -589,7 +578,6 @@ TEST_F(EncryptionTest, DifferentPasswordsProduceDifferentCiphertexts) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   encrypt_image(img1, password1, dims, params, false, true);
@@ -620,7 +608,6 @@ TEST_F(EncryptionTest, VariousRoundCounts) {
     params.block_size = 8;
     params.automata_steps = 10;
     params.transition_length = 5;
-    params.chaos_parameter = 3.9f;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -649,7 +636,6 @@ TEST_F(EncryptionTest, VariousBlockSizes) {
     params.block_size = bs;
     params.automata_steps = 10;
     params.transition_length = 5;
-    params.chaos_parameter = 3.9f;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -681,7 +667,6 @@ TEST_F(ImageSizeTest, SmallImage32x32) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -705,7 +690,6 @@ TEST_F(ImageSizeTest, MediumImage128x128) {
   params.block_size = 16;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -729,7 +713,6 @@ TEST_F(ImageSizeTest, LargeImage256x256) {
   params.block_size = 16;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -753,7 +736,6 @@ TEST_F(ImageSizeTest, NonSquareImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -786,7 +768,6 @@ TEST_F(ChaosParameterTest, ChaosParameterVariations) {
     params.block_size = 8;
     params.automata_steps = 10;
     params.transition_length = 5;
-    params.chaos_parameter = r;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -818,7 +799,6 @@ TEST_F(EdgeCaseTest, AllZeroImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -842,7 +822,6 @@ TEST_F(EdgeCaseTest, AllMaxImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -872,7 +851,6 @@ TEST_F(EdgeCaseTest, AlternatingPatternImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -902,7 +880,6 @@ TEST_F(EdgeCaseTest, GradientImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -928,7 +905,6 @@ TEST_F(EdgeCaseTest, MultipleEncryptRoundsDecrypt) {
   params.block_size = 8;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Encrypt
@@ -959,7 +935,6 @@ TEST_F(EdgeCaseTest, LowAutomataSteps) {
   params.block_size = 8;
   params.automata_steps = 1; // Minimal steps
   params.transition_length = 1;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -983,7 +958,6 @@ TEST_F(EdgeCaseTest, HighAutomataSteps) {
   params.block_size = 8;
   params.automata_steps = 100; // High steps
   params.transition_length = 50;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -1015,7 +989,6 @@ TEST_F(IntegrationTest, FullEncryptDecryptPipeline) {
   params.block_size = 16;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Full pipeline: encrypt -> decrypt
@@ -1043,7 +1016,6 @@ TEST_F(IntegrationTest, MultipleImagesConsistent) {
   params.block_size = 8;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   cv::Mat img1 = create_test_image(64, 64, 1);
@@ -1078,7 +1050,6 @@ TEST_F(IntegrationTest, DifferentPasswordsDifferentCiphertexts) {
   params.block_size = 8;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   cv::Mat encrypted1 = original.clone();
@@ -1115,7 +1086,6 @@ TEST_F(LargeBlockSizeTest, BlockSize32WithMediumImage) {
   params.block_size = 32;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -1139,7 +1109,6 @@ TEST_F(LargeBlockSizeTest, BlockSize64WithLargeImage) {
   params.block_size = 64;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -1163,7 +1132,6 @@ TEST_F(LargeBlockSizeTest, BlockSize128WithVeryLargeImage) {
   params.block_size = 128;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -1189,7 +1157,6 @@ TEST_F(LargeBlockSizeTest, EncryptDecryptWithLargeBlockSize) {
   params.block_size = 64;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Encrypt
@@ -1226,7 +1193,6 @@ TEST_F(LargeImageStressTest, LargeRandom512x512Image) {
   params.block_size = 64;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -1250,7 +1216,6 @@ TEST_F(LargeImageStressTest, LargeImage1024x1024) {
   params.block_size = 128;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -1275,7 +1240,6 @@ TEST_F(LargeImageStressTest, BlockSize32WithVaryingRounds) {
     params.block_size = 32;
     params.automata_steps = 20;
     params.transition_length = 10;
-    params.chaos_parameter = 3.9f;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -1303,7 +1267,6 @@ TEST_F(LargeImageStressTest, BlockSize64AndLargeRounds) {
   params.block_size = 64;
   params.automata_steps = 25;
   params.transition_length = 12;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Encrypt

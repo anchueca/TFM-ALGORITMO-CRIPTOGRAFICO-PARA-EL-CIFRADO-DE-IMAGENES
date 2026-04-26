@@ -14,7 +14,6 @@ TEST_F(EdgeCaseTest, LargeImage1024x1024) {
   params.block_size = 16;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Run full pipeline: Encrypt -> Decrypt -> Compare

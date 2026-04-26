@@ -48,6 +48,20 @@ convert_bits_to_real(const std::vector<unsigned char> &password_segment,
                      Real **d_seeds);
 
 /**
+ * @brief Converts password bits into per-seed chaotic r parameters.
+ *
+ * Reuses convert_bits_to_real_kernel to normalize uint32 values to [0, 1].
+ * The final scaling to [3, 7] is done inline in the keystream kernel.
+ *
+ * @param password_segment A vector of bytes representing the r-param segment.
+ * @param d_r_params Pointer to the device memory where the r values will be
+ * stored. The function allocates this memory.
+ */
+__host__ void
+convert_bits_to_r_params(const std::vector<unsigned char> &password_segment,
+                         Real **d_r_params);
+
+/**
  * @brief Generates the flow keystream in parallel using a Block-Parallel CML.
  *
  * This function oversees the generation of the chaotic keystream. It configures

@@ -41,8 +41,6 @@ void print_encryption_report(const cv::Mat &image,
   std::cout << "  " << std::left << std::setw(25)
             << "CML Transition Period:" << params.transition_length
             << std::endl;
-  std::cout << "  " << std::left << std::setw(25)
-            << "Chaotic Parameter (r):" << params.chaos_parameter << std::endl;
   std::cout << "\n [GRID ARCHITECTURE]" << std::endl;
   std::cout << "  " << std::left << std::setw(25)
             << "Grid Layout:" << num_blocks_per_col << " (cols) x "
@@ -125,6 +123,7 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   cudaFree(d_pointers.d_permutation_blocks);
   cudaFree(d_pointers.d_permutation_blocks_inverse);
   cudaFree(d_pointers.d_seeds);
+  cudaFree(d_pointers.d_r_params);
   cudaFree(d_pointers.d_flow);
   cudaFree(d_pointers.d_image);
   cudaFree(d_pointers.d_image_out);
@@ -156,6 +155,9 @@ __host__ void encrypt_image(cv::Mat &image,
 
   // For flow and block permutations (and extra seeds)
   convert_bits_to_real(password[1], &d_pointers.d_seeds);
+
+  // Per-seed chaotic r parameters derived from key
+  convert_bits_to_r_params(password[2], &d_pointers.d_r_params);
 
   if (verbose)
     std::cout << " > Starting GPU Execution..." << std::endl;

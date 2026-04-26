@@ -32,12 +32,6 @@
  *   - More transitions = better mixing of chaotic sequences
  *   - Used in block permutation generation
  *
- * - @b chaos_parameter: Parameter 'r' for the logistic map: x_{n+1} = r * x_n *
- * (1 - x_n)
- *   - Values outside chaotic regime will produce weak encryption!
- *   - Verify chaotic behavior using bifurcation diagrams (see
- * python/bifurcacion.py)
- *
  * @par Example Usage:
  * @code
  * EncryptionParams params;
@@ -46,7 +40,6 @@
  * params.precision_level = 4;
  * params.automata_steps = 20;
  * params.transition_length = 10;
- * params.chaos_parameter = 3.9;
  * @endcode
  *
  * @note All encryption and decryption operations must use identical parameters!
@@ -63,7 +56,6 @@ struct EncryptionParams {
   size_t block_size;
   size_t automata_steps;
   size_t transition_length;
-  Real chaos_parameter;
   unsigned short image_hash;
 };
 
@@ -134,6 +126,7 @@ struct D_pointers {
       nullptr;                    // For block permutation generation
   unsigned int *d_automata_state = nullptr; // For automata iteration in flow generation
   unsigned short *d_image_automata_state = nullptr; // Automata state for extra seeds. The same in all blocks.
+  Real *d_r_params = nullptr; ///< Per-seed chaotic parameter r, derived from key, in [3, 7]
 };
 
 #endif // STRUCT_CUH

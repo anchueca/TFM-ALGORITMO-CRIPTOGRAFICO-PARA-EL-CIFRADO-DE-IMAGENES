@@ -87,23 +87,28 @@ protected:
     // they are shared. The implementation in aux.cu only allocates
     // bytes_for_columns.
     int bytes_for_blocks = num_blocks_permutations * 4;
-    int numBlocks = (dims.cols + 256) / 256;
+    int numBlocks = (dims.cols + 64 - 2) / 64 - 1;
     int bytes_for_flow = (dims.cols + numBlocks) * 4;
+    int bytes_for_r_params = (dims.cols + numBlocks) * 4;
     int bytes_for_stego = 8;
     int total_bytes =
-        bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_stego;
+        bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego;
 
     // Generate random password
     std::vector<unsigned char> password = create_random_bytes(total_bytes);
 
     // Split into segments
-    std::vector<std::vector<unsigned char>> segments(3);
+    std::vector<std::vector<unsigned char>> segments(4);
     segments[0].assign(password.begin(), password.begin() + bytes_for_columns);
     segments[1].assign(password.begin() + bytes_for_columns,
                        password.begin() + bytes_for_columns + bytes_for_blocks +
                            bytes_for_flow);
     segments[2].assign(password.begin() + bytes_for_columns + bytes_for_blocks +
                            bytes_for_flow,
+                       password.begin() + bytes_for_columns + bytes_for_blocks +
+                           bytes_for_flow + bytes_for_r_params);
+    segments[3].assign(password.begin() + bytes_for_columns + bytes_for_blocks +
+                           bytes_for_flow + bytes_for_r_params,
                        password.end());
     return segments;
   }
@@ -121,15 +126,12 @@ TEST_F(ParameterValidationTest, ValidEncryptionParams) {
   params.block_size = 8;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_GT(params.rounds, 0);
   ASSERT_GT(params.block_size, 0);
   ASSERT_GT(params.automata_steps, 0);
   ASSERT_GT(params.transition_length, 0);
-  ASSERT_GE(params.chaos_parameter, 3.5f);
-  ASSERT_LE(params.chaos_parameter, 4.0f);
 }
 
 TEST_F(ParameterValidationTest, BlockSizePowerOfTwo) {
@@ -143,12 +145,12 @@ TEST_F(ParameterValidationTest, BlockSizePowerOfTwo) {
 }
 
 TEST_F(ParameterValidationTest, ChaosParameterRange) {
-  std::vector<float> valid_params = {3.6f, 3.7f, 3.8f, 3.9f, 4.0f};
+  // chaos_parameter is now key-derived, not a standalone param.
+  // This test validates the range [3, 7] applied in the kernel.
+  std::vector<float> valid_params = {3.0f, 4.5f, 5.5f, 6.5f, 7.0f};
   for (float r : valid_params) {
-    EncryptionParams params;
-    params.chaos_parameter = r;
-    ASSERT_GE(params.chaos_parameter, 3.5f);
-    ASSERT_LE(params.chaos_parameter, 4.0f);
+    ASSERT_GE(r, 3.0f);
+    ASSERT_LE(r, 7.0f);
   }
 }
 
@@ -264,7 +266,6 @@ TEST_F(MemoryTest, AllocateSmallImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
 
   ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params, false));
   ASSERT_NE(d_ptrs.d_image, nullptr);
@@ -279,7 +280,6 @@ TEST_F(MemoryTest, AllocateLargeImage) {
   params.block_size = 16;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
 
   ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params, false));
   ASSERT_NE(d_ptrs.d_image, nullptr);
@@ -295,7 +295,6 @@ TEST_F(MemoryTest, TransferBackAndCleanup) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
 
   ASSERT_NO_THROW(allocate_and_transfer_image(d_ptrs, img, params, false));
   ASSERT_NO_THROW(transfer_back_and_cleanup(d_ptrs, img_result));
@@ -322,7 +321,6 @@ TEST_F(EncryptionTest, EncryptGrayscaleSmall) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -344,7 +342,6 @@ TEST_F(EncryptionTest, EncryptDecryptInvertible) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   // Encrypt
@@ -381,7 +378,6 @@ TEST_F(EncryptionTest, DifferentPasswordsProduceDifferentCiphertexts) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   encrypt_image(img1, password1, dims, params, false, true);
@@ -408,7 +404,6 @@ TEST_F(EncryptionTest, VariousRoundCounts) {
     params.block_size = 8;
     params.automata_steps = 10;
     params.transition_length = 5;
-    params.chaos_parameter = 3.9f;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -433,7 +428,6 @@ TEST_F(EncryptionTest, VariousBlockSizes) {
     params.block_size = bs;
     params.automata_steps = 10;
     params.transition_length = 5;
-    params.chaos_parameter = 3.9f;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -461,7 +455,6 @@ TEST_F(ImageSizeTest, SmallImage32x32) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -481,7 +474,6 @@ TEST_F(ImageSizeTest, MediumImage128x128) {
   params.block_size = 16;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -501,7 +493,6 @@ TEST_F(ImageSizeTest, LargeImage256x256) {
   params.block_size = 16;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -521,7 +512,6 @@ TEST_F(ImageSizeTest, NonSquareImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -534,13 +524,14 @@ TEST_F(ImageSizeTest, NonSquareImage) {
 class ChaosParameterTest : public CipherTest {};
 
 TEST_F(ChaosParameterTest, ChaosParameterVariations) {
-  std::vector<float> chaos_params = {3.6f, 3.7f, 3.8f, 3.9f, 4.0f};
-
+  // chaos_parameter is now key-derived per seed. This test verifies
+  // encryption still works with different random keys (which produce
+  // different r values per seed).
   Image_dimensions dims;
   dims.rows = 64;
   dims.cols = 64;
 
-  for (float r : chaos_params) {
+  for (int i = 0; i < 5; ++i) {
     cv::Mat img = create_test_image(64, 64, 1);
     std::vector<std::vector<unsigned char>> password =
         create_password_for_image(dims);
@@ -550,11 +541,10 @@ TEST_F(ChaosParameterTest, ChaosParameterVariations) {
     params.block_size = 8;
     params.automata_steps = 10;
     params.transition_length = 5;
-    params.chaos_parameter = r;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
-        << "Encryption failed with chaos parameter " << r;
+        << "Encryption failed with random key " << i;
   }
 }
 
@@ -578,7 +568,6 @@ TEST_F(EdgeCaseTest, AllZeroImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -598,7 +587,6 @@ TEST_F(EdgeCaseTest, AllMaxImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -624,7 +612,6 @@ TEST_F(EdgeCaseTest, AlternatingPatternImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -650,7 +637,6 @@ TEST_F(EdgeCaseTest, GradientImage) {
   params.block_size = 8;
   params.automata_steps = 10;
   params.transition_length = 5;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -672,7 +658,6 @@ TEST_F(EdgeCaseTest, MultipleEncryptRoundsDecrypt) {
   params.block_size = 8;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   encrypt_image(img, password, dims, params, false, true);
@@ -697,7 +682,6 @@ TEST_F(EdgeCaseTest, LowAutomataSteps) {
   params.block_size = 8;
   params.automata_steps = 1;
   params.transition_length = 1;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -717,7 +701,6 @@ TEST_F(EdgeCaseTest, HighAutomataSteps) {
   params.block_size = 8;
   params.automata_steps = 100;
   params.transition_length = 50;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -745,7 +728,6 @@ TEST_F(IntegrationTest, FullEncryptDecryptPipeline) {
   params.block_size = 16;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   encrypt_image(img, password, dims, params, false, true);
@@ -768,7 +750,6 @@ TEST_F(IntegrationTest, MultipleImagesConsistent) {
   params.block_size = 8;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   cv::Mat img1 = create_test_image(64, 64, 1);
@@ -798,7 +779,6 @@ TEST_F(IntegrationTest, DifferentPasswordsDifferentCiphertexts) {
   params.block_size = 8;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   cv::Mat encrypted1 = original.clone();
@@ -831,7 +811,6 @@ TEST_F(LargeBlockSizeTest, BlockSize32WithMediumImage) {
   params.block_size = 32;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -851,7 +830,6 @@ TEST_F(LargeBlockSizeTest, BlockSize64WithLargeImage) {
   params.block_size = 64;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -871,7 +849,6 @@ TEST_F(LargeBlockSizeTest, BlockSize128WithVeryLargeImage) {
   params.block_size = 128;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -893,7 +870,6 @@ TEST_F(LargeBlockSizeTest, EncryptDecryptWithLargeBlockSize) {
   params.block_size = 64;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   encrypt_image(img, password, dims, params, false, true);
@@ -924,7 +900,6 @@ TEST_F(LargeImageStressTest, LargeRandom512x512Image) {
   params.block_size = 64;
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -944,7 +919,6 @@ TEST_F(LargeImageStressTest, LargeImage1024x1024) {
   params.block_size = 128;
   params.automata_steps = 15;
   params.transition_length = 8;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true));
@@ -965,7 +939,6 @@ TEST_F(LargeImageStressTest, BlockSize32WithVaryingRounds) {
     params.block_size = 32;
     params.automata_steps = 20;
     params.transition_length = 10;
-    params.chaos_parameter = 3.9f;
     params.image_hash = 0;
 
     ASSERT_NO_THROW(encrypt_image(img, password, dims, params, false, true))
@@ -989,7 +962,6 @@ TEST_F(LargeImageStressTest, BlockSize64AndLargeRounds) {
   params.block_size = 64;
   params.automata_steps = 25;
   params.transition_length = 12;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   encrypt_image(img, password, dims, params, false, true);
@@ -1021,7 +993,6 @@ TEST_F(EdgeCaseTest, LargeImage1024x1024) {
   params.block_size = 16; // Using 16 (Safe for Large Images)
   params.automata_steps = 20;
   params.transition_length = 10;
-  params.chaos_parameter = 3.9f;
   params.image_hash = 0;
 
   cv::Mat original = img.clone();
