@@ -3,7 +3,7 @@ import numpy as np
 import argparse
 import matplotlib
 import matplotlib.pyplot as plt
-from scipy import stats
+from scipy import stats, special, fftpack as fft
 from scipy.stats import entropy, chisquare
 from skimage.feature import graycomatrix, graycoprops
 from tabulate import tabulate
@@ -173,6 +173,64 @@ class CryptoMetrics:
         mae = np.mean(np.abs(img1.astype(float) - img2.astype(float)))
         return psnr, mae
 
+    @staticmethod
+    def nist_monobit(image):
+        bits = np.unpackbits(image.flatten()).astype(np.int32)
+        n = len(bits)
+        s_n = np.sum(2 * bits - 1)
+        s_obs = abs(s_n) / np.sqrt(n)
+        return special.erfc(s_obs / np.sqrt(2))
+
+    @staticmethod
+    def nist_runs(image):
+        bits = np.unpackbits(image.flatten())
+        n = len(bits)
+        pi = np.mean(bits)
+        if abs(pi - 0.5) >= (2/np.sqrt(n)): return 0.0
+        v_n = 1 + np.sum(bits[:-1] != bits[1:])
+        return special.erfc(abs(v_n - 2*n*pi*(1-pi)) / (2 * np.sqrt(2*n) * pi * (1-pi)))
+
+    @staticmethod
+    def nist_block_freq(image, m=128):
+        bits = np.unpackbits(image.flatten())
+        n = len(bits)
+        n_blocks = n // m
+        if n_blocks <= 0: return 0.0
+        pi = [np.mean(bits[i*m:(i+1)*m]) for i in range(n_blocks)]
+        chi_sq = 4 * m * np.sum((np.array(pi) - 0.5)**2)
+        return special.gammaincc(n_blocks/2, chi_sq/2)
+
+    @staticmethod
+    def nist_spectral(image):
+        bits = np.unpackbits(image.flatten()).astype(np.int32)
+        n = len(bits)
+        if n % 2 != 0: bits = bits[:-1]; n -= 1
+        s = 2 * bits - 1
+        dft = fft.fft(s)
+        m = np.abs(dft[:n//2])
+        threshold = np.sqrt(np.log(1/0.05) * n)
+        n_obs = np.sum(m < threshold)
+        n_exp = 0.95 * n / 2
+        d = (n_obs - n_exp) / np.sqrt(n * 0.95 * 0.05 / 4)
+        return special.erfc(abs(d) / np.sqrt(2))
+
+    @staticmethod
+    def nist_longest_run(image):
+        bits = np.unpackbits(image.flatten())
+        n = len(bits)
+        m = 128
+        if n < m: return 0.0
+        n_blocks = n // m
+        max_runs = []
+        for i in range(n_blocks):
+            block = bits[i*m:(i+1)*m]
+            runs = "".join(map(str, block)).split('0')
+            max_runs.append(max(len(r) for r in runs) if runs else 0)
+        mean_obs = np.mean(max_runs)
+        expected_mean = np.log2(m)
+        z_score = abs(mean_obs - expected_mean) / (np.sqrt(expected_mean))
+        return special.erfc(z_score / np.sqrt(2))
+
 
 
 # --- 2. EXECUTION WRAPPER ---
@@ -275,9 +333,9 @@ class ExternalCipherTester:
         if not is_binary:
             # Fallback for old alphanumeric passwords
             last_char_code = ord(original_pw[-1]) if original_pw else 97
+            range_start, range_end = 0, bits_cols
             new_last_char = chr(last_char_code ^ 1)
             mod_pw = original_pw[:-1] + new_last_char
-            print(f"   [Debug] Key Sensitivity (Alpha): '{original_pw[:8]}...' vs '{mod_pw[:8]}...'")
         else:
             # Binary key segments (matching aux.cu segments)
             bits_cols = (self.padded_cols * 2) * 8
@@ -290,11 +348,9 @@ class ExternalCipherTester:
             if segment == 'cols':
                 range_start, range_end = 0, bits_cols
             elif segment == 'seeds':
-                # The C++ kernel primarily uses the first numBlocks seeds (4 bytes each)
-                # plus the block permutation seed (first 4 bytes of segment 1).
-                # To ensure sensitivity, we target the first ~256 bits of the seeds segment
+                # Skip first 32 bits (r) and target the next seeds (numBlocks bits)
                 active_bits = min(bits_flow, (numBlocks_gpu + 1) * 32)
-                range_start, range_end = bits_cols, bits_cols + active_bits
+                range_start, range_end = bits_cols + 32, bits_cols + active_bits
             elif segment == 'stego':
                 range_start, range_end = bits_cols + bits_flow, len(original_pw)
             else: # 'any'
@@ -306,7 +362,6 @@ class ExternalCipherTester:
             idx = random.randint(range_start, range_end - 1)
             flipped = '1' if original_pw[idx] == '0' else '0'
             mod_pw = original_pw[:idx] + flipped + original_pw[idx+1:]
-            print(f"   [Debug] Key Sensitivity ({segment}): Flipped bit {idx} in {segment} segment.")
             
         c1, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=original_pw)
         c2, _ = self.run_cipher_ram_to_ram(self.original_img, mode_enc=True, override_password=mod_pw)
@@ -360,7 +415,7 @@ class ExternalCipherTester:
         enc_times_avg = []
         dec_times_avg = []
         
-        print(f"[>] Running Scalability Benchmark {scales}...")
+        # print(f"[>] Running Scalability Benchmark {scales}...")
         
         for s in scales:
             new_w = int(self.original_img.shape[1] * s)
@@ -440,8 +495,7 @@ class ExternalCipherTester:
                 
                 print(f"   -> Scale {s}x ({n_pixels/1e6:.1f} MP): Enc={enc_times_avg[-1]:.4f} ms")
                 
-            except Exception as e:
-                print(f"[!] Fail at scale {s}x: {e}")
+            except Exception:
                 break 
                 
         return pixel_counts, enc_times_avg, dec_times_avg
@@ -496,8 +550,9 @@ class AESCipherTester:
 
         # Reconstruct image for metrics
         ciph_img = np.frombuffer(ciph_bytes[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        dec_img = np.frombuffer(dec_bytes[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
         
-        return ciph_img, t_enc, t_dec
+        return ciph_img, t_enc, t_dec, dec_img
 
     def run_key_sensitivity_benchmark(self, mode_name='ECB'):
         """Measures NPCR/UACI when changing one bit of the AES key."""
@@ -551,8 +606,9 @@ class ASCONCipherTester:
 
         # Reconstruct image for metrics
         ciph_img = np.frombuffer(ciph_bytes[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
+        dec_img = np.frombuffer(dec_bytes[:len(flat_data)], dtype=np.uint8).reshape(self.original_img.shape)
         
-        return ciph_img, t_enc, t_dec
+        return ciph_img, t_enc, t_dec, dec_img
 
     def run_key_sensitivity_benchmark(self):
         if ascon is None:
@@ -744,11 +800,11 @@ def main():
         total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + 8
         required_bits = total_bytes * 8
         
-        print(f"[+] Original dimensions: {base_cols}x{rows} (channels={channels})")
-        print(f"[+] After unstacking: {unstacked_cols}x{unstacked_rows}")
-        print(f"[+] After padding: {padded_cols}x{padded_rows}")
-        print(f"[+] Required Key Length: {required_bits} bits ({total_bytes} bytes)")
-        print(f"[+] Starting analysis across {args.runs} runs...")
+        # print(f"[+] Original dimensions: {base_cols}x{rows} (channels={channels})")
+        # print(f"[+] After unstacking: {unstacked_cols}x{unstacked_rows}")
+        # print(f"[+] After padding: {padded_cols}x{padded_rows}")
+        # print(f"[+] Required Key Length: {required_bits} bits ({total_bytes} bytes)")
+        # print(f"[+] Starting analysis across {args.runs} runs...")
 
         for r in range(args.runs):
             if args.password:
@@ -756,7 +812,7 @@ def main():
             else:
                 run_pw = generate_random_password(length=required_bits, binary=True)
             
-            print(f"\n[>] Run {r+1}/{args.runs} | Key: {run_pw[:16]}...{run_pw[-16:]} ({len(run_pw)} bits)")
+            # if (r+1)%5 == 0: print(f"Processing Run {r+1}/{args.runs}...")
 
             tester = ExternalCipherTester(
                 args.exe, args.input, run_pw,
@@ -783,10 +839,8 @@ def main():
             # Sensitivity Test (Differential)
             npcr_p, uaci_p = tester.diff_attack_plaintext()
             
-            # Key Sensitivity per Segment (Matching correct 3-segment structure)
-            (n_cols, u_cols), _ = tester.diff_attack_key_sensitivity(segment='cols')
-            (n_seeds, u_seeds), _ = tester.diff_attack_key_sensitivity(segment='seeds')
-            (n_stego, u_stego), _ = tester.diff_attack_key_sensitivity(segment='stego')
+            # Key Sensitivity: random bit from the whole key
+            (n_any, u_any), _ = tester.diff_attack_key_sensitivity(segment='any')
             
             results.append({
                 'entropy': ent_ciph,
@@ -800,12 +854,8 @@ def main():
                 'glcm_energy': ene,
                 'npcr_p': npcr_p,
                 'uaci_p': uaci_p,
-                'npcr_cols': n_cols,
-                'uaci_cols': u_cols,
-                'npcr_seeds': n_seeds,
-                'uaci_seeds': u_seeds,
-                'npcr_stego': n_stego,
-                'uaci_stego': u_stego,
+                'npcr_any': n_any,
+                'uaci_any': u_any,
                 't_enc': t_enc * 1000.0, 
                 't_dec': t_dec * 1000.0,
                 'psnr': CryptoMetrics.calculate_psnr_mae(tester.original_img, dec)[0],
@@ -838,12 +888,8 @@ def main():
         m_npcr_p, v_npcr_p = get_stats('npcr_p')
         m_uaci_p, v_uaci_p = get_stats('uaci_p')
         
-        m_np_cols, v_np_cols = get_stats('npcr_cols')
-        m_ua_cols, v_ua_cols = get_stats('uaci_cols')
-        m_np_seeds, v_np_seeds = get_stats('npcr_seeds')
-        m_uaci_seeds, v_uaci_seeds = get_stats('uaci_seeds')
-        m_np_stego, v_np_stego = get_stats('npcr_stego')
-        m_ua_stego, v_ua_stego = get_stats('uaci_stego')
+        m_np_any, v_np_any = get_stats('npcr_any')
+        m_ua_any, v_ua_any = get_stats('uaci_any')
 
         m_t_enc, v_t_enc = get_stats('t_enc')
         m_t_dec, v_t_dec = get_stats('t_dec')
@@ -865,18 +911,20 @@ def main():
         cont_orig, hom_orig, ene_orig = CryptoMetrics.calculate_glcm_properties(tester_final.original_img)
 
         # --- AES COMPARISON ---
-        print("\n[>] Running AES Comparison Benchmarks (Software-Only)...")
         aes_tester = AESCipherTester(tester_final.original_img)
         aes_results = {}
+        aes_ciph_imgs = {} # Store for NIST tests
         
         for mode in ['ECB', 'CBC', 'CTR']:
-            ciph_aes, t_enc_aes, t_dec_aes = aes_tester.run_benchmark(mode)
+            ciph_aes, t_enc_aes, t_dec_aes, dec_aes = aes_tester.run_benchmark(mode)
+            aes_ciph_imgs[mode] = ciph_aes
             
             ent_aes = CryptoMetrics.calculate_global_entropy(ciph_aes)
             corr_aes = CryptoMetrics.calculate_correlations_full(ciph_aes)
             npcr_aes, uaci_aes = CryptoMetrics.calculate_npcr_uaci(tester_final.original_img, ciph_aes)
             cont_aes, hom_aes, _ = CryptoMetrics.calculate_glcm_properties(ciph_aes)
             npcr_k, uaci_k = aes_tester.run_key_sensitivity_benchmark(mode)
+            psnr_aes, mae_aes = CryptoMetrics.calculate_psnr_mae(tester_final.original_img, dec_aes)
             
             # Chi-Square for AES
             hist_aes, _ = np.histogram(ciph_aes, bins=256, range=(0, 255))
@@ -896,22 +944,23 @@ def main():
                 'npcr': npcr_aes,
                 'uaci': uaci_aes,
                 'npcr_k': npcr_k,
-                'uaci_k': uaci_k
+                'uaci_k': uaci_k,
+                'psnr': psnr_aes,
+                'mae': mae_aes
             }
-            print(f"   -> AES-{mode} (SW): Enc={t_enc_aes:.4f} ms, Entropy={ent_aes:.4f}, NPCR_K={npcr_k:.4f}%")
 
         # --- ASCON COMPARISON ---
         ascon_results = None
         if ascon:
-            print("\n[>] Running ASCON-128 Comparison Benchmarks (Software-Only)...")
             ascon_tester = ASCONCipherTester(tester_final.original_img)
-            ciph_ascon, t_enc_ascon, t_dec_ascon = ascon_tester.run_benchmark()
+            ciph_ascon, t_enc_ascon, t_dec_ascon, dec_ascon = ascon_tester.run_benchmark()
             
             ent_ascon = CryptoMetrics.calculate_global_entropy(ciph_ascon)
             corr_ascon = CryptoMetrics.calculate_correlations_full(ciph_ascon)
             npcr_ascon, uaci_ascon = CryptoMetrics.calculate_npcr_uaci(tester_final.original_img, ciph_ascon)
             cont_ascon, hom_ascon, _ = CryptoMetrics.calculate_glcm_properties(ciph_ascon)
             npcr_k_ascon, uaci_k_ascon = ascon_tester.run_key_sensitivity_benchmark()
+            psnr_ascon, mae_ascon = CryptoMetrics.calculate_psnr_mae(tester_final.original_img, dec_ascon)
             
             # Chi-Square for ASCON
             hist_ascon, _ = np.histogram(ciph_ascon, bins=256, range=(0, 255))
@@ -931,19 +980,18 @@ def main():
                 'npcr': npcr_ascon,
                 'uaci': uaci_ascon,
                 'npcr_k': npcr_k_ascon,
-                'uaci_k': uaci_k_ascon
+                'uaci_k': uaci_k_ascon,
+                'psnr': psnr_ascon,
+                'mae': mae_ascon
             }
-            print(f"   -> ASCON-128 (SW): Enc={t_enc_ascon:.4f} ms, Entropy={ent_ascon:.4f}, NPCR_K={npcr_k_ascon:.4f}%")
         else:
             print("\n[!] ASCON library not found. Skipping ASCON benchmarks.")
 
         # Performance (Using one final run for bench or using average of Runs)
-        print("\n[+] Running Performance Scalability Test (1x Repeats)...")
         benchmark_data = tester_final.run_scalability_test(repeats=1)
 
         ascon_benchmark_data = None
         if ascon:
-            print("\n[+] Running ASCON-128 Performance Scalability Test...")
             ascon_px_counts = []
             ascon_enc_ts = []
             ascon_dec_ts = []
@@ -955,7 +1003,7 @@ def main():
                 
                 resized = cv2.resize(tester_final.original_img, (new_w, new_h))
                 tester_resize = ASCONCipherTester(resized)
-                _, te, td = tester_resize.run_benchmark()
+                _, te, td, _ = tester_resize.run_benchmark()
                 ascon_px_counts.append(new_w * new_h)
                 ascon_enc_ts.append(te)
                 ascon_dec_ts.append(td)
@@ -973,41 +1021,116 @@ def main():
         (npcr_k_sample, uaci_k_sample), key_diff_img = tester_final_key_sens.diff_attack_key_sensitivity()
 
         # Occlusion Attack (One final sample)
-        # Use the SAME tester that encrypted last_ciph to ensure password matches
         occ_input, occ_output = tester.occlusion_attack(last_ciph)
+
+        # Scalability Data Summary
+        aes_bench = {}
+        for mode in ['ECB', 'CBC', 'CTR']:
+            aes_px, aes_te, aes_td = [], [], []
+            scales = [1.0, 2.0, 4.0]
+            for s in scales:
+                new_w = int(tester_final.original_img.shape[1] * s)
+                new_h = int(tester_final.original_img.shape[0] * s)
+                if new_w * new_h > 5_000_000: break
+                resized = cv2.resize(tester_final.original_img, (new_w, new_h))
+                t_aes = AESCipherTester(resized)
+                _, te, td, _ = t_aes.run_benchmark(mode)
+                aes_px.append(new_w * new_h)
+                aes_te.append(te)
+                aes_td.append(td)
+            aes_bench[mode] = (aes_px, aes_te, aes_td)
+
+        def get_scalability_rows(bench_data):
+            if not bench_data: return ["N/A"]*4
+            px, enc, dec = bench_data
+            res = []
+            # we want 2.0x (index 1) and 4.0x (index 2)
+            for idx in [1, 2]:
+                res.append(f"{enc[idx]:.2f}" if len(enc) > idx else "N/A")
+                res.append(f"{dec[idx]:.2f}" if len(dec) > idx else "N/A")
+            return res
 
         # --- CONSOLE REPORT ---
         print("\n" + "="*85)
         print(f" FINAL CRYPTOGRAPHIC REPORT (Across {args.runs} runs) ")
         print("="*85)
 
-        headers = ["Metric", "Original", "Chaotic scheme (Mean/Var)", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "ASCON-128 (SW)", "Ideal Ref"]
+        headers = ["Metric", "Original", "Chaotic scheme", "AES-ECB (SW)", "AES-CBC (SW)", "AES-CTR (SW)", "ASCON-128 (SW)", "Ideal Ref"]
         
+        # --- CONSOLE REPORT (TABLE 1: General Metrics) ---
+        print("\n" + "="*85)
+        print(f" CRYPTOGRAPHIC REPORT: GENERAL METRICS (Across {args.runs} runs) ")
+        print("="*85)
+
+        headers1 = ["Metric", "Original", "Chaotic scheme", "AES-ECB", "AES-CBC", "AES-CTR", "ASCON-128", "Ideal"]
+        
+        def fmt_a(mode, key):
+            if mode not in aes_results: return "N/A"
+            val = aes_results[mode][key]
+            if key in ['npcr', 'uaci', 'npcr_k', 'uaci_k']: return f"{val:.4f}%"
+            if key in ['t_enc', 't_dec']: return f"{val:.2f}"
+            if key == 'chi': 
+                p_v = aes_results[mode]['p_val']
+                return f"{val:.2f} (P={p_v:.4f})"
+            if key == 'psnr': return f"{val:.2f} dB"
+            return f"{val:.4f}"
+
         def fmt_ascon(key):
             if ascon_results is None: return "N/A"
             val = ascon_results[key]
             if key in ['npcr', 'uaci', 'npcr_k', 'uaci_k']: return f"{val:.4f}%"
             if key in ['t_enc', 't_dec']: return f"{val:.2f}"
+            if key == 'chi':
+                p_v = ascon_results['p_val']
+                return f"{val:.2f} (P={p_v:.4f})"
+            if key == 'psnr': return f"{val:.2f} dB"
             return f"{val:.4f}"
 
-        data = [
-            ["Global Entropy",  f"{ent_orig:.4f}",     f"{m_ent:.4f} / {v_ent:.6f}", f"{aes_results['ECB']['entropy']:.4f}", f"{aes_results['CBC']['entropy']:.4f}", f"{aes_results['CTR']['entropy']:.4f}", fmt_ascon('entropy'), "~7.999"],
-            ["Chi-Square Test", "-",                   f"{m_chi:.2f} (P={m_pval:.4f})", f"{aes_results['ECB']['chi']:.2f}", f"{aes_results['CBC']['chi']:.2f}", f"{aes_results['CTR']['chi']:.2f}", f"{ascon_results['chi']:.2f}" if ascon_results else "N/A", "P > 0.05"],
-            ["Correlation (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f} / {v_ch:.6f}", f"{aes_results['ECB']['corr_h']:.4f}", f"{aes_results['CBC']['corr_h']:.4f}", f"{aes_results['CTR']['corr_h']:.4f}", fmt_ascon('corr_h'), "0.0"],
-            ["Correlation (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f} / {v_cv:.6f}", f"{aes_results['ECB']['corr_v']:.4f}", f"{aes_results['CBC']['corr_v']:.4f}", f"{aes_results['CTR']['corr_v']:.4f}", fmt_ascon('corr_v'), "0.0"],
-            ["Correlation (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f} / {v_cd:.6f}", f"{aes_results['ECB']['corr_d']:.4f}", f"{aes_results['CBC']['corr_d']:.4f}", f"{aes_results['CTR']['corr_d']:.4f}", fmt_ascon('corr_d'), "0.0"],
-            ["GLCM Contrast",   f"{cont_orig:.4f}",    f"{m_cont:.4f} / {v_cont:.6f}", f"{aes_results['ECB']['contrast']:.4f}", f"{aes_results['CBC']['contrast']:.4f}", f"{aes_results['CTR']['contrast']:.4f}", fmt_ascon('contrast'), "High"],
-            ["GLCM Homogeneity",f"{hom_orig:.4f}",     f"{m_hom:.4f} / {v_hom:.6f}", f"{aes_results['ECB']['homogeneity']:.4f}", f"{aes_results['CBC']['homogeneity']:.4f}", f"{aes_results['CTR']['homogeneity']:.4f}", fmt_ascon('homogeneity'), "~0"],
-            ["NPCR (Plaintext)", "-",                  f"{m_npcr_p:.4f}%", f"{aes_results['ECB']['npcr']:.4f}%", f"{aes_results['CBC']['npcr']:.4f}%", f"{aes_results['CTR']['npcr']:.4f}%", fmt_ascon('npcr'), ">99.6%"],
-            ["UACI (Plaintext)", "-",                  f"{m_uaci_p:.4f}%", f"{aes_results['ECB']['uaci']:.4f}%", f"{aes_results['CBC']['uaci']:.4f}%", f"{aes_results['CTR']['uaci']:.4f}%", fmt_ascon('uaci'), "~33.4%"],
-            ["NPCR (Key Sens.)",  "-",                 f"{m_np_seeds:.4f}%", f"{aes_results['ECB']['npcr_k']:.4f}%", f"{aes_results['CBC']['npcr_k']:.4f}%", f"{aes_results['CTR']['npcr_k']:.4f}%", fmt_ascon('npcr_k'), ">99.6%"],
-            ["UACI (Key Sens.)",  "-",                 f"{m_uaci_seeds:.4f}%", f"{aes_results['ECB']['uaci_k']:.4f}%", f"{aes_results['CBC']['uaci_k']:.4f}%", f"{aes_results['CTR']['uaci_k']:.4f}%", fmt_ascon('uaci_k'), "~33.4%"],
-            ["Enc. Time (ms)",  "-",                   f"{m_t_enc:.2f} (CUDA)", f"{aes_results['ECB']['t_enc']:.2f}", f"{aes_results['CBC']['t_enc']:.2f}", f"{aes_results['CTR']['t_enc']:.2f}", fmt_ascon('t_enc'), "Min."],
-            ["Dec. Time (ms)",  "-",                   f"{m_t_dec:.2f} (CUDA)", f"{aes_results['ECB']['t_dec']:.2f}", f"{aes_results['CBC']['t_dec']:.2f}", f"{aes_results['CTR']['t_dec']:.2f}", fmt_ascon('t_dec'), "Min."],
-            ["PSNR (Dec. Qual)", "-",                  f"{m_psnr:.2f} dB", "-", "-", "-", "-", ">50"],
-            ["MAE (Dec. Error)", "-",                  f"{m_mae:.4f}", "-", "-", "-", "-", "0.0"],
+        chaotic_scal_rows = get_scalability_rows(benchmark_data)
+        aes_ecb_scal = get_scalability_rows(aes_bench['ECB'])
+        aes_cbc_scal = get_scalability_rows(aes_bench['CBC'])
+        aes_ctr_scal = get_scalability_rows(aes_bench['CTR'])
+        ascon_scal = get_scalability_rows(ascon_benchmark_data)
+
+        data1 = [
+            ["Entropy", f"{ent_orig:.4f}", f"{m_ent:.4f}", fmt_a('ECB','entropy'), fmt_a('CBC','entropy'), fmt_a('CTR','entropy'), fmt_ascon('entropy'), "~7.99"],
+            ["Chi-Square (Val, P)", "-", f"{m_chi:.2f} (P={m_pval:.4f})", fmt_a('ECB','chi'), fmt_a('CBC','chi'), fmt_a('CTR','chi'), fmt_ascon('chi'), "> 0.05"],
+            ["Corr (H)", f"{corr_orig[0]:.4f}", f"{m_ch:.4f}", fmt_a('ECB','corr_h'), fmt_a('CBC','corr_h'), fmt_a('CTR','corr_h'), fmt_ascon('corr_h'), "0.0"],
+            ["Corr (V)", f"{corr_orig[1]:.4f}", f"{m_cv:.4f}", fmt_a('ECB','corr_v'), fmt_a('CBC','corr_v'), fmt_a('CTR','corr_v'), fmt_ascon('corr_v'), "0.0"],
+            ["Corr (D)", f"{corr_orig[2]:.4f}", f"{m_cd:.4f}", fmt_a('ECB','corr_d'), fmt_a('CBC','corr_d'), fmt_a('CTR','corr_d'), fmt_ascon('corr_d'), "0.0"],
+            ["GLCM Contrast", f"{cont_orig:.4f}", f"{m_cont:.4f}", fmt_a('ECB','contrast'), fmt_a('CBC','contrast'), fmt_a('CTR','contrast'), fmt_ascon('contrast'), "High"],
+            ["NPCR (Plaintext)", "-", f"{m_npcr_p:.4f}%", fmt_a('ECB','npcr'), fmt_a('CBC','npcr'), fmt_a('CTR','npcr'), fmt_ascon('npcr'), ">99.6%"],
+            ["UACI (Plaintext)", "-", f"{m_uaci_p:.4f}%", fmt_a('ECB','uaci'), fmt_a('CBC','uaci'), fmt_a('CTR','uaci'), fmt_ascon('uaci'), "~33.4%"],
+            ["NPCR (Key Sens.)", "-", f"{m_np_any:.4f}%", fmt_a('ECB','npcr_k'), fmt_a('CBC','npcr_k'), fmt_a('CTR','npcr_k'), fmt_ascon('npcr_k'), ">99.6%"],
+            ["UACI (Key Sens.)", "-", f"{m_ua_any:.4f}%", fmt_a('ECB','uaci_k'), fmt_a('CBC','uaci_k'), fmt_a('CTR','uaci_k'), fmt_ascon('uaci_k'), "~33.4%"],
+            ["Time 1x (ms)", "-", f"{m_t_enc:.2f}", fmt_a('ECB','t_enc'), fmt_a('CBC','t_enc'), fmt_a('CTR','t_enc'), fmt_ascon('t_enc'), "Min."],
+            ["Time 2x (ms)", "-", chaotic_scal_rows[0], aes_ecb_scal[0], aes_cbc_scal[0], aes_ctr_scal[0], ascon_scal[0], "Min."],
+            ["Time 4x (ms)", "-", chaotic_scal_rows[2], aes_ecb_scal[2], aes_cbc_scal[2], aes_ctr_scal[2], ascon_scal[2], "Min."],
+            ["PSNR (Qual)", "-", f"{m_psnr:.2f} dB", fmt_a('ECB','psnr'), fmt_a('CBC','psnr'), fmt_a('CTR','psnr'), fmt_ascon('psnr'), "100.0"],
+            ["MAE (Error)", "-", f"{m_mae:.4f}", fmt_a('ECB','mae'), fmt_a('CBC','mae'), fmt_a('CTR','mae'), fmt_ascon('mae'), "0.0"],
         ]
-        print(tabulate(data, headers=headers, tablefmt="fancy_grid"))
+        print(tabulate(data1, headers=headers1, tablefmt="fancy_grid"))
+
+        # --- CONSOLE REPORT (TABLE 2: NIST SP 800-22 Suite) ---
+        print("\n" + "="*85)
+        print(f" CRYPTOGRAPHIC REPORT: NIST SP 800-22 RANDOMNESS SUITE ")
+        print("="*85)
+        headers2 = ["NIST Test (P-value)", "Chaotic", "AES-ECB", "AES-CBC", "AES-CTR", "ASCON-128", "Result"]
+        
+        def f_nist(image, test_func):
+            if image is None: return "N/A"
+            p = test_func(image)
+            mark = "[PASS]" if p > 0.01 else "[FAIL]"
+            return f"{p:.4f} {mark}"
+
+        data2 = [
+            ["Monobit", f_nist(last_ciph, CryptoMetrics.nist_monobit), f_nist(aes_ciph_imgs.get('ECB'), CryptoMetrics.nist_monobit), f_nist(aes_ciph_imgs.get('CBC'), CryptoMetrics.nist_monobit), f_nist(aes_ciph_imgs.get('CTR'), CryptoMetrics.nist_monobit), f_nist(ciph_ascon, CryptoMetrics.nist_monobit) if ascon else "N/A", "PASS if >0.01"],
+            ["Runs", f_nist(last_ciph, CryptoMetrics.nist_runs), f_nist(aes_ciph_imgs.get('ECB'), CryptoMetrics.nist_runs), f_nist(aes_ciph_imgs.get('CBC'), CryptoMetrics.nist_runs), f_nist(aes_ciph_imgs.get('CTR'), CryptoMetrics.nist_runs), f_nist(ciph_ascon, CryptoMetrics.nist_runs) if ascon else "N/A", "PASS if >0.01"],
+            ["Block Frequency", f_nist(last_ciph, CryptoMetrics.nist_block_freq), f_nist(aes_ciph_imgs.get('ECB'), CryptoMetrics.nist_block_freq), f_nist(aes_ciph_imgs.get('CBC'), CryptoMetrics.nist_block_freq), f_nist(aes_ciph_imgs.get('CTR'), CryptoMetrics.nist_block_freq), f_nist(ciph_ascon, CryptoMetrics.nist_block_freq) if ascon else "N/A", "PASS if >0.01"],
+            ["Spectral (FFT)", f_nist(last_ciph, CryptoMetrics.nist_spectral), f_nist(aes_ciph_imgs.get('ECB'), CryptoMetrics.nist_spectral), f_nist(aes_ciph_imgs.get('CBC'), CryptoMetrics.nist_spectral), f_nist(aes_ciph_imgs.get('CTR'), CryptoMetrics.nist_spectral), f_nist(ciph_ascon, CryptoMetrics.nist_spectral) if ascon else "N/A", "PASS if >0.01"],
+            ["Longest Run", f_nist(last_ciph, CryptoMetrics.nist_longest_run), f_nist(aes_ciph_imgs.get('ECB'), CryptoMetrics.nist_longest_run), f_nist(aes_ciph_imgs.get('CBC'), CryptoMetrics.nist_longest_run), f_nist(aes_ciph_imgs.get('CTR'), CryptoMetrics.nist_longest_run), f_nist(ciph_ascon, CryptoMetrics.nist_longest_run) if ascon else "N/A", "PASS if >0.01"],
+        ]
+        print(tabulate(data2, headers=headers2, tablefmt="fancy_grid"))
 
         plot_dashboard(tester_final.original_img, last_ciph, last_dec,
                        occ_input, occ_output,
