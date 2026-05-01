@@ -4,7 +4,7 @@ import argparse
 import matplotlib.pyplot as plt
 import jacobi
 
-from python.Chaos_Generator import *
+from Chaos_Generator import *
 
 # Jacobian of the logistic map
 def jac(x, t, r):

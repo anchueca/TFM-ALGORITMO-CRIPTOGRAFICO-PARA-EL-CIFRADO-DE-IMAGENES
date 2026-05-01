@@ -7,25 +7,25 @@
 #include "../include/kernels.cuh"
 
 __device__ __forceinline__ CoupledResult coupled_map(Real c_next, Real *r_next,
-                                                    Real *l_next,
-                                                    unsigned short ca_state) {
+                                                     Real *l_next,
+                                                     unsigned short ca_state) {
 
   // Evolve CA by-value to avoid requiring callers to pass the address of
   // a local variable (which would force a spill to local memory).
-  unsigned short evolved = evolve_16bit_isolated(ca_state, 30, 1);
+  unsigned short evolved = evolve_16bit_isolated_rule30_1iter(ca_state);
 
-  // Extract weights from the evolved CA state
-  Real v1 = static_cast<Real>((evolved >> 8) & 0xFF) / 255.0;
-  Real v2 = static_cast<Real>(evolved & 0xFF) / 255.0;
+  // Use multiplication by inverse instead of division
+  constexpr Real INV_255 = (Real)(1.0 / 255.0);
+  Real v1 = static_cast<Real>((evolved >> 8) & 0xFF) * INV_255;
+  Real v2 = static_cast<Real>(evolved & 0xFF) * INV_255;
 
-  Real c_influence = v1;
   Real rest = (Real)1.0 - v1;
   Real r_influence = rest * v2;
-  Real l_influence = rest * ((Real)1.0 - v2);
+  // Mathematical optimization: rest * (1.0 - v2) == rest - (rest * v2) == rest - r_influence
+  Real l_influence = rest - r_influence;
 
   CoupledResult res;
-  res.mixed = (c_next * c_influence) + (*r_next * r_influence) +
-              (*l_next * l_influence);
+  res.mixed = (c_next * v1) + (*r_next * r_influence) + (*l_next * l_influence);
   res.new_ca = evolved;
   return res;
 }
@@ -67,7 +67,7 @@ __global__ void fused_permutation_xor_kernel(
 
   // CASE 1: Flow Permutation (XOR) OR Forward Image Permutation
   if (use_xor || !inverse_order) {
-    for(int i=0;i<2;i++){
+    for (int i = 0; i < 2; i++) {
       // We need to find the source pixel that maps to (x, y).
       // Since the forward order is Rows -> Cols -> Blocks,
       // we must undo them in reverse order: Blocks^-1 -> Cols^-1 -> Rows^-1.
@@ -100,11 +100,11 @@ __global__ void fused_permutation_xor_kernel(
       // Permute the image by copying the source pixel to the target destination
       image_out[idx] = image_in[y * img_dim + x];
     }
-    
+
   }
   // CASE 2: Image Permutation Decryption (No XOR, inverse mode)
   else {
-    for(int i=0;i<2;i++){
+    for (int i = 0; i < 2; i++) {
       // We want to find where the original pixel at (x,y) ended up in the
       // ciphered image. We apply the forward transformation route: Rows -> Cols
       // -> Blocks.
@@ -225,8 +225,8 @@ __global__ void keystream_generation_parallel(
     unsigned char *__restrict__ d_flow, Real *__restrict__ d_seeds,
     unsigned short *__restrict__ cellular_automata,
     unsigned short *__restrict__ image_automata_state,
-    Image_dimensions img_dimensions,
-    const Real *__restrict__ d_r_params, const size_t total_steps,
+    Image_dimensions img_dimensions, const Real *__restrict__ d_r_params,
+    const size_t total_steps,
     Real *__restrict__ d_chaotic_values_for_permutation,
     size_t permutation_block_size, size_t transition_length, size_t numBlocks) {
 
@@ -274,7 +274,8 @@ __global__ void keystream_generation_parallel(
       cellular_automata_value = cellular_automata[state_idx];
     }
     next_val = *c_seed;
-    // Load per-thread r from key-derived array (already in [0, 1], scale to [3, 7])
+    // Load per-thread r from key-derived array (already in [0, 1], scale to [3,
+    // 7])
     my_r = (Real)3.0 + d_r_params[state_idx] * (Real)4.0;
   }
 
@@ -295,8 +296,8 @@ __global__ void keystream_generation_parallel(
 
     if (is_active) {
       {
-        CoupledResult _cr = coupled_map(next_val, r_seed, l_seed,
-                                         cellular_automata_value);
+        CoupledResult _cr =
+            coupled_map(next_val, r_seed, l_seed, cellular_automata_value);
         next_val = _cr.mixed;
         cellular_automata_value = _cr.new_ca;
       }

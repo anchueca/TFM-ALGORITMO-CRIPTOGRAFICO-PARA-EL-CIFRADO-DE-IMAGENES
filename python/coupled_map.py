@@ -62,12 +62,6 @@ def coupled_step(xs, ca_states, r, rule=30):
         r_influence = rest * v2
         l_influence = rest * (1.0 - v2)
         
-        # Mixed value: weighted average of i-th mapped value and its neighbors
-        # Note: In CUDA, the neighbors are from the previous iteration or current?
-        # In keysream_generation_parallel: 
-        # _cr = coupled_map(next_val, r_seed, l_seed, cellular_automata_value);
-        # where next_val is mapped(c_seed), r_seed/l_seed are neighbors.
-        
         new_xs[i] = (mapped_xs[i] * c_influence) + \
                      (mapped_xs[idx_next] * r_influence) + \
                      (mapped_xs[idx_prev] * l_influence)

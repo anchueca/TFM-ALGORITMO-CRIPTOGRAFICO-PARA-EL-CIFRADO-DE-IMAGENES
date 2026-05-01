@@ -273,28 +273,16 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
   uint16_t H = static_cast<uint16_t>(input.rows);
   int channels = input.channels();
 
-  // Necesitamos 5 bytes para metadatos (2 bytes para W + 2 bytes para H + 1
-  // byte para original_channels)
   long totalPixelsOriginal = input.total();
-  int bytesNeeded = 5;
-  int pixelsForMeta = std::ceil((float)bytesNeeded / channels);
-
-  // 1. Calcular lado S: el menor cuadrado múltiplo de blockSize que contenga
-  // todo
-  int minS = std::ceil(std::sqrt(totalPixelsOriginal + pixelsForMeta));
+  int bytesNeeded = 5; // 2 bytes for W + 2 bytes for H + 1 byte for original_channels
+  int minS = std::ceil(std::sqrt(totalPixelsOriginal + bytesNeeded));
   int S = ((minS + blockSize - 1) / blockSize) * blockSize;
 
-  // 2. Crear contenedor cuadrado
   cv::Mat squared = cv::Mat::zeros(S, S, input.type());
-
-  // 3. Volcado lineal de píxeles (Flattening)
-  // Copiamos la imagen original al inicio del nuevo espacio
   cv::Mat flatInput = input.reshape(channels, 1);
   cv::Mat flatOutput = squared.reshape(channels, 1);
   flatInput.copyTo(flatOutput.colRange(0, totalPixelsOriginal));
 
-  // 4. Almacenar metadatos en los últimos 5 bytes del buffer de píxeles
-  // Esto sobreescribe los componentes de color de los últimos píxeles
   uchar *dataPtr = squared.data;
   size_t lastByteIdx = (size_t)S * S * channels;
 
@@ -302,7 +290,7 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
   dataPtr[lastByteIdx - 4] = ((W >> 8) & 0xFF); // W High
   dataPtr[lastByteIdx - 3] = (H & 0xFF);        // H Low
   dataPtr[lastByteIdx - 2] = ((H >> 8) & 0xFF); // H High
-  // Byte de color: 1 = color (RGB), 0 = blanco y negro (grayscale)
+  // Color byte: 1 = color, 0 = grayscale
   dataPtr[lastByteIdx - 1] = (original_channels == 3) ? 1 : 0;
 
   return squared;
@@ -313,17 +301,15 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
   uchar *dataPtr = squared.data;
   size_t lastByteIdx = (size_t)squared.total() * channels;
 
-  // 1. Recomponer W, H y flag de color desde los últimos 5 bytes
   uint16_t W = dataPtr[lastByteIdx - 5] |
                (static_cast<uint16_t>(dataPtr[lastByteIdx - 4]) << 8);
   uint16_t H = dataPtr[lastByteIdx - 3] |
                (static_cast<uint16_t>(dataPtr[lastByteIdx - 2]) << 8);
-  // Byte de color: 1 = color (RGB/3 canales), 0 = blanco y negro (1 canal)
+  // Color byte: 1 = color, 0 = grayscale
   uchar is_color_flag = dataPtr[lastByteIdx - 1];
   int original_channels = (is_color_flag == 1) ? 3 : 1;
 
-  // Validation: Check for corrupted metadata (common sign of decryption
-  // failure)
+  // Validation: Check for corrupted metadata (common sign of decryption failure)
   size_t required_pixels = (size_t)W * H;
   if (required_pixels == 0 || required_pixels > squared.total() || W == 0 ||
       H == 0) {
@@ -337,13 +323,10 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
     *out_original_channels = original_channels;
   }
 
-  // 2. Extraer la región de interés (ROI) original
   cv::Mat output = cv::Mat(H, W, squared.type());
 
   cv::Mat flatSquared = squared.reshape(channels, 1);
   cv::Mat flatOutput = output.reshape(channels, 1);
-
-  // Copiamos solo la cantidad de píxeles que indican los metadatos
   flatSquared.colRange(0, (size_t)W * H).copyTo(flatOutput);
 
   return output;

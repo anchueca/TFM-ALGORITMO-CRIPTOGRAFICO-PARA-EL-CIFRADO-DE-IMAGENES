@@ -59,4 +59,19 @@ static __device__ __forceinline__ unsigned short evolve_16bit_isolated(unsigned 
     return (unsigned short)current;
 }
 
+/**
+ * @brief Optimized 16-bit isolated CA evolution for a single iteration of Rule 30.
+ *
+ * Computes Rule 30 directly using bitwise operations: L ^ (C | R)
+ *
+ * @param state 16-bit state value
+ * @return evolved 16-bit state
+ */
+static __device__ __forceinline__ unsigned short evolve_16bit_isolated_rule30_1iter(unsigned short state) {
+    unsigned int current = state;
+    unsigned int L = ((current >> 1) | (current << 15)) & 0xFFFF;
+    unsigned int R = ((current << 1) | (current >> 15)) & 0xFFFF;
+    return (unsigned short)((L ^ (current | R)) & 0xFFFF);
+}
+
 #endif // AUTOMATAKERNEL_CUH
