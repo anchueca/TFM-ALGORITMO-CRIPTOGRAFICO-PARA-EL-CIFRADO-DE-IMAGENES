@@ -47,8 +47,10 @@
  */
 #ifdef USE_DOUBLE_PRECISION
 using Real = double;
+#define REAL_MAX 1.7976931348623157e+308
 #else
 using Real = float;
+#define REAL_MAX 3.402823e+38
 #endif
 
 struct EncryptionParams {
@@ -114,19 +116,23 @@ struct D_pointers {
   unsigned int *d_permutation_blocks = nullptr; ///< Forward block permutation
   unsigned int *d_permutation_blocks_inverse =
       nullptr; ///< Inverse block permutation
-  unsigned int *d_permutation_blocks_inital = nullptr; ///< Forward block permutation
+  unsigned int *d_permutation_blocks_inital =
+      nullptr; ///< Forward block permutation
   unsigned int *d_permutation_blocks_inverse_initial =
       nullptr; ///< Inverse block permutation
-  
+
   // Unified permutation vector (P) and its inverse (P^-1)
   // Used for both rows and columns (Row=P, Col=P^-1)
-  unsigned int *d_permutation_vector = nullptr; 
+  unsigned int *d_permutation_vector = nullptr;
   unsigned int *d_permutation_vector_inverse = nullptr;
   Real *d_chaotic_values_for_permutation =
-      nullptr;                    // For block permutation generation
-  unsigned int *d_automata_state = nullptr; // For automata iteration in flow generation
-  unsigned short *d_image_automata_state = nullptr; // Automata state for extra seeds. The same in all blocks.
-  Real *d_r_params = nullptr; ///< Per-seed chaotic parameter r, derived from key, in [3, 7]
+      nullptr; // For block permutation generation
+  unsigned int *d_automata_state =
+      nullptr; // For automata iteration in flow generation
+  unsigned short *d_image_automata_state =
+      nullptr; // Automata state for extra seeds. The same in all blocks.
+  Real *d_r_params =
+      nullptr; ///< Per-seed chaotic parameter r, derived from key, in [3, 7]
 };
 
 #endif // STRUCT_CUH

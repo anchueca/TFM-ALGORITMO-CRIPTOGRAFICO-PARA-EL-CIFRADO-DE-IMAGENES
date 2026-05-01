@@ -28,7 +28,7 @@ int next_power_of_2(int n) {
 
 // --- SINGLE ARRAY SORT KERNELS ---
 
-__global__ void init_buffers_kernel(float *values, unsigned int *indices, int n,
+__global__ void init_buffers_kernel(Real *values, unsigned int *indices, int n,
                                     int padded_size) {
   int idx = threadIdx.x + blockDim.x * blockIdx.x;
 
@@ -39,21 +39,21 @@ __global__ void init_buffers_kernel(float *values, unsigned int *indices, int n,
     // Padding handling for values
     if (idx >= n) {
       values[idx] =
-          FLT_MAX; // Infinity, so they end up at the end after sorting
+          REAL_MAX; // Infinity, so they end up at the end after sorting
     }
     // Note: Values < n were already copied via cudaMemcpy
   }
 }
 
-__global__ void bitonic_sort_step_kernel(float *values, unsigned int *indices,
+__global__ void bitonic_sort_step_kernel(Real *values, unsigned int *indices,
                                          int j, int k, int padded_size) {
   unsigned int i = threadIdx.x + blockDim.x * blockIdx.x;
   unsigned int ixj = i ^ j;
 
   // Process if ixj > i to avoid duplication and stay within range
   if (ixj > i && ixj < padded_size) {
-    float v1 = values[i];
-    float v2 = values[ixj];
+    Real v1 = values[i];
+    Real v2 = values[ixj];
 
     // Sort direction:
     // (i & k) == 0 -> Ascending
@@ -76,21 +76,21 @@ __global__ void bitonic_sort_step_kernel(float *values, unsigned int *indices,
 
 // --- SINGLE ARRAY IMPLEMENTATION ---
 
-void compute_permutation_gpu(const float *h_chaotic_sequence,
+void compute_permutation_gpu(const Real *h_chaotic_sequence,
                              int *h_permutation, int n) {
   int padded_size = next_power_of_2(n);
 
   // Device pointers
-  float *d_values;
+  Real *d_values;
   unsigned int *d_indices;
 
   // 1. GPU Memory Allocation (Padded size)
-  CHECK_CUDA_ERROR(cudaMalloc((void **)&d_values, padded_size * sizeof(float)));
+  CHECK_CUDA_ERROR(cudaMalloc((void **)&d_values, padded_size * sizeof(Real)));
   CHECK_CUDA_ERROR(
       cudaMalloc((void **)&d_indices, padded_size * sizeof(unsigned int)));
 
   // 2. Copy input data (only the n real data points)
-  CHECK_CUDA_ERROR(cudaMemcpy(d_values, h_chaotic_sequence, n * sizeof(float),
+  CHECK_CUDA_ERROR(cudaMemcpy(d_values, h_chaotic_sequence, n * sizeof(Real),
                               cudaMemcpyHostToDevice));
 
   // 3. Execution Configuration
@@ -131,21 +131,21 @@ void compute_permutation_gpu(const float *h_chaotic_sequence,
 
 // --- NEW DEVICE-ONLY IMPLEMENTATION ---
 
-void compute_permutation_device(float *d_values, unsigned int *d_indices,
+void compute_permutation_device(Real *d_values, unsigned int *d_indices,
                                 int n) {
   int padded_size = next_power_of_2(n);
 
-  float *d_padded_values = nullptr;
+  Real *d_padded_values = nullptr;
   unsigned int *d_padded_indices = nullptr;
 
   // Allocate temporary padded buffers
   CHECK_CUDA_ERROR(
-      cudaMalloc((void **)&d_padded_values, padded_size * sizeof(float)));
+      cudaMalloc((void **)&d_padded_values, padded_size * sizeof(Real)));
   CHECK_CUDA_ERROR(cudaMalloc((void **)&d_padded_indices,
                               padded_size * sizeof(unsigned int)));
 
   // Copy original values to padded buffer
-  CHECK_CUDA_ERROR(cudaMemcpy(d_padded_values, d_values, n * sizeof(float),
+  CHECK_CUDA_ERROR(cudaMemcpy(d_padded_values, d_values, n * sizeof(Real),
                               cudaMemcpyDeviceToDevice));
 
   int threadsPerBlock = 256;

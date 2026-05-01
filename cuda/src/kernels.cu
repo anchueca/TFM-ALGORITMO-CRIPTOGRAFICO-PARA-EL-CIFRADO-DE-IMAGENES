@@ -21,7 +21,8 @@ __device__ __forceinline__ CoupledResult coupled_map(Real c_next, Real *r_next,
 
   Real rest = (Real)1.0 - v1;
   Real r_influence = rest * v2;
-  // Mathematical optimization: rest * (1.0 - v2) == rest - (rest * v2) == rest - r_influence
+  // Mathematical optimization: rest * (1.0 - v2) == rest - (rest * v2) == rest
+  // - r_influence
   Real l_influence = rest - r_influence;
 
   CoupledResult res;

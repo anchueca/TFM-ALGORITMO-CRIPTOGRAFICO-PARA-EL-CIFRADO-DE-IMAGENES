@@ -11,6 +11,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <vector>
+#include "structs.cuh"
 
 // =================================================================================
 //                            SINGLE ARRAY BITONIC SORT
@@ -21,33 +22,33 @@
  * the GPU.
  * * Performs a parallel Bitonic Sort. Automatically handles padding if n is not
  * a power of 2.
- * * @param h_chaotic_sequence Pointer to the float array containing chaotic
+ * * @param h_chaotic_sequence Pointer to the Real array containing chaotic
  * values (Host/CPU).
  * @param h_permutation Pointer to the int array where indices will be stored
  * (Host/CPU).
  * @param n Number of elements.
  */
-void compute_permutation_gpu(const float *h_chaotic_sequence,
+void compute_permutation_gpu(const Real *h_chaotic_sequence,
                              int *h_permutation, int n);
 
 /**
  * @brief Generates a permutation (argsort) based on a chaotic sequence already
  * on the GPU.
  */
-void compute_permutation_device(float *d_values, unsigned int *d_indices,
+void compute_permutation_device(Real *d_values, unsigned int *d_indices,
                                 int n);
 
 /**
  * @brief GPU Kernel: Initializes buffers.
- * Copies indices 0..n-1 and fills the padding area with FLT_MAX.
+ * Copies indices 0..n-1 and fills the padding area with a large value.
  */
-__global__ void init_buffers_kernel(float *values, int *indices, int n,
+__global__ void init_buffers_kernel(Real *values, unsigned int *indices, int n,
                                     int padded_size);
 
 /**
  * @brief GPU Kernel: Executes one step of the Bitonic Sort.
  */
-__global__ void bitonic_sort_step_kernel(float *values, int *indices, int j,
+__global__ void bitonic_sort_step_kernel(Real *values, unsigned int *indices, int j,
                                          int k, int padded_size);
 
 // =================================================================================
