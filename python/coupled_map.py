@@ -8,6 +8,18 @@ def cosine_cosine_map(x, r):
     t = r + 3.0 * x * x
     return np.abs(np.cos(np.pi * r * np.cos(np.pi * t) * t))
 
+def binarize_float_scalar(val):
+    """Equivalent to convertToBitStream in CUDA for Python scalars."""
+    import struct
+    float_bits = struct.unpack('>Q', struct.pack('>d', float(val)))[0]
+    mantissa = float_bits & ((1 << 52) - 1)
+    top32 = mantissa >> (52 - 32)
+    b0 = (top32 >> 24) & 0xFF
+    b1 = (top32 >> 16) & 0xFF
+    b2 = (top32 >> 8) & 0xFF
+    b3 = top32 & 0xFF
+    return b0 ^ b1 ^ b2 ^ b3
+
 def evolve_ca_16bit(state, rule=30):
     """
     Evolves a 16-bit CA state using bitwise operations.
@@ -18,6 +30,9 @@ def evolve_ca_16bit(state, rule=30):
     R = ((state << 1) | (state >> 15)) & 0xFFFF
     C = state & 0xFFFF
     
+    if rule == 30:
+        return (L ^ (C | R)) & 0xFFFF
+        
     next_state = 0
     for p in range(8):
         if (rule >> p) & 1:
@@ -41,19 +56,20 @@ def coupled_step(xs, ca_states, r, rule=30):
     # 1. Individual chaotic evolution (map)
     mapped_xs = cosine_cosine_map(xs, r)
     
-    # 2. CA evolution
-    new_ca_states = np.array([evolve_ca_16bit(int(s), rule) for s in ca_states], dtype=np.uint16)
-    
-    # 3. Coupling (Weighted average with neighbors in a ring)
+    # 2. CA evolution and Coupling (Weighted average with neighbors in a ring)
+    new_ca_states = np.zeros_like(ca_states, dtype=np.uint16)
     new_xs = np.zeros_like(xs)
+    
     for i in range(n):
         # Indices for neighbors in a ring
         idx_prev = (i - 1) % n
         idx_next = (i + 1) % n
         
+        # Evolve CA
+        evolved = evolve_ca_16bit(int(ca_states[i]), rule)
+        
         # Weights from CA state
         # High 8 bits for original proportionality, low 8 bits for neighbor proportionality
-        evolved = int(new_ca_states[i])
         v1 = ((evolved >> 8) & 0xFF) / 255.0
         v2 = (evolved & 0xFF) / 255.0
         
@@ -66,4 +82,9 @@ def coupled_step(xs, ca_states, r, rule=30):
                      (mapped_xs[idx_next] * r_influence) + \
                      (mapped_xs[idx_prev] * l_influence)
                      
+        # Bidirectional coupling: perturb CA state using chaotic output
+        noise = binarize_float_scalar(mapped_xs[i])
+        noise16 = (noise << 8) | noise
+        new_ca_states[i] = (evolved ^ noise16) & 0xFFFF
+        
     return new_xs, new_ca_states

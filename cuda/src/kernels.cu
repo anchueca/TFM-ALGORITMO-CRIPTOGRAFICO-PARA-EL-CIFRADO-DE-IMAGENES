@@ -27,7 +27,11 @@ __device__ __forceinline__ CoupledResult coupled_map(Real c_next, Real *r_next,
 
   CoupledResult res;
   res.mixed = (c_next * v1) + (*r_next * r_influence) + (*l_next * l_influence);
-  res.new_ca = evolved;
+
+  unsigned char noise = convertToBitStream(c_next);
+  unsigned short noise16 = (noise << 8) | noise;
+  res.new_ca = evolved ^ noise16;
+
   return res;
 }
 
