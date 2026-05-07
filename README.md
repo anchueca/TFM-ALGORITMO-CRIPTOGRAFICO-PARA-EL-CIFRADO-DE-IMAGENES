@@ -1,4 +1,4 @@
-# TFM - Cryptographic Algorithm for Image Encryption
+# Cryptographic Algorithm for Image Encryption
 
 This repository contains the source code developed for the Master's Thesis:
 

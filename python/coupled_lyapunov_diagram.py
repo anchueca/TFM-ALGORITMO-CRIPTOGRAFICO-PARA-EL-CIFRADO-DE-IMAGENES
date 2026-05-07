@@ -97,7 +97,7 @@ if __name__ == "__main__":
     print(f"Generating Lyapunov Diagram (r: [{args.r_min}, {args.r_max}], eps: [{args.eps_min}, {args.eps_max}])...")
     for j, r in enumerate(rs):
         for i, eps in enumerate(epsilons):
-            matrix[i, j] = compute_diag_le(args.n, args.rule, r, eps)
+            matrix[i, j] = compute_diag_le(args.n, args.rule, r, eps,10000,1000)
         if j % 5 == 0: print(f"Progress: {100*(j+1)/args.r_num:.1f}%")
 
     plt.figure(figsize=(10, 8))

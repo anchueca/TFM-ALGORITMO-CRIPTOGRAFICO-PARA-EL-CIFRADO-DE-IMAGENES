@@ -521,7 +521,6 @@ def run_all_tests(bits):
 def binarize_float(val):
     """
     Converts a float to 8 bits using mantissa extraction + XOR whitening.
-    Same logic as coupled_summary.py / TestNIST.py.
     """
     float_bits = struct.unpack('>Q', struct.pack('>d', val))[0]
     mantissa = float_bits & ((1 << 52) - 1)
@@ -569,7 +568,6 @@ def generate_cml_bits(n, rule, r, iterations, transition):
 def generate_coupled_ca_bits(n, rule, r, iterations, transition):
     """
     Generates a bit sequence from the CA states within the Coupled Map Lattice.
-    This replaces the isolated CA test to show the improvement of bidirectional coupling.
     """
     xs = np.random.rand(n)
     ca_states = np.random.randint(0, 0xFFFF, n, dtype=np.uint16)

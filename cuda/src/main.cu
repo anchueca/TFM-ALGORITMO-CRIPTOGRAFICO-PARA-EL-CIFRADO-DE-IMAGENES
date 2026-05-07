@@ -106,7 +106,6 @@ int main(int argc, char **argv) {
         std::cerr << " [INFO] Recovered Image Hash: "
                   << config.params.image_hash << std::endl;
     }
-    // config.params.image_hash = 43243; // REMOVE
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During image hash process: " << e.what() << endl;
     return -1;
@@ -128,8 +127,8 @@ int main(int argc, char **argv) {
 
   try {
     if (!config.encrypt) {
-      // DECRYPTION: unpad (which retrieves original_channels) then stack back to
-      // original format
+      // DECRYPTION: unpad (which retrieves original_channels) then stack back
+      // to original format
       if (config.verbose)
         std::cout << " [DEBUG] Before unpad: " << processed_image.cols << "x"
                   << processed_image.rows
@@ -158,7 +157,8 @@ int main(int argc, char **argv) {
                          config.output_arg);
     }
   } catch (const std::exception &e) {
-    cerr << "\n[FATAL ERROR] During post-processing (Unpad/Stack): " << e.what() << endl;
+    cerr << "\n[FATAL ERROR] During post-processing (Unpad/Stack): " << e.what()
+         << endl;
     return -1;
   }
   end = std::chrono::high_resolution_clock::now();

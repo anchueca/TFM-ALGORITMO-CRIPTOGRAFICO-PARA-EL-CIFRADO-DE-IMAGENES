@@ -1,4 +1,4 @@
-<!-- Copilot Instructions for the TFM image-cipher repository -->
+<!-- Copilot Instructions for the image-cipher repository -->
 # Codebase Orientation for AI Coding Agents
 
 This file contains concise, actionable guidance to help AI coding agents be productive in this repository.

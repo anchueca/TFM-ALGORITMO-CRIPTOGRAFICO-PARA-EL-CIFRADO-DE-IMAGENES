@@ -1,191 +1,42 @@
-# Python Analysis Tools
+# Herramientas de Análisis y Criptografía (Python)
 
-This directory contains a comprehensive suite of cryptographic analysis and visualization tools for the image encryption algorithm.
+Este directorio contiene todas las herramientas analíticas, matemáticas y estadísticas necesarias para estudiar la dinámica caótica del sistema y validar el esquema criptográfico implementado en CUDA.
 
-## Installation
-
-Install all required dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-**Key dependencies:**
-- OpenCV (`opencv-python`)
-- NumPy, SciPy, Matplotlib
-- scikit-image (for GLCM analysis)
-- PyCUDA (for GPU-accelerated analysis)
-- Tabulate (for formatted output)
-
-## Main Tools
-
-### stats.py - Comprehensive Cryptographic Analysis
-
-The primary analysis tool that evaluates encryption quality using standard cryptographic metrics.
-
-**Usage:**
-```bash
-python stats.py <input_image> <password> <cipher_executable> [--rounds N]
-```
-
-**Arguments:**
-- `input_image`: Path to the plain image to analyze
-- `password`: Encryption password
-- `cipher_executable`: Path to the compiled cipher binary (`../cuda/bin/cipher.out`)
-- `--rounds`: Number of encryption rounds (default: 3)
-
-**Example:**
-```bash
-python stats.py ../repositorio/set3/lena3.jpg mypassword ../cuda/bin/cipher.out --rounds 3
-```
-
-**Metrics Computed:**
-
-1. **Shannon Entropy** - Measures randomness of pixel distribution
-   - Ideal value: ~7.999 for 8-bit images
-   - Higher values indicate better randomness
-
-2. **Correlation Coefficients** (Horizontal, Vertical, Diagonal)
-   - Measures correlation between adjacent pixels
-   - Ideal value: ~0.0 (no correlation)
-
-3. **NPCR (Number of Pixel Change Rate)**
-   - Differential attack resistance
-   - Ideal value: >99.6%
-
-4. **UACI (Unified Average Changing Intensity)**
-   - Measures average intensity change
-   - Ideal value: ~33.4%
-
-5. **Chi-Square Test**
-   - Tests histogram uniformity
-   - P-value > 0.05 indicates uniform distribution
-
-6. **GLCM Properties** (Gray-Level Co-occurrence Matrix)
-   - Contrast, Homogeneity, Energy
-   - Analyzes texture characteristics
-
-7. **DFT Spectrum**
-   - Frequency domain analysis
-   - Visualizes spectral distribution
-
-8. **Key Sensitivity Test**
-   - Tests NPCR/UACI with keys differing by 1 bit
-
-9. **Occlusion Attack**
-   - Tests robustness to 25% data loss
-
-10. **Performance Benchmarking**
-    - Scalability analysis across multiple image sizes
-    - Encryption/decryption timing
-
-**Output:**
-
-Generates `full_report.jpg` - a comprehensive visual dashboard containing:
-- Original, encrypted, and decrypted images
-- Key sensitivity difference visualization
-- Occlusion attack results
-- Frequency spectra (DFT)
-- Pixel value histograms
-- Correlation scatter plots
-- Performance scaling charts
-
-Console output displays a formatted table with all metric values.
+Para mantener la integridad de las importaciones y la usabilidad, todos los scripts activos se encuentran en la raíz de este directorio, organizados lógicamente en las siguientes **tres categorías**.
 
 ---
 
-### bifurcacion.py - Bifurcation Diagram Generator
+## 1. Mapas Unidimensionales (1D)
+Scripts utilizados para la exploración teórica y análisis aislado de funciones caóticas clásicas (Logístico, Tienda, Seno, Hénon).
 
-Generates bifurcation diagrams for chaotic map analysis.
-
-**Purpose:** Visualizes the behavior of the logistic map across different parameter values to identify chaotic regimes.
-
-**Usage:**
-```bash
-python bifurcacion.py
-```
-
-This tool helps verify that the chaotic parameter chosen (e.g., 3.9, 3.999) falls within the chaotic regime of the logistic map.
+- **`Chaos_Generator.py`**: Diccionario central que define los mapas caóticos matemáticos.
+- **`bifurcacion.py`**: Generador de diagramas de bifurcación simples para los mapas 1D.
+- **`lyapunov.py`**: Calculadora de exponentes de Lyapunov para mapas 1D mediante el algoritmo de su matriz Jacobiana.
+- **`plot.py`**: Herramienta visual simple para demostrar la alta sensibilidad a las condiciones iniciales (Efecto Mariposa) simulando dos trayectorias contiguas.
 
 ---
 
-### lyapunov.py - Lyapunov Exponent Calculator
+## 2. Coupled Map Lattice (CML)
+Scripts fundamentales que modelan, simulan y analizan la dinámica acoplada real utilizada en el algoritmo de cifrado.
 
-Computes Lyapunov exponents to quantify chaotic behavior.
-
-**Purpose:** Positive Lyapunov exponents indicate chaotic behavior and sensitivity to initial conditions.
-
-**Usage:**
-```bash
-python lyapunov.py
-```
-
-This tool validates that the chaotic maps used in key generation exhibit genuine chaotic properties.
+- **`coupled_map.py`**: **[NÚCLEO]** Contiene la lógica matemática exacta del CML y del Autómata Celular Acoplado de 16-bits. Funciona como la versión Python 1:1 de los kernels de CUDA, incluyendo el acoplamiento bidireccional.
+- **`coupled_lyapunov.py`**: Motor matemático para calcular la matriz Jacobiana a alta dimensión y extraer el Exponente Máximo de Lyapunov (LCE) del sistema CML acoplado.
+- **`cml_analysis.py`**: Herramienta de análisis definitiva. Genera un panel dual que correlaciona directamente el Diagrama de Bifurcación del CML con la gráfica de su Exponente Máximo de Lyapunov en función del parámetro $r$.
+- **`coupled_lyapunov_diagram.py`**: Generador de mapas de calor 2D. Evalúa la estabilidad del sistema explorando simultáneamente el parámetro de caos ($r$) y el parámetro de acoplamiento ($\epsilon$).
+- **`cml_evolution.py`**: Graficador del espacio-tiempo (Spacetime plot). Permite visualizar cómo evolucionan e interactúan espacialmente todas las celdas del CML a lo largo de las iteraciones.
 
 ---
 
-### Chaos_Generator.py - Chaotic Sequence Generator
+## 3. Criptoanálisis y Testing Estadístico
+Herramientas para someter a prueba la seguridad computacional de las secuencias generadas y del cifrado de imágenes.
 
-Utilities for generating chaotic sequences from various chaotic maps.
-
-**Purpose:** Provides reusable functions for generating pseudorandom sequences from chaotic systems.
-
----
-
-### TestNIST.py - NIST Statistical Test Suite
-
-Integration with NIST randomness tests.
-
-**Purpose:** Performs standardized statistical tests to evaluate the randomness quality of encrypted images.
-
-**Usage:**
-```bash
-python TestNIST.py
-```
-
-Tests include:
-- Frequency tests
-- Runs tests
-- Spectral tests
-- And other NIST SP 800-22 tests
+- **`nist_tests.py`**: Implementación completa de la suite **NIST SP 800-22** (15 tests estadísticos). Valida la aleatoriedad de secuencias generadas por:
+  1. El sistema caótico continuo (CML).
+  2. El Autómata Celular (CA Acoplado).
+  3. El flujo real de bytes (Keystream) extraído directamente del ejecutable CUDA.
+- **`stats.py`**: Herramienta de auditoría de imágenes cifradas. Calcula métricas clave (Entropía de Shannon, NPCR, UACI, correlación de píxeles adyacentes, visualización de histogramas) y compara automáticamente los resultados y el rendimiento contra sistemas estándar como AES-256-CTR o ASCON.
 
 ---
 
-### plot.py - Visualization Utilities
-
-General-purpose plotting utilities for analysis results.
-
-**Purpose:** Provides helper functions for creating publication-quality plots and visualizations.
-
----
-
-## Typical Workflow
-
-1. **Build the cipher:**
-   ```bash
-   cd ../cuda
-   make -j8
-   ```
-
-2. **Run comprehensive analysis:**
-   ```bash
-   cd ../python
-   python stats.py ../repositorio/set3/lena3.jpg password123 ../cuda/bin/cipher.out --rounds 3
-   ```
-
-3. **Review the results:**
-   - Check console output for metric values
-   - Open `full_report.jpg` for visual analysis
-
-4. **Optional - Chaos analysis:**
-   ```bash
-   python bifurcacion.py  # Verify chaotic parameter selection
-   python lyapunov.py      # Confirm chaotic behavior
-   ```
-
-## Notes
-
-- The analysis tools use RAM-to-RAM encryption (STDIN/STDOUT mode) for efficiency
-- Scalability benchmarks may be limited by available GPU memory
-- For very large images (>100 MP), some metrics use sampling to maintain performance
-- All tools support both grayscale and color images
+### Requisitos y Entorno
+Es imprescindible ejecutar estos scripts dentro del entorno virtual configurado en la raíz del repositorio (`source .env/bin/activate`), ya que dependen fuertemente de bibliotecas científicas (`numpy`, `scipy`, `matplotlib`, etc.).
