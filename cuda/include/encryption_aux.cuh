@@ -10,7 +10,6 @@
 #include <cstdint>
 
 #include "CudaPermutation.cuh"
-#include "automata.cuh"
 #include "kernels.cuh"
 #include "structs.cuh"
 
@@ -99,16 +98,14 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
  * This function evolves the automaton for the specified number of steps,
  * extracts its state, and computes a permutation suitable for reordering.
  *
- * @param automata Pointer to ElementalCelularAutomata instance.
- * @param steps Number of automata evolution steps used to derive permutation.
+ * @param d_automata_state Pointer to ElementalCelularAutomata instance.
  * @param block_length Length of the permutation.
  * @param verbose Enable verbose output for timing information.
  * @return Device pointer to the permutation array (caller must free).
  */
 __host__ unsigned int *
-generate_automata_permutations(ElementalCelularAutomata *automata,
-                               const size_t steps, const size_t block_length,
-                               bool verbose);
+generate_automata_permutations(unsigned int *d_automata_state,
+                               const size_t block_length, bool verbose);
 
 /**
  * @brief Unstacks an interleaved (BGR) image on the device into a planar
@@ -144,8 +141,8 @@ __host__ void stack_channels_gpu(unsigned char *d_planar,
 __host__ void
 fused_permutation_xor(unsigned char *d_image_in, unsigned char *d_image_out,
                       unsigned char *d_flow, unsigned int *d_permutations,
-                      unsigned int *d_permutations_inverse, unsigned int *d_blocks,
-                      unsigned int *d_blocks_inv,
+                      unsigned int *d_permutations_inverse,
+                      unsigned int *d_blocks, unsigned int *d_blocks_inv,
                       Image_dimensions img_dimensions, size_t block_size,
                       bool use_xor, bool inverse);
 

@@ -7,33 +7,10 @@
 #include "../include/encryption_aux.cuh"
 
 __host__ unsigned int *
-generate_automata_permutations(ElementalCelularAutomata *automata,
-                               const size_t steps, const size_t block_length,
-                               bool verbose) {
+generate_automata_permutations(unsigned int *d_automata_state,
+                               const size_t block_length, bool verbose) {
 
-  // Validate automata size
-  if (automata->get_size() != block_length * 16)
-    throw std::runtime_error(
-        "Incompatible automata size (" + std::to_string(automata->get_size()) +
-        ") and block length (" + std::to_string(block_length * 16) + ")");
-
-  // === TIMING 1: Automata Iteration ===
-  auto start_iterate = std::chrono::high_resolution_clock::now();
-  automata->iterate_block_level(steps);
-
-  if (verbose) {
-    checkCudaError(cudaDeviceSynchronize(),
-                   "cudaDeviceSynchronize failed after automata iteration");
-  }
-
-  auto end_iterate = std::chrono::high_resolution_clock::now();
-  std::chrono::duration<double> time_iterate = end_iterate - start_iterate;
-
-  // === TIMING 2: Chaotic Generation ===
   auto start_chaotic = std::chrono::high_resolution_clock::now();
-
-  const uint32_t *d_automata_state = automata->get_cuda_state();
-
   size_t num_keys = block_length * 2;
 
   unsigned short *d_chaotic_values = nullptr;
@@ -71,8 +48,6 @@ generate_automata_permutations(ElementalCelularAutomata *automata,
 
   // Print detailed timing if verbose
   if (verbose) {
-    std::cout << "\t\tAutomata Iteration: " << time_iterate.count() * 1000.0
-              << " ms" << std::endl;
     std::cout << "\t\tChaotic Generation: " << time_chaotic.count() * 1000.0
               << " ms" << std::endl;
     std::cout << "\t\tBatched Sort: " << time_sort.count() * 1000.0 << " ms"

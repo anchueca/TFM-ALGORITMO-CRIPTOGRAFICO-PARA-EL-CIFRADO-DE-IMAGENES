@@ -13,7 +13,6 @@
 #include <vector>
 
 // Project headers
-#include "automata.cuh"
 #include "aux.cuh"
 #include "encryption_aux.cuh"
 #include "kernels.cuh"
@@ -94,25 +93,6 @@ void warmup_gpu();
 void print_encryption_report(const cv::Mat &image,
                              const Image_dimensions &img_dimensions,
                              const EncryptionParams &params, bool encrypt);
-
-/**
- * @brief Sets up the permutations for encryption or decryption.
- *
- * This function generates the row and column permutations based on the provided
- * password and image dimensions.
- *
- * @param d_pointers Struct containing device pointers for image data and
- * permutations.
- * @param password The user-provided password for key generation.
- * @param img_dimensions Struct containing the image dimensions.
- * @param params Struct containing configuration for encryption (block size,
- * rounds, etc.).
- * @param verbose Print verbose info if true.
- */
-void setup_permutations(D_pointers &d_pointers,
-                        std::vector<std::vector<unsigned char>> &password,
-                        const Image_dimensions &img_dimensions,
-                        const EncryptionParams &params, bool verbose);
 
 /**
  * @brief Allocates GPU memory and transfers the already unstacked and padded
