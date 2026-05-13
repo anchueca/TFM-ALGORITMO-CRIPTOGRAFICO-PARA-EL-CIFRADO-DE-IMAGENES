@@ -232,6 +232,8 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                               numBlocks.x * sizeof(unsigned short),
                               cudaMemcpyHostToDevice),
                    "Failed to copy hash to device memory");
+                   
+    chaotic_values = d_pointers.d_chaotic_values_for_permutation;
   } else {
     // Subsequent runs
     transition_length = threadsPerBlock.x / 2;

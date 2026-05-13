@@ -85,18 +85,16 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   // permutations.
   const size_t num_blocks_permutations = 1;
 
+  int effective_threads = MAX_THREADS - 1;
+  int numBlocks = (img_dimensions.cols + effective_threads - 1) / effective_threads;
+
   int bytes_for_columns = img_dimensions.cols * 2;
   int bytes_for_blocks = num_blocks_permutations * 4;
 
-  // IMPORTANT: bytes_for_flow must match the allocation in
-  // generate_flow_stream_parallel numBlocks is (cols + 254) / 255 (255
-  // effective threads)
-  int numBlocks = (img_dimensions.cols + MAX_THREADS - 2) / MAX_THREADS - 1;
   int bytes_for_flow = (img_dimensions.cols + numBlocks) * 4;
-
-  // Total length
+  int bytes_for_r_params = (img_dimensions.cols + numBlocks) * 4;
   int bytes_for_stego = 8; // 64 bits for stego seed
-  int bytes_for_r_params = (img_dimensions.cols + numBlocks) * 4; // per-seed chaotic r
+
   int length_bytes =
       bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego;
 
