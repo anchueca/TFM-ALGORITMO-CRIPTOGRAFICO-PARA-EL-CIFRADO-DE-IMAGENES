@@ -337,13 +337,16 @@ class ExternalCipherTester:
             mod_pw = original_pw[:-1] + new_last_char
         else:
             # Binary key segments (matching aux.cu segments)
-            bits_cols = (self.padded_cols * 2) * 8
-            # Align numBlocks calculation with C++ aux.cu (uses MAX_THREADS=64)
+            bits_cols = self.padded_cols * 2 * 8
+            # Align numBlocks calculation with C++ aux.cu (uses effective threads = 63)
             MAX_THREADS = 64
-            numBlocks_gpu = (self.padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
-            if numBlocks_gpu < 1: numBlocks_gpu = 1
-            bits_flow = (4 + (self.padded_cols + numBlocks_gpu) * 4) * 8
-            bits_r_params = ((self.padded_cols + numBlocks_gpu) * 4) * 8
+            effective_threads = MAX_THREADS - 1
+            numBlocks_gpu = (self.padded_cols + effective_threads - 1) // effective_threads
+            
+            bits_blocks = 4 * 8
+            bits_flow = (self.padded_cols + numBlocks_gpu) * 4 * 8
+            bits_r_params = (self.padded_cols + numBlocks_gpu) * 4 * 8
+            bits_stego = 8 * 8
             
             if segment == 'cols':
                 range_start, range_end = 0, bits_cols
@@ -456,10 +459,10 @@ class ExternalCipherTester:
                 
                 padded_cols = S
                 padded_rows = S
-                # Align num_blocks with C++ aux.cu (uses MAX_THREADS=64)
+                # Align num_blocks with C++ aux.cu (uses effective threads = 63)
                 MAX_THREADS = 64
-                num_blocks = (padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
-                if num_blocks < 1: num_blocks = 1
+                effective_threads = MAX_THREADS - 1
+                num_blocks = (padded_cols + effective_threads - 1) // effective_threads
                 # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego
                 total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + (padded_cols + num_blocks) * 4 + 8
                 required_bits = total_bytes * 8
@@ -791,10 +794,10 @@ def main():
         padded_rows = S
         
         # Now calculate required key length based on PADDED dimensions
-        # Align num_blocks with C++ aux.cu (uses MAX_THREADS=64)
+        # Align num_blocks with C++ aux.cu (uses effective threads = 63)
         MAX_THREADS = 64
-        num_blocks = (padded_cols + MAX_THREADS - 2) // MAX_THREADS - 1
-        if num_blocks < 1: num_blocks = 1
+        effective_threads = MAX_THREADS - 1
+        num_blocks = (padded_cols + effective_threads - 1) // effective_threads
         # Matches aux.cu: bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego
         total_bytes = (padded_cols * 2) + 4 + (padded_cols + num_blocks) * 4 + (padded_cols + num_blocks) * 4 + 8
         required_bits = total_bytes * 8
