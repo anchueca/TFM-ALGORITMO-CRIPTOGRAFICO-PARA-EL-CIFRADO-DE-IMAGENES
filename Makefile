@@ -2,13 +2,13 @@
 NVCC = nvcc
 
 # Normal flags
-NVCCFLAGS_NORMAL = -O3 -rdc=true -arch=sm_89 #-use_fast_math
+NVCCFLAGS_NORMAL = -O3 -rdc=true
 
 # Debug fags
 NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
 
 # Libraries and includes
-LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart 
+LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart -Xlinker /usr/lib/x86_64-linux-gnu/libstdc++.so.6 
 CXXINCLUDES = $(shell pkg-config --cflags opencv4) $(shell pkg-config --cflags libexif) -I./cuda/include -I/usr/local/cuda/include
 
 # Directories
@@ -39,7 +39,7 @@ ifeq ($(PRECISION),double)
     NVCCFLAGS += -DUSE_DOUBLE_PRECISION
 endif
 
- NVCCFLAGS += -ccbin g++-14
+ NVCCFLAGS += -ccbin g++-12
 
 # main rule
 $(TARGET):  $(OBJS)

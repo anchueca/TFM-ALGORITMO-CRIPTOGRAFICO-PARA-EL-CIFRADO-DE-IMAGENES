@@ -1,17 +1,16 @@
-# ══════════════════════════════════════════════════════════════════════════════
-#  Makefile — Encrypted Video Streaming (Server + Client)
-#
-#  Compiles the CUDA encryption core from ../cuda/src/ (WITHOUT modifying it)
-#  and the new video streaming server/client applications.
-# ══════════════════════════════════════════════════════════════════════════════
-
 NVCC       = nvcc
-NVCCFLAGS  = -O3 -rdc=true -arch=sm_89 -ccbin g++-14
+NVCCFLAGS  = -O3 -rdc=true -ccbin g++-12
 
-# Libraries
-LDFLAGS    = $(shell pkg-config --libs opencv4) -lssl -lcrypto -lcudart -lpthread
-INCLUDES   = $(shell pkg-config --cflags opencv4) -I../cuda/include -I./common \
-             -I/usr/local/cuda/include
+OPENCV_LIBS := $(shell pkg-config --libs opencv4)
+
+INCLUDES = -I/usr/include/opencv4 \
+           -I../cuda/include \
+           -I./common \
+           -I/usr/local/cuda/include
+
+LDFLAGS = $(OPENCV_LIBS) \
+          -lssl -lcrypto -lcudart -lpthread \
+          -Xlinker /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
 # Precision
 PRECISION ?= float

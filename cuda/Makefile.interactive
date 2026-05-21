@@ -22,7 +22,7 @@ OPENCV_INCLUDE = $(OPENCV_CFLAGS)
 
 # Linking settings
 CCBIN = -ccbin g++-12
-LDFLAGS = $(CUDA_LIBS) $(OPENCV_LIBS) -lssl -lcrypto
+LDFLAGS = $(CUDA_LIBS) $(OPENCV_LIBS) -lssl -lcrypto -Xlinker /usr/lib/x86_64-linux-gnu/libstdc++.so.6
 
 # Source files from main library (excluding main.cu and aux.cu)
 CUDA_SOURCES = \
