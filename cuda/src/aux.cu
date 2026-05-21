@@ -284,10 +284,11 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
   uchar *dataPtr = squared.data;
   size_t lastByteIdx = (size_t)S * S * channels;
 
-  dataPtr[lastByteIdx - 5] = (W & 0xFF);        // W Low
-  dataPtr[lastByteIdx - 4] = ((W >> 8) & 0xFF); // W High
-  dataPtr[lastByteIdx - 3] = (H & 0xFF);        // H Low
-  dataPtr[lastByteIdx - 2] = ((H >> 8) & 0xFF); // H High
+  // Guardar metadatos en big-endian para robustez multiplataforma
+  dataPtr[lastByteIdx - 5] = ((W >> 8) & 0xFF); // W High (big-endian)
+  dataPtr[lastByteIdx - 4] = (W & 0xFF);        // W Low
+  dataPtr[lastByteIdx - 3] = ((H >> 8) & 0xFF); // H High (big-endian)
+  dataPtr[lastByteIdx - 2] = (H & 0xFF);        // H Low
   // Color byte: 1 = color, 0 = grayscale
   dataPtr[lastByteIdx - 1] = (original_channels == 3) ? 1 : 0;
 
@@ -299,10 +300,11 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
   uchar *dataPtr = squared.data;
   size_t lastByteIdx = (size_t)squared.total() * channels;
 
-  uint16_t W = dataPtr[lastByteIdx - 5] |
-               (static_cast<uint16_t>(dataPtr[lastByteIdx - 4]) << 8);
-  uint16_t H = dataPtr[lastByteIdx - 3] |
-               (static_cast<uint16_t>(dataPtr[lastByteIdx - 2]) << 8);
+  // Leer metadatos en big-endian
+  uint16_t W = (static_cast<uint16_t>(dataPtr[lastByteIdx - 5]) << 8) |
+               dataPtr[lastByteIdx - 4];
+  uint16_t H = (static_cast<uint16_t>(dataPtr[lastByteIdx - 3]) << 8) |
+               dataPtr[lastByteIdx - 2];
   // Color byte: 1 = color, 0 = grayscale
   uchar is_color_flag = dataPtr[lastByteIdx - 1];
   int original_channels = (is_color_flag == 1) ? 3 : 1;

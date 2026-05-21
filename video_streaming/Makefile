@@ -8,9 +8,15 @@ INCLUDES = -I/usr/include/opencv4 \
            -I./common \
            -I/usr/local/cuda/include
 
+# Detect libstdc++ path dynamically based on architecture
+LIBSTDCPP_PATH = /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+ifeq ($(shell uname -m),aarch64)
+    LIBSTDCPP_PATH = /lib/aarch64-linux-gnu/libstdc++.so.6
+endif
+
 LDFLAGS = $(OPENCV_LIBS) \
           -lssl -lcrypto -lcudart -lpthread \
-          -Xlinker /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+          -Xlinker $(LIBSTDCPP_PATH)
 
 # Precision
 PRECISION ?= float
