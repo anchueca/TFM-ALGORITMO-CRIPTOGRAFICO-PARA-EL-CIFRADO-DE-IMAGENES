@@ -7,9 +7,15 @@ NVCCFLAGS_NORMAL = -O3 -rdc=true
 # Debug fags
 NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
 
+# Detect libstdc++ path dynamically based on architecture
+LIBSTDCPP_PATH = /usr/lib/x86_64-linux-gnu/libstdc++.so.6
+ifeq ($(shell uname -m),aarch64)
+    LIBSTDCPP_PATH = /lib/aarch64-linux-gnu/libstdc++.so.6
+endif
+
 # Libraries and includes
-LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart -Xlinker /usr/lib/x86_64-linux-gnu/libstdc++.so.6 
-CXXINCLUDES = $(shell pkg-config --cflags opencv4) $(shell pkg-config --cflags libexif) -I./cuda/include -I/usr/local/cuda/include
+LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart -Xlinker $(LIBSTDCPP_PATH)
+CXXINCLUDES = $(shell pkg-config --cflags opencv4) -I/usr/include/opencv4 $(shell pkg-config --cflags libexif) -I./cuda/include -I/usr/local/cuda/include
 
 # Directories
 SRC_DIR = ./cuda/src
