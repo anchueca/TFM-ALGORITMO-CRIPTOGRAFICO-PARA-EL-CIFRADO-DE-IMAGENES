@@ -29,15 +29,6 @@ static double logistic_map(double x, double r = 3.999) {
 }
 
 /**
- * @brief Cosine-Cosine chaotic function (same as used in encryption).
- * Matches the chaotic_functio used in the main encryption pipeline.
- */
-static double chaotic_cosine(double x, double r) {
-  double t = r + 3.0 * x * x;
-  return fabs(cos(M_PI * r * cos(M_PI * t) * t));
-}
-
-/**
  * @brief Converts a hex string back to vector<bool>.
  */
 static std::vector<bool> hex_to_bits(const std::string &hex_str) {
@@ -96,10 +87,10 @@ std::vector<bool> extract_message_caos(cv::Mat &image,
   double x = bits_to_seed(key);
   std::vector<int> H(N);
 
-  // 1 & 2. Regenerate chaotic sequence using cosine-cosine map and quantization
-  double r_param = 2.5; // Same chaotic parameter as in embedding
+  // 1 & 2. Regenerate chaotic sequence using logistic map and quantization
+  double r_param = 3.999; // Same chaotic parameter as in embedding
   for (size_t i = 0; i < N; ++i) {
-    x = chaotic_cosine(x, r_param);
+    x = logistic_map(x, r_param);
     H[i] = (int)(x * 255.0);
   }
 

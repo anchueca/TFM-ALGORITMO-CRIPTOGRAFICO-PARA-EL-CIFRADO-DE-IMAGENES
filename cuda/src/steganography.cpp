@@ -30,12 +30,12 @@ static double bits_to_seed(const std::vector<bool> &bits) {
 }
 
 /**
- * @brief Cosine-Cosine chaotic function (same as used in encryption).
- * Matches the chaotic_functio used in the main encryption pipeline.
+ * @brief Logistic map chaotic function for position generation.
+ * Uses only IEEE 754 basic arithmetic (multiply, subtract) which is
+ * bit-exact across ARM (Jetson) and x86 (desktop) CPUs.
  */
-static double chaotic_cosine(double x, double r) {
-  double t = r + 3.0 * x * x;
-  return fabs(cos(M_PI * r * cos(M_PI * t) * t));
+static double logistic_map(double x, double r = 3.999) {
+  return r * x * (1.0 - x);
 }
 
 /**
@@ -161,9 +161,9 @@ std::vector<bool> embed_message_caos(cv::Mat &image,
 
   // 1 & 2. Generate chaotic sequence using cosine-cosine map and quantize to
   // [0, 255]
-  double r_param = 2.5; // Chaotic parameter for cosine-cosine map
+  constexpr double r_param = 3.999; // Chaotic parameter for logistic map
   for (size_t i = 0; i < N; ++i) {
-    x = chaotic_cosine(x, r_param);
+    x = logistic_map (x, r_param);
     H[i] = (int)(x * 255.0);
   }
 
