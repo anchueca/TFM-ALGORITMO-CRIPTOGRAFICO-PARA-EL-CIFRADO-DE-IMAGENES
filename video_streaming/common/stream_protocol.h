@@ -39,8 +39,10 @@ inline bool send_all(int sock, const void *data, size_t len) {
   size_t remaining = len;
   while (remaining > 0) {
     ssize_t sent = send(sock, ptr, remaining, MSG_NOSIGNAL);
-    if (sent <= 0)
+    if (sent <= 0) {
+      fprintf(stderr, "[TCP] send error: %s\\n", strerror(errno));
       return false;
+    }
     ptr += sent;
     remaining -= sent;
   }
@@ -56,8 +58,10 @@ inline bool recv_all(int sock, void *data, size_t len) {
   size_t remaining = len;
   while (remaining > 0) {
     ssize_t received = recv(sock, ptr, remaining, 0);
-    if (received <= 0)
+    if (received <= 0) {
+      fprintf(stderr, "[TCP] recv error: %s\\n", strerror(errno));
       return false;
+    }
     ptr += received;
     remaining -= received;
   }
