@@ -58,8 +58,6 @@ cv::Mat VideoEncryptor::processFrame(const cv::Mat &frame,
     // 1. Calculate plaintext hash
     params_.image_hash = calculate_image_hash(processed, 2);
 
-    printf("[VideoEncryptor] Image hash: %u\n", params_.image_hash);
-
     // 2. Encrypt
     std::vector<std::vector<unsigned char>> frame_password = password_segments_;
     Image_dimensions dims = {(size_t)processed.cols, (size_t)processed.rows};
@@ -109,8 +107,6 @@ cv::Mat VideoEncryptor::processFrame(const cv::Mat &frame,
         if (msg[i])
           h_val |= (1 << i);
       params_.image_hash = h_val;
-
-      printf("[VideoDecryptor] Image hash: %u\n", params_.image_hash);
     }
 
     // 2. Decrypt using extracted hash
