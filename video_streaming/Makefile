@@ -1,5 +1,5 @@
 NVCC       = nvcc
-NVCCFLAGS  = -O3 -rdc=true -ccbin g++-12
+NVCCFLAGS  = -O3 -rdc=true -ccbin g++-12 -Xcompiler -ffp-contract=off --fmad=false
 
 OPENCV_LIBS := $(shell pkg-config --libs opencv4)
 
