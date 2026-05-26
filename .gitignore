@@ -20,3 +20,5 @@ test_kernel
 report2.nsys-rep
 video_streaming/bin/
 video_streaming/build
+video_streaming/bin/video_client
+video_streaming/bin/video_server
