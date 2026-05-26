@@ -61,19 +61,27 @@ def start_backend():
 
 
 def _read_status():
-    """Read JSON status lines from backend stdout."""
+    """Read stdout from backend and print it."""
     global backend_status
+
     try:
         for line in backend_process.stdout:
             line = line.strip()
+
             if not line:
                 continue
+
+            # Mostrar salida del C++ en terminal
+            print(f"[C++] {line}")
+
+            # Si además es JSON, actualizar estado
             try:
                 backend_status = json.loads(line)
             except json.JSONDecodeError:
                 pass
-    except Exception:
-        pass
+
+    except Exception as e:
+        print(f"[Flask] Error: {e}")
 
 
 def send_command(cmd: dict):

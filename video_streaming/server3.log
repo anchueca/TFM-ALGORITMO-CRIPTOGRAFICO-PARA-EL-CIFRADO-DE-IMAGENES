@@ -1,16 +1,0 @@
-[ WARN:0@0.437] global cap_gstreamer.cpp:1777 open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
-[SERVER] Webcam opened: 640x480
-[VideoEncryptor] Initialized: 640x480 ch=3 padded=968x968 mode=ENCRYPT
-
-══════════════════════════════════════════════════
-  ENCRYPTED VIDEO SERVER RUNNING
-  TCP (client):  port 8554
-  MJPEG (VLC):   http://0.0.0.0:8555/
-  Press Ctrl+C to stop.
-══════════════════════════════════════════════════
-
-[TCP] Listening on port 8554
-[MJPEG] VLC stream available at http://0.0.0.0:8555/
-[TCP] Client connected: 127.0.0.1
-[TCP] Client disconnected (fd=92)
-[SERVER] FPS: 14.3666 | Frames: 29[SERVER] FPS: 16.5677 | Frames: 63
