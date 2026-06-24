@@ -269,15 +269,14 @@ __global__ void keystream_generation_parallel(
 
     if (tid == 0) { // Special seed for perturbation
       state_idx = img_dimensions.cols + blockIdx.x;
-      *c_seed = d_seeds[state_idx];
       cellular_automata_value = d_chaotic_values_for_permutation != nullptr
                                     ? image_automata_state[0]
                                     : image_automata_state[blockIdx.x];
     } else {
       state_idx = x - (blockIdx.x + 1);
-      *c_seed = d_seeds[state_idx];
       cellular_automata_value = cellular_automata[state_idx];
     }
+    *c_seed = d_seeds[state_idx];
     next_val = *c_seed;
     // Load per-thread r from key-derived array (already in [0, 1], scale to [3,
     // 7])

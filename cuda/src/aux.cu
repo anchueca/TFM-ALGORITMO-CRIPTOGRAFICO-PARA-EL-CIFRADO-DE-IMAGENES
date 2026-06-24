@@ -6,7 +6,7 @@
 
 #include "../include/aux.cuh"
 
-// Generate SHA3-512-derived bytes (implementation; see header for API)
+// Generate SHA-3 (SHAKE256) derived bytes (implementation; see header for API)
 // Generate hash from string (calls buffer version)
 // Generate hash from buffer (implementation)
 __host__ std::vector<unsigned char>
@@ -86,7 +86,8 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   const size_t num_blocks_permutations = 1;
 
   int effective_threads = MAX_THREADS - 1;
-  int numBlocks = (img_dimensions.cols + effective_threads - 1) / effective_threads;
+  int numBlocks =
+      (img_dimensions.cols + effective_threads - 1) / effective_threads;
 
   int bytes_for_columns = img_dimensions.cols * 2;
   int bytes_for_blocks = num_blocks_permutations * 4;
@@ -95,8 +96,8 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
   int bytes_for_r_params = (img_dimensions.cols + numBlocks) * 4;
   int bytes_for_stego = 8; // 64 bits for stego seed
 
-  int length_bytes =
-      bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego;
+  int length_bytes = bytes_for_columns + bytes_for_blocks + bytes_for_flow +
+                     bytes_for_r_params + bytes_for_stego;
 
   if (verbose)
     std::cout << "[DEBUG] Key Requirements:" << std::endl
@@ -135,11 +136,10 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
                               password.begin() + bytes_for_columns +
                                   bytes_for_blocks +
                                   bytes_for_flow); // Blocks and flow
-  password_segments[2].assign(password.begin() + bytes_for_columns +
-                                  bytes_for_blocks + bytes_for_flow,
-                              password.begin() + bytes_for_columns +
-                                  bytes_for_blocks + bytes_for_flow +
-                                  bytes_for_r_params); // R params
+  password_segments[2].assign(
+      password.begin() + bytes_for_columns + bytes_for_blocks + bytes_for_flow,
+      password.begin() + bytes_for_columns + bytes_for_blocks + bytes_for_flow +
+          bytes_for_r_params); // R params
   password_segments[3].assign(password.begin() + bytes_for_columns +
                                   bytes_for_blocks + bytes_for_flow +
                                   bytes_for_r_params,
@@ -272,7 +272,8 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
   int channels = input.channels();
 
   long totalPixelsOriginal = input.total();
-  int bytesNeeded = 5; // 2 bytes for W + 2 bytes for H + 1 byte for original_channels
+  int bytesNeeded =
+      5; // 2 bytes for W + 2 bytes for H + 1 byte for original_channels
   int minS = std::ceil(std::sqrt(totalPixelsOriginal + bytesNeeded));
   int S = ((minS + blockSize - 1) / blockSize) * blockSize;
 
@@ -309,7 +310,8 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
   uchar is_color_flag = dataPtr[lastByteIdx - 1];
   int original_channels = (is_color_flag == 1) ? 3 : 1;
 
-  // Validation: Check for corrupted metadata (common sign of decryption failure)
+  // Validation: Check for corrupted metadata (common sign of decryption
+  // failure)
   size_t required_pixels = (size_t)W * H;
   if (required_pixels == 0 || required_pixels > squared.total() || W == 0 ||
       H == 0) {
