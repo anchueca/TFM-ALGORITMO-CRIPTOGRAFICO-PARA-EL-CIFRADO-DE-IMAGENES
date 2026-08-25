@@ -51,6 +51,42 @@ class CryptoMetrics:
         return entropy(prob + 1e-14, base=2)
 
     @staticmethod
+    def calculate_local_shannon_entropy(image, k=30, n=1936):
+        """Calculates Local Shannon Entropy (LSE) per Wu et al. (2013) over k non-overlapping blocks of n pixels."""
+        if len(image.shape) == 3:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image
+
+        h, w = gray.shape
+        patch_dim = int(np.sqrt(n))
+        max_blocks_h = h // patch_dim
+        max_blocks_w = w // patch_dim
+        total_available = max_blocks_h * max_blocks_w
+
+        if total_available < k:
+            scale = np.sqrt(k / total_available) + 0.1
+            gray = cv2.resize(gray, (int(w * scale) + patch_dim * 2, int(h * scale) + patch_dim * 2))
+            h, w = gray.shape
+            max_blocks_h = h // patch_dim
+            max_blocks_w = w // patch_dim
+
+        grid_indices = [(r, c) for r in range(max_blocks_h) for c in range(max_blocks_w)]
+        np.random.seed(42)
+        selected_indices = np.random.choice(len(grid_indices), size=k, replace=False)
+
+        entropies = []
+        for idx in selected_indices:
+            r, c = grid_indices[idx]
+            block = gray[r * patch_dim:(r + 1) * patch_dim, c * patch_dim:(c + 1) * patch_dim].flatten()
+            counts = np.bincount(block, minlength=256)
+            probs = counts[counts > 0] / float(len(block))
+            entropies.append(-np.sum(probs * np.log2(probs)))
+
+        return float(np.mean(entropies)), float(np.std(entropies))
+
+
+    @staticmethod
     def get_pixel_pairs(image, direction='horizontal', max_samples=3000):
         """Gets pixel pairs (x, y) for correlation, handling color channels."""
         if len(image.shape) == 2:

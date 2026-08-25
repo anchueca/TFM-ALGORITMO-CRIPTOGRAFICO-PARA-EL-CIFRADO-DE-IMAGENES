@@ -6,32 +6,42 @@ cml_analysis.py — Unified CML (Coupled Map Lattice) Analysis
 Generates a dual-panel figure:
   Left:  Bifurcation diagram of the CML (x_0 values at steady state vs r)
   Right: Maximum Lyapunov Exponent vs r
-
-All core logic is imported from coupled_map.py and coupled_lyapunov.py.
 """
 
+import os
+import sys
 import argparse
 import numpy as np
 import matplotlib
 
-# Configure matplotlib backend
 try:
     matplotlib.use('TkAgg')
 except Exception:
     matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
-from coupled_map import coupled_step
-from coupled_lyapunov import compute_max_le
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PARENT_DIR = os.path.dirname(SCRIPT_DIR)
+if PARENT_DIR not in sys.path:
+    sys.path.insert(0, PARENT_DIR)
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+try:
+    from coupled_map.coupled_map import coupled_step
+except ImportError:
+    from coupled_map import coupled_step
+
+try:
+    from coupled_lyapunov.coupled_lyapunov import compute_max_le
+except ImportError:
+    from coupled_lyapunov import compute_max_le
 
 
 def compute_bifurcation_data(n, rule, r_values, iterations, transition, plot_idx=0):
     """
     Computes bifurcation data for the CML.
-
-    Returns:
-        x_coords: list of r values (one per collected point)
-        y_coords: list of x_{plot_idx} values at steady state
     """
     x_coords = []
     y_coords = []
@@ -56,9 +66,6 @@ def compute_bifurcation_data(n, rule, r_values, iterations, transition, plot_idx
 def compute_lyapunov_data(n, rule, r_values, le_iterations, le_transition):
     """
     Computes maximum Lyapunov Exponent for each r value.
-
-    Returns:
-        le_values: list of LE values, one per r
     """
     le_values = []
     for r in r_values:
@@ -79,16 +86,16 @@ def main():
                         help="Minimum value of parameter r (default: 2.0)")
     parser.add_argument("--r_max", type=float, default=6.5,
                         help="Maximum value of parameter r (default: 6.5)")
-    parser.add_argument("--r_num", type=int, default=800,
-                        help="Number of r points (default: 800)")
-    parser.add_argument("--bif_iterations", type=int, default=300,
-                        help="Iterations to collect per r in bifurcation (default: 300)")
-    parser.add_argument("--bif_transition", type=int, default=200,
-                        help="Transient iterations for bifurcation (default: 200)")
-    parser.add_argument("--le_iterations", type=int, default=800,
-                        help="Iterations for Lyapunov Exponent average (default: 800)")
-    parser.add_argument("--le_transition", type=int, default=200,
-                        help="Transient iterations for Lyapunov calculation (default: 200)")
+    parser.add_argument("--r_num", type=int, default=400,
+                        help="Number of r points (default: 400)")
+    parser.add_argument("--bif_iterations", type=int, default=200,
+                        help="Iterations to collect per r in bifurcation (default: 200)")
+    parser.add_argument("--bif_transition", type=int, default=100,
+                        help="Transient iterations for bifurcation (default: 100)")
+    parser.add_argument("--le_iterations", type=int, default=400,
+                        help="Iterations for Lyapunov Exponent average (default: 400)")
+    parser.add_argument("--le_transition", type=int, default=100,
+                        help="Transient iterations for Lyapunov calculation (default: 100)")
     parser.add_argument("--plot_idx", type=int, default=0,
                         help="Index of the map to plot in bifurcation (default: 0)")
     parser.add_argument("--save", type=str, default="",
@@ -102,8 +109,7 @@ def main():
 
     # --- Bifurcation Data ---
     print(f"[1/2] Computing Bifurcation Diagram (n={args.n}, Rule={args.rule}, "
-          f"r ∈ [{args.r_min}, {args.r_max}], {args.r_num} points, "
-          f"{args.bif_iterations} iters/point)...")
+          f"r ∈ [{args.r_min}, {args.r_max}], {args.r_num} points)...")
     bif_x, bif_y = compute_bifurcation_data(
         args.n, args.rule, r_values,
         args.bif_iterations, args.bif_transition, args.plot_idx
@@ -119,16 +125,16 @@ def main():
     print(f"      → {len(le_values)} LE values computed.")
 
     # --- Plotting ---
-    fig, (ax_bif, ax_le) = plt.subplots(1, 2, figsize=(18, 7))
+    fig, (ax_bif, ax_le) = plt.subplots(1, 2, figsize=(16, 6))
     fig.suptitle(
         f"CML Analysis — n={args.n}, Rule {args.rule}",
-        fontsize=15, fontweight='bold'
+        fontsize=14, fontweight='bold'
     )
 
     # Left panel: Bifurcation
     ax_bif.scatter(bif_x, bif_y, s=0.2, c='black', alpha=0.4, marker='o', lw=0)
-    ax_bif.set_title("Bifurcation Diagram")
-    ax_bif.set_xlabel("Parameter r")
+    ax_bif.set_title("Diagrama de Bifurcación")
+    ax_bif.set_xlabel("Parámetro r")
     ax_bif.set_ylabel(f"$x_{{{args.plot_idx}}}$")
     ax_bif.set_xlim(args.r_min, args.r_max)
     ax_bif.set_ylim(0, 1)
@@ -136,15 +142,15 @@ def main():
 
     # Right panel: Lyapunov Exponent
     ax_le.plot(r_values, le_values, 'b-', linewidth=0.8, label='Max LE')
-    ax_le.axhline(0, color='r', linestyle='--', linewidth=1.0, label='Chaos threshold (LE=0)')
+    ax_le.axhline(0, color='r', linestyle='--', linewidth=1.0, label='Umbral de Caos (LE=0)')
     ax_le.fill_between(r_values, le_values, 0,
                        where=[le > 0 for le in le_values],
-                       color='red', alpha=0.15, label='Chaotic regime')
+                       color='red', alpha=0.15, label='Régimen Caótico')
     ax_le.fill_between(r_values, le_values, 0,
                        where=[le <= 0 for le in le_values],
-                       color='blue', alpha=0.10, label='Stable regime')
-    ax_le.set_title("Maximum Lyapunov Exponent")
-    ax_le.set_xlabel("Parameter r")
+                       color='blue', alpha=0.10, label='Régimen Estable')
+    ax_le.set_title("Exponente Máximo de Lyapunov")
+    ax_le.set_xlabel("Parámetro r")
     ax_le.set_ylabel("LE")
     ax_le.set_xlim(args.r_min, args.r_max)
     ax_le.legend(fontsize=8)
@@ -154,9 +160,8 @@ def main():
 
     if args.save:
         plt.savefig(args.save, dpi=args.dpi, bbox_inches='tight')
-        print(f"\n[+] Figure saved to: {args.save}")
+        print(f"\n[+] Figura guardada en: {args.save}")
     else:
-        print("\nDisplaying plot (if no window appears, use --save to output a PNG)...")
         plt.show()
 
 
