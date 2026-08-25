@@ -33,10 +33,18 @@ void compute_permutation_gpu(const Real *h_chaotic_sequence,
 
 /**
  * @brief Generates a permutation (argsort) based on a chaotic sequence already
- * on the GPU.
+ * on the GPU. Accepts optional pooled scratch buffers for zero-allocation runtime.
  */
 void compute_permutation_device(Real *d_values, unsigned int *d_indices,
-                                int n);
+                                int n, Real *d_padded_values_pool = nullptr,
+                                unsigned int *d_padded_indices_pool = nullptr);
+
+/**
+ * @brief GPU Kernel: Single-pass Shared Memory Bitonic Sort for small arrays (n <= 1024).
+ */
+__global__ void bitonic_sort_shared_kernel(const Real *__restrict__ d_values,
+                                           unsigned int *__restrict__ d_indices,
+                                           int n, int padded_size);
 
 /**
  * @brief GPU Kernel: Initializes buffers.
@@ -58,13 +66,12 @@ __global__ void bitonic_sort_step_kernel(Real *values, unsigned int *indices, in
 /**
  * @brief Host function that orchestrates the Batched Bitonic Sort.
  * * Sorts multiple independent blocks of data simultaneously.
- * * @param d_keys Device pointer to input chaotic values (unsigned short).
- * @param d_indices Device pointer to input indices (will be sorted).
- * @param num_blocks Number of independent blocks to sort.
- * @param block_len Number of elements per block.
+ * * Accepts optional pooled scratch buffers for zero-allocation runtime.
  */
 void batched_gpu_argsort(unsigned short *d_keys, unsigned int *d_indices,
-                         size_t num_blocks, size_t block_len);
+                         size_t num_blocks, size_t block_len,
+                         int *d_padded_keys_pool = nullptr,
+                         unsigned int *d_padded_indices_pool = nullptr);
 
 /**
  * @brief GPU Kernel: Copies real data to a padded buffer (power of 2).

@@ -8,20 +8,31 @@
 
 __host__ unsigned int *
 generate_automata_permutations(unsigned int *d_automata_state,
-                               const size_t block_length, bool verbose) {
+                               const size_t block_length, bool verbose,
+                               D_pointers *d_pointers) {
 
   auto start_chaotic = std::chrono::high_resolution_clock::now();
   size_t num_keys = block_length * 2;
 
   unsigned short *d_chaotic_values = nullptr;
   unsigned int *d_indices = nullptr;
+  int *d_padded_keys_pool = nullptr;
+  unsigned int *d_padded_indices_pool = nullptr;
+  bool owns_mem = false;
 
-  checkCudaError(
-      cudaMalloc(&d_chaotic_values, num_keys * sizeof(unsigned short)),
-      "cudaMalloc failed for d_chaotic_values");
-
-  checkCudaError(cudaMalloc(&d_indices, num_keys * sizeof(unsigned int)),
-                 "cudaMalloc failed for d_indices");
+  if (d_pointers != nullptr && d_pointers->d_pool_chaotic_values != nullptr) {
+    d_chaotic_values = d_pointers->d_pool_chaotic_values;
+    d_indices = d_pointers->d_pool_indices;
+    d_padded_keys_pool = d_pointers->d_pool_padded_keys;
+    d_padded_indices_pool = d_pointers->d_pool_padded_indices;
+  } else {
+    checkCudaError(
+        cudaMalloc(&d_chaotic_values, num_keys * sizeof(unsigned short)),
+        "cudaMalloc failed for d_chaotic_values");
+    checkCudaError(cudaMalloc(&d_indices, num_keys * sizeof(unsigned int)),
+                   "cudaMalloc failed for d_indices");
+    owns_mem = true;
+  }
 
   int threadsPerBlock = 256;
   int numBlocks = (block_length / 2 + threadsPerBlock - 1) / threadsPerBlock;
@@ -29,19 +40,13 @@ generate_automata_permutations(unsigned int *d_automata_state,
   generate_automata_chaotic<<<numBlocks, threadsPerBlock>>>(
       d_automata_state, d_chaotic_values, d_indices, block_length);
 
-  checkCudaError(
-      cudaDeviceSynchronize(),
-      "cudaDeviceSynchronize failed after generate_automata_chaotic");
-
   auto end_chaotic = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time_chaotic = end_chaotic - start_chaotic;
 
   // === TIMING 3: Batched Sort ===
   auto start_sort = std::chrono::high_resolution_clock::now();
-  batched_gpu_argsort(d_chaotic_values, d_indices, 1, block_length);
-
-  checkCudaError(cudaDeviceSynchronize(),
-                 "cudaDeviceSynchronize failed after batched_gpu_argsort");
+  batched_gpu_argsort(d_chaotic_values, d_indices, 1, block_length,
+                      d_padded_keys_pool, d_padded_indices_pool);
 
   auto end_sort = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> time_sort = end_sort - start_sort;
@@ -54,7 +59,9 @@ generate_automata_permutations(unsigned int *d_automata_state,
               << std::endl;
   }
 
-  cudaFree(d_chaotic_values);
+  if (owns_mem) {
+    cudaFree(d_chaotic_values);
+  }
 
   return d_indices;
 }
@@ -71,7 +78,8 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
   }
   // Parallel sorting (Bitonic Sort) to generate permutation from chaotic values
   compute_permutation_device(d_pointers.d_chaotic_values_for_permutation,
-                             d_pointers.d_permutation_blocks, block_size);
+                             d_pointers.d_permutation_blocks, block_size,
+                             nullptr, nullptr);
   inverse_permutations(d_pointers.d_permutation_blocks,
                        &d_pointers.d_permutation_blocks_inverse, block_size);
 }
@@ -92,9 +100,6 @@ __host__ void inverse_permutations(unsigned int *d_permutations,
 
   invert_permutations_kernel<<<numBlocks, threadsPerBlock>>>(
       d_permutations, *d_permutations_inverse, block_length);
-
-  checkCudaError(cudaDeviceSynchronize(),
-                 "Error during cudaDeviceSynchronize in inverse_permutations");
 }
 
 __host__ void unstack_channels_gpu(unsigned char *d_interleaved,
@@ -105,10 +110,6 @@ __host__ void unstack_channels_gpu(unsigned char *d_interleaved,
 
   deinterleave_channels_kernel<<<grid, block>>>(d_interleaved, d_planar, width,
                                                 height);
-
-  checkCudaError(
-      cudaDeviceSynchronize(),
-      "Error during cudaDeviceSynchronize in deinterleave_channels_kernel");
 }
 
 __host__ void stack_channels_gpu(unsigned char *d_planar,
@@ -119,10 +120,6 @@ __host__ void stack_channels_gpu(unsigned char *d_planar,
 
   interleave_channels_kernel<<<grid, block>>>(d_planar, d_interleaved, width,
                                               height);
-
-  checkCudaError(
-      cudaDeviceSynchronize(),
-      "Error during cudaDeviceSynchronize in interleave_channels_kernel");
 }
 
 __host__ void
@@ -142,9 +139,6 @@ fused_permutation_xor(unsigned char *d_image_in, unsigned char *d_image_out,
       d_image_in, d_image_out, d_flow, d_permutation, d_permutation_inverse,
       d_blocks, d_blocks_inv, block_size, img_dimensions.rows, use_xor,
       inverse);
-
-  checkCudaError(cudaDeviceSynchronize(),
-                 "Fused permutation XOR kernel failed");
 }
 
 __host__ void
@@ -173,9 +167,6 @@ convert_bits_to_real(const std::vector<unsigned char> &password_segment,
 
   convert_bits_to_real_kernel<<<gridOfBlocks, threadsPerBlock>>>(*d_seeds,
                                                                  num_elements);
-
-  checkCudaError(cudaDeviceSynchronize(),
-                 "Error during cudaDeviceSynchronize in convert_bits_to_real");
 }
 
 __host__ void
@@ -250,19 +241,9 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
       img_dimensions.rows + transition_length, chaotic_values, block_size,
       transition_length, numBlocks.x);
 
-  // Final synchronization to ensure all stream generation is done before
-  // proceeding
-
-  checkCudaError(
-      cudaDeviceSynchronize(),
-      "Error during cudaDeviceSynchronize in generate_flow_stream_parallel");
-
   // Global Diffusion Layer: Iterative Global Mean-Field Coupling
   // This step ensures that changes in one block propagate to all blocks in the
   // next round.
   global_seed_mix_kernel<<<1, 1>>>(d_pointers.d_seeds, img_dimensions.cols,
                                    numBlocks.x);
-  checkCudaError(
-      cudaDeviceSynchronize(),
-      "Error during cudaDeviceSynchronize in global_seed_mix_kernel");
 }

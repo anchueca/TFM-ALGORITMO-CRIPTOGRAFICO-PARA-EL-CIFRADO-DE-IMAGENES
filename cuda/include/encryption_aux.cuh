@@ -105,7 +105,8 @@ __host__ void generate_permutation_block(D_pointers &d_pointers,
  */
 __host__ unsigned int *
 generate_automata_permutations(unsigned int *d_automata_state,
-                               const size_t block_length, bool verbose);
+                               const size_t block_length, bool verbose,
+                               D_pointers *d_pointers = nullptr);
 
 /**
  * @brief Unstacks an interleaved (BGR) image on the device into a planar

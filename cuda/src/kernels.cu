@@ -88,22 +88,22 @@ __global__ void fused_permutation_xor_kernel(
       bool is_odd_parity = ((bx + by) & 1);
       const unsigned int *gather_block_undo =
           is_odd_parity ? perm_blocks : perm_blocks_inv;
-      unsigned int pi = gather_block_undo[ly * block_size + lx];
+      unsigned int pi = __ldg(&gather_block_undo[ly * block_size + lx]);
 
       int temp_x = bx * block_size + (pi % block_size);
       int temp_y = by * block_size + (pi / block_size);
 
       // 2 & 3. Undo Columns and Rows
       // To undo the mappings, we use the opposite permutation array.
-      x = permutation[temp_x];         // Undo Column permutation
-      y = permutation_inverse[temp_y]; // Undo Row permutation
+      x = __ldg(&permutation[temp_x]);         // Undo Column permutation
+      y = __ldg(&permutation_inverse[temp_y]); // Undo Row permutation
     }
     if (use_xor) {
       // Image remains static; apply XOR with the dynamically permuted flow key
-      image_out[idx] = image_in[idx] ^ flow[y * img_dim + x];
+      image_out[idx] = image_in[idx] ^ __ldg(&flow[y * img_dim + x]);
     } else {
       // Permute the image by copying the source pixel to the target destination
-      image_out[idx] = image_in[y * img_dim + x];
+      image_out[idx] = __ldg(&image_in[y * img_dim + x]);
     }
 
   }
@@ -115,8 +115,8 @@ __global__ void fused_permutation_xor_kernel(
       // -> Blocks.
 
       // 1 & 2. Apply Rows and Columns
-      int temp_y = permutation[y];         // Apply Row permutation
-      int temp_x = permutation_inverse[x]; // Apply Column permutation
+      int temp_y = __ldg(&permutation[y]);         // Apply Row permutation
+      int temp_x = __ldg(&permutation_inverse[x]); // Apply Column permutation
 
       // 3. Apply Blocks (use subtraction to compute modulo)
       int bx = temp_x / block_size;
@@ -128,14 +128,14 @@ __global__ void fused_permutation_xor_kernel(
       bool is_odd_parity = ((bx + by) & 1);
       const unsigned int *gather_block_fwd =
           is_odd_parity ? perm_blocks_inv : perm_blocks;
-      unsigned int pi = gather_block_fwd[ly * block_size + lx];
+      unsigned int pi = __ldg(&gather_block_fwd[ly * block_size + lx]);
 
       x = bx * block_size + (pi % block_size);
       y = by * block_size + (pi / block_size);
     }
     // Retrieve the ciphered pixel and restore it to its original unencrypted
     // position
-    image_out[idx] = image_in[y * img_dim + x];
+    image_out[idx] = __ldg(&image_in[y * img_dim + x]);
   }
 }
 
@@ -147,7 +147,7 @@ __global__ void generate_automata_chaotic(const unsigned int *d_automata_state,
   if (idx >= block_length)
     return;
 
-  unsigned int val = d_automata_state[idx];
+  unsigned int val = __ldg(&d_automata_state[idx]);
   int base_idx = idx << 1; // idx * 2
 
   // Split 32-bit value into two 16-bit values
@@ -176,9 +176,9 @@ __global__ void deinterleave_channels_kernel(const unsigned char *input,
 
   int input_idx_base = (y * width + x) * 3;
 
-  unsigned char b = input[input_idx_base + 0];
-  unsigned char g = input[input_idx_base + 1];
-  unsigned char r = input[input_idx_base + 2];
+  unsigned char b = __ldg(&input[input_idx_base + 0]);
+  unsigned char g = __ldg(&input[input_idx_base + 1]);
+  unsigned char r = __ldg(&input[input_idx_base + 2]);
 
   // Output logic: Side-by-side [B][G][R]
   // Total width of output is 3*width.
@@ -212,9 +212,9 @@ __global__ void interleave_channels_kernel(const unsigned char *input,
 
   int in_stride = width * 3;
 
-  unsigned char b = input[y * in_stride + x];
-  unsigned char g = input[y * in_stride + (x + width)];
-  unsigned char r = input[y * in_stride + (x + 2 * width)];
+  unsigned char b = __ldg(&input[y * in_stride + x]);
+  unsigned char g = __ldg(&input[y * in_stride + (x + width)]);
+  unsigned char r = __ldg(&input[y * in_stride + (x + 2 * width)]);
 
   // Output: Interleaved BGR.
   // Stride: width * 3
@@ -269,19 +269,19 @@ __global__ void keystream_generation_parallel(
 
     if (tid == 0) { // Special seed for perturbation
       state_idx = img_dimensions.cols + blockIdx.x;
-      *c_seed = d_seeds[state_idx];
+      *c_seed = __ldg(&d_seeds[state_idx]);
       cellular_automata_value = d_chaotic_values_for_permutation != nullptr
-                                    ? image_automata_state[0]
-                                    : image_automata_state[blockIdx.x];
+                                    ? __ldg(&image_automata_state[0])
+                                    : __ldg(&image_automata_state[blockIdx.x]);
     } else {
       state_idx = x - (blockIdx.x + 1);
-      *c_seed = d_seeds[state_idx];
-      cellular_automata_value = cellular_automata[state_idx];
+      *c_seed = __ldg(&d_seeds[state_idx]);
+      cellular_automata_value = __ldg(&cellular_automata[state_idx]);
     }
     next_val = *c_seed;
     // Load per-thread r from key-derived array (already in [0, 1], scale to [3,
     // 7])
-    my_r = (Real)3.0 + d_r_params[state_idx] * (Real)4.0;
+    my_r = (Real)3.0 + __ldg(&d_r_params[state_idx]) * (Real)4.0;
   }
 
   for (size_t step = 0; step < total_steps; ++step) {
@@ -347,7 +347,8 @@ __global__ void convert_bits_to_real_kernel(Real *d_seeds,
   if (idx >= num_elements)
     return;
   d_seeds[idx] =
-      static_cast<Real>(reinterpret_cast<uint32_t *>(d_seeds)[idx]) / UINT_MAX;
+      static_cast<Real>(reinterpret_cast<uint32_t *>(d_seeds)[idx]) *
+      (Real)(1.0 / 4294967295.0);
 }
 
 __global__ void global_seed_mix_kernel(Real *d_seeds, size_t offset,
@@ -355,17 +356,17 @@ __global__ void global_seed_mix_kernel(Real *d_seeds, size_t offset,
   if (n_blocks == 0)
     return;
 
-  Real sum = 0;
+  Real sum = (Real)0.0;
   // Step 1: Accumulate all extra seeds
   for (size_t i = 0; i < n_blocks; i++) {
-    sum += d_seeds[offset + i];
+    sum += __ldg(&d_seeds[offset + i]);
   }
 
   // Step 2: Calculate mean
-  Real mean = sum / (Real)n_blocks;
+  Real mean = sum / static_cast<Real>(n_blocks);
 
   // Step 3: Apply iterative coupling: (S + Mean) / 2
   for (size_t i = 0; i < n_blocks; i++) {
-    d_seeds[offset + i] = (d_seeds[offset + i] + mean) / 2.0;
+    d_seeds[offset + i] = (d_seeds[offset + i] + mean) * (Real)0.5;
   }
 }

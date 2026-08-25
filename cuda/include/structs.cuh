@@ -133,6 +133,12 @@ struct D_pointers {
       nullptr; // Automata state for extra seeds. The same in all blocks.
   Real *d_r_params =
       nullptr; ///< Per-seed chaotic parameter r, derived from key, in [3, 7]
+
+  // Reusable memory pool scratch pointers to eliminate runtime cudaMalloc/cudaFree calls
+  unsigned short *d_pool_chaotic_values = nullptr;
+  unsigned int *d_pool_indices = nullptr;
+  int *d_pool_padded_keys = nullptr;
+  unsigned int *d_pool_padded_indices = nullptr;
 };
 
 #endif // STRUCT_CUH

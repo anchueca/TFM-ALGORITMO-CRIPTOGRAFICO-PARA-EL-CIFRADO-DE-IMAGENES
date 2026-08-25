@@ -11,21 +11,23 @@
 // Generate hash from buffer (implementation)
 __host__ std::vector<unsigned char>
 generate_hash(const unsigned char *input, size_t input_len, size_t length) {
-  // 1. Create OpenSSL context
-  EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+  thread_local static EVP_MD_CTX *ctx = nullptr;
   if (ctx == nullptr) {
-    throw std::runtime_error("Error: Failed to create OpenSSL EVP context");
+    ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) {
+      throw std::runtime_error("Error: Failed to create OpenSSL EVP context");
+    }
+  } else {
+    EVP_MD_CTX_reset(ctx);
   }
 
   // 2. Initialize digest for SHAKE256
   if (EVP_DigestInit_ex(ctx, EVP_shake256(), nullptr) != 1) {
-    EVP_MD_CTX_free(ctx);
     throw std::runtime_error("Error: Failed to initialize SHAKE256");
   }
 
   // 3. Absorb (Feed data)
   if (EVP_DigestUpdate(ctx, input, input_len) != 1) {
-    EVP_MD_CTX_free(ctx);
     throw std::runtime_error("Error: Failed to update digest");
   }
 
@@ -34,11 +36,8 @@ generate_hash(const unsigned char *input, size_t input_len, size_t length) {
 
   // 5. Squeeze (Extract data)
   if (EVP_DigestFinalXOF(ctx, output.data(), length) != 1) {
-    EVP_MD_CTX_free(ctx);
     throw std::runtime_error("Error: Failed to extract hash (FinalXOF)");
   }
-
-  EVP_MD_CTX_free(ctx);
 
   return output;
 }
@@ -150,16 +149,28 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
 }
 
 cv::Mat unstack_channels(const cv::Mat &image, bool verbose) {
-  cv::Mat processed_image;
-  if (image.channels() == 3) {
-    if (verbose)
-      std::cout << "[INFO] 3-Channel image detected. Unstacking..."
-                << std::endl;
-    std::vector<cv::Mat> channels;
-    cv::split(image, channels);
-    cv::hconcat(channels, processed_image);
-  } else {
-    processed_image = image.clone();
+  if (image.channels() != 3) {
+    return image.clone();
+  }
+  if (verbose)
+    std::cout << "[INFO] 3-Channel image detected. Unstacking..." << std::endl;
+
+  int h = image.rows;
+  int w = image.cols;
+  cv::Mat processed_image(h, w * 3, CV_8UC1);
+
+  for (int r = 0; r < h; ++r) {
+    const uchar *src_row = image.ptr<uchar>(r);
+    uchar *dst_row = processed_image.ptr<uchar>(r);
+    uchar *dst_b = dst_row;
+    uchar *dst_g = dst_row + w;
+    uchar *dst_r = dst_row + 2 * w;
+
+    for (int c = 0; c < w; ++c) {
+      dst_b[c] = src_row[c * 3 + 0];
+      dst_g[c] = src_row[c * 3 + 1];
+      dst_r[c] = src_row[c * 3 + 2];
+    }
   }
   return processed_image;
 }
@@ -172,13 +183,21 @@ void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
 
     int w = processed_image.cols / 3;
     int h = processed_image.rows;
+    image.create(h, w, CV_8UC3);
 
-    cv::Mat b = processed_image(cv::Rect(0, 0, w, h));
-    cv::Mat g = processed_image(cv::Rect(w, 0, w, h));
-    cv::Mat r = processed_image(cv::Rect(2 * w, 0, w, h));
+    for (int r = 0; r < h; ++r) {
+      const uchar *src_row = processed_image.ptr<uchar>(r);
+      const uchar *src_b = src_row;
+      const uchar *src_g = src_row + w;
+      const uchar *src_r = src_row + 2 * w;
+      uchar *dst_row = image.ptr<uchar>(r);
 
-    std::vector<cv::Mat> channels = {b, g, r};
-    cv::merge(channels, image);
+      for (int c = 0; c < w; ++c) {
+        dst_row[c * 3 + 0] = src_b[c];
+        dst_row[c * 3 + 1] = src_g[c];
+        dst_row[c * 3 + 2] = src_r[c];
+      }
+    }
   } else {
     image = processed_image;
   }
@@ -263,6 +282,7 @@ void embed_message_caos(cv::Mat &image, unsigned short image_hash,
   }
   embed_message_caos_with_exif(image, msg_bits, key_bits, output_path);
 }
+
 cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
                          int original_channels) {
   if (input.cols > 65535 || input.rows > 65535) {
@@ -273,25 +293,29 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
   uint16_t H = static_cast<uint16_t>(input.rows);
   int channels = input.channels();
 
-  long totalPixelsOriginal = input.total();
+  size_t totalPixelsOriginal = input.total();
   int bytesNeeded = 5; // 2 bytes for W + 2 bytes for H + 1 byte for original_channels
   int minS = std::ceil(std::sqrt(totalPixelsOriginal + bytesNeeded));
   int S = ((minS + blockSize - 1) / blockSize) * blockSize;
 
-  cv::Mat squared = cv::Mat::zeros(S, S, input.type());
-  cv::Mat flatInput = input.reshape(channels, 1);
-  cv::Mat flatOutput = squared.reshape(channels, 1);
-  flatInput.copyTo(flatOutput.colRange(0, totalPixelsOriginal));
+  cv::Mat squared(S, S, input.type());
+  size_t totalBytes = (size_t)S * S * channels;
+  size_t copyBytes = totalPixelsOriginal * channels;
+
+  // Direct memory copy of image bytes without OpenCV reshape overhead
+  std::memcpy(squared.data, input.data, copyBytes);
+  // Zero-fill only the remaining padding bytes (avoid full-matrix memset zeroing)
+  if (totalBytes > copyBytes) {
+    std::memset(squared.data + copyBytes, 0, totalBytes - copyBytes);
+  }
 
   uchar *dataPtr = squared.data;
-  size_t lastByteIdx = (size_t)S * S * channels;
-
-  dataPtr[lastByteIdx - 5] = (W & 0xFF);        // W Low
-  dataPtr[lastByteIdx - 4] = ((W >> 8) & 0xFF); // W High
-  dataPtr[lastByteIdx - 3] = (H & 0xFF);        // H Low
-  dataPtr[lastByteIdx - 2] = ((H >> 8) & 0xFF); // H High
+  dataPtr[totalBytes - 5] = (W & 0xFF);        // W Low
+  dataPtr[totalBytes - 4] = ((W >> 8) & 0xFF); // W High
+  dataPtr[totalBytes - 3] = (H & 0xFF);        // H Low
+  dataPtr[totalBytes - 2] = ((H >> 8) & 0xFF); // H High
   // Color byte: 1 = color, 0 = grayscale
-  dataPtr[lastByteIdx - 1] = (original_channels == 3) ? 1 : 0;
+  dataPtr[totalBytes - 1] = (original_channels == 3) ? 1 : 0;
 
   return squared;
 }
@@ -323,11 +347,8 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
     *out_original_channels = original_channels;
   }
 
-  cv::Mat output = cv::Mat(H, W, squared.type());
-
-  cv::Mat flatSquared = squared.reshape(channels, 1);
-  cv::Mat flatOutput = output.reshape(channels, 1);
-  flatSquared.colRange(0, (size_t)W * H).copyTo(flatOutput);
+  cv::Mat output(H, W, squared.type());
+  std::memcpy(output.data, squared.data, required_pixels * channels);
 
   return output;
 }

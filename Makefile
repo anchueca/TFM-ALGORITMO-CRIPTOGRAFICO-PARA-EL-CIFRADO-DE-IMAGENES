@@ -2,13 +2,13 @@
 NVCC = nvcc
 
 # Normal flags
-NVCCFLAGS_NORMAL = -O3 -rdc=true -arch=sm_89 #-use_fast_math
+NVCCFLAGS_NORMAL = -O3 -rdc=true -arch=sm_89 -Xcompiler -fopenmp
 
 # Debug fags
-NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true
+NVCCFLAGS_DEBUG = -G -g -O0 -rdc=true -Xcompiler -fopenmp
 
 # Libraries and includes
-LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart 
+LDFLAGS = $(shell pkg-config --libs opencv4) $(shell pkg-config --libs libexif) -lssl -lcrypto -lcudart -lgomp 
 CXXINCLUDES = $(shell pkg-config --cflags opencv4) $(shell pkg-config --cflags libexif) -I./cuda/include -I/usr/local/cuda/include
 
 # Directories

@@ -69,6 +69,19 @@ void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
   checkCudaError(cudaMemcpy(d_pointers.d_image, image.data, img_size,
                             cudaMemcpyHostToDevice),
                  "cudaMemcpy failed to device");
+
+  // Pre-allocate pooled scratch memory to eliminate runtime allocations
+  const size_t num_keys = image.cols * 2;
+  checkCudaError(cudaMalloc(&d_pointers.d_pool_chaotic_values, num_keys * sizeof(unsigned short)),
+                 "cudaMalloc failed for d_pool_chaotic_values");
+  checkCudaError(cudaMalloc(&d_pointers.d_pool_indices, num_keys * sizeof(unsigned int)),
+                 "cudaMalloc failed for d_pool_indices");
+
+  int padded_len = next_power_of_2((int)num_keys);
+  checkCudaError(cudaMalloc(&d_pointers.d_pool_padded_keys, padded_len * sizeof(int)),
+                 "cudaMalloc failed for d_pool_padded_keys");
+  checkCudaError(cudaMalloc(&d_pointers.d_pool_padded_indices, padded_len * sizeof(unsigned int)),
+                 "cudaMalloc failed for d_pool_padded_indices");
 }
 
 void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
@@ -92,6 +105,11 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
   cudaFree(d_pointers.d_chaotic_values_for_permutation);
   cudaFree(d_pointers.d_permutation_blocks_inital);
   cudaFree(d_pointers.d_permutation_blocks_inverse_initial);
+
+  cudaFree(d_pointers.d_pool_chaotic_values);
+  cudaFree(d_pointers.d_pool_indices);
+  cudaFree(d_pointers.d_pool_padded_keys);
+  cudaFree(d_pointers.d_pool_padded_indices);
 }
 
 // =================================================================================
@@ -185,7 +203,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
     std::cout << " > Generating Permutations..." << std::endl;
 
   d_pointers.d_permutation_vector = generate_automata_permutations(
-      d_pointers.d_automata_state, img_dimensions.cols, verbose);
+      d_pointers.d_automata_state, img_dimensions.cols, verbose, &d_pointers);
 
   inverse_permutations(d_pointers.d_permutation_vector,
                        &d_pointers.d_permutation_vector_inverse,
@@ -312,7 +330,7 @@ void unencryption_process(D_pointers &d_pointers,
 
   // Generate row and col permutations
   d_pointers.d_permutation_vector = generate_automata_permutations(
-      d_pointers.d_automata_state, img_dimensions.cols, verbose);
+      d_pointers.d_automata_state, img_dimensions.cols, verbose, &d_pointers);
 
   inverse_permutations(d_pointers.d_permutation_vector,
                        &d_pointers.d_permutation_vector_inverse,

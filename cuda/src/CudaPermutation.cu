@@ -74,6 +74,54 @@ __global__ void bitonic_sort_step_kernel(Real *values, unsigned int *indices,
   }
 }
 
+__global__ void bitonic_sort_shared_kernel(const Real *__restrict__ d_values,
+                                           unsigned int *__restrict__ d_indices,
+                                           int n, int padded_size) {
+  extern __shared__ char shared_mem[];
+  Real *s_values = reinterpret_cast<Real *>(shared_mem);
+  unsigned int *s_indices =
+      reinterpret_cast<unsigned int *>(s_values + padded_size);
+
+  int tid = threadIdx.x;
+
+  for (int i = tid; i < padded_size; i += blockDim.x) {
+    s_indices[i] = static_cast<unsigned int>(i);
+    if (i < n) {
+      s_values[i] = d_values[i];
+    } else {
+      s_values[i] = REAL_MAX;
+    }
+  }
+  __syncthreads();
+
+  for (int k = 2; k <= padded_size; k <<= 1) {
+    for (int j = k >> 1; j > 0; j >>= 1) {
+      for (int i = tid; i < padded_size; i += blockDim.x) {
+        unsigned int ixj = i ^ j;
+        if (ixj > i) {
+          bool ascending = ((i & k) == 0);
+          Real v1 = s_values[i];
+          Real v2 = s_values[ixj];
+
+          if ((ascending && v1 > v2) || (!ascending && v1 < v2)) {
+            s_values[i] = v2;
+            s_values[ixj] = v1;
+
+            unsigned int tmp = s_indices[i];
+            s_indices[i] = s_indices[ixj];
+            s_indices[ixj] = tmp;
+          }
+        }
+      }
+      __syncthreads();
+    }
+  }
+
+  for (int i = tid; i < n; i += blockDim.x) {
+    d_indices[i] = s_indices[i];
+  }
+}
+
 // --- SINGLE ARRAY IMPLEMENTATION ---
 
 void compute_permutation_gpu(const Real *h_chaotic_sequence,
@@ -129,20 +177,34 @@ void compute_permutation_gpu(const Real *h_chaotic_sequence,
   CHECK_CUDA_ERROR(cudaFree(d_indices));
 }
 
-// --- NEW DEVICE-ONLY IMPLEMENTATION ---
+// --- OPTIMIZED DEVICE-ONLY IMPLEMENTATION ---
 
 void compute_permutation_device(Real *d_values, unsigned int *d_indices,
-                                int n) {
+                                int n, Real *d_padded_values_pool,
+                                unsigned int *d_padded_indices_pool) {
   int padded_size = next_power_of_2(n);
 
-  Real *d_padded_values = nullptr;
-  unsigned int *d_padded_indices = nullptr;
+  // Optimization: For arrays <= 1024, use single-kernel Shared Memory Bitonic Sort
+  if (padded_size <= 1024) {
+    size_t shared_mem_bytes =
+        padded_size * (sizeof(Real) + sizeof(unsigned int));
+    int threads = (padded_size < 256) ? 256 : padded_size;
+    bitonic_sort_shared_kernel<<<1, threads, shared_mem_bytes>>>(
+        d_values, d_indices, n, padded_size);
+    return;
+  }
 
-  // Allocate temporary padded buffers
-  CHECK_CUDA_ERROR(
-      cudaMalloc((void **)&d_padded_values, padded_size * sizeof(Real)));
-  CHECK_CUDA_ERROR(cudaMalloc((void **)&d_padded_indices,
-                              padded_size * sizeof(unsigned int)));
+  Real *d_padded_values = d_padded_values_pool;
+  unsigned int *d_padded_indices = d_padded_indices_pool;
+  bool owns_mem = false;
+
+  if (d_padded_values == nullptr || d_padded_indices == nullptr) {
+    CHECK_CUDA_ERROR(
+        cudaMalloc((void **)&d_padded_values, padded_size * sizeof(Real)));
+    CHECK_CUDA_ERROR(cudaMalloc((void **)&d_padded_indices,
+                                padded_size * sizeof(unsigned int)));
+    owns_mem = true;
+  }
 
   // Copy original values to padded buffer
   CHECK_CUDA_ERROR(cudaMemcpy(d_padded_values, d_values, n * sizeof(Real),
@@ -168,11 +230,10 @@ void compute_permutation_device(Real *d_values, unsigned int *d_indices,
                               n * sizeof(unsigned int),
                               cudaMemcpyDeviceToDevice));
 
-  // Sync to ensure results are ready
-  CHECK_CUDA_ERROR(cudaDeviceSynchronize());
-
-  CHECK_CUDA_ERROR(cudaFree(d_padded_values));
-  CHECK_CUDA_ERROR(cudaFree(d_padded_indices));
+  if (owns_mem) {
+    CHECK_CUDA_ERROR(cudaFree(d_padded_values));
+    CHECK_CUDA_ERROR(cudaFree(d_padded_indices));
+  }
 }
 
 // --- BATCHED SORT KERNELS ---
@@ -270,25 +331,30 @@ __global__ void copy_from_padded_kernel(const int *padded_vals,
   }
 }
 
-// --- BATCHED SORT IMPLEMENTATION ---
+// --- OPTIMIZED BATCHED SORT IMPLEMENTATION ---
 
 /**
  * @brief Host function orchestrating the Batched Bitonic Sort.
  */
 void batched_gpu_argsort(unsigned short *d_keys, unsigned int *d_indices,
-                         size_t num_blocks, size_t block_len) {
+                         size_t num_blocks, size_t block_len,
+                         int *d_padded_keys_pool,
+                         unsigned int *d_padded_indices_pool) {
 
   int padded_len = next_power_of_2((int)block_len);
   size_t total_padded_elements = num_blocks * padded_len;
 
-  // 1. Allocate Temporary Padded Buffers
-  int *d_padded_keys;
-  unsigned int *d_padded_indices;
+  int *d_padded_keys = d_padded_keys_pool;
+  unsigned int *d_padded_indices = d_padded_indices_pool;
+  bool owns_mem = false;
 
-  CHECK_CUDA_ERROR(
-      cudaMalloc(&d_padded_keys, total_padded_elements * sizeof(int)));
-  CHECK_CUDA_ERROR(cudaMalloc(&d_padded_indices,
-                              total_padded_elements * sizeof(unsigned int)));
+  if (d_padded_keys == nullptr || d_padded_indices == nullptr) {
+    CHECK_CUDA_ERROR(
+        cudaMalloc(&d_padded_keys, total_padded_elements * sizeof(int)));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_padded_indices,
+                                total_padded_elements * sizeof(unsigned int)));
+    owns_mem = true;
+  }
 
   // 2. Copy and Pad (Input -> Padded Temp)
   int threads = 256;
@@ -297,10 +363,8 @@ void batched_gpu_argsort(unsigned short *d_keys, unsigned int *d_indices,
   copy_to_padded_kernel<<<blocks, threads>>>(d_keys, d_indices, d_padded_keys,
                                              d_padded_indices, block_len,
                                              padded_len, num_blocks);
-  CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
   // 3. Batched Bitonic Sort Loop
-  // Note: Launching threads to cover all PADDED elements
   blocks = (total_padded_elements + threads - 1) / threads;
 
   for (int k = 2; k <= padded_len; k <<= 1) {
@@ -309,10 +373,8 @@ void batched_gpu_argsort(unsigned short *d_keys, unsigned int *d_indices,
           d_padded_keys, d_padded_indices, j, k, padded_len, num_blocks);
     }
   }
-  CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
   // 4. Copy Back (Padded Temp -> Output)
-  // We only need threads for the real elements
   int total_real_elements = num_blocks * block_len;
   blocks = (total_real_elements + threads - 1) / threads;
 
@@ -320,9 +382,10 @@ void batched_gpu_argsort(unsigned short *d_keys, unsigned int *d_indices,
       d_padded_keys, d_padded_indices,
       d_indices, // Write final result here
       block_len, padded_len, num_blocks);
-  CHECK_CUDA_ERROR(cudaGetLastError()); // Check errors
 
-  // 5. Cleanup
-  CHECK_CUDA_ERROR(cudaFree(d_padded_keys));
-  CHECK_CUDA_ERROR(cudaFree(d_padded_indices));
+  // 5. Cleanup if allocated locally
+  if (owns_mem) {
+    CHECK_CUDA_ERROR(cudaFree(d_padded_keys));
+    CHECK_CUDA_ERROR(cudaFree(d_padded_indices));
+  }
 }
