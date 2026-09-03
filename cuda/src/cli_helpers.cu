@@ -142,7 +142,7 @@ bool handle_output(OutputMode mode, const string &output_arg,
   case OutputMode::STDOUT_STREAM: {
     std::vector<uchar> buf;
     try {
-      if (cv::imencode(".tif", image, buf)) {
+      if (cv::imencode(".png", image, buf)) {
         std::cout.write(reinterpret_cast<const char *>(buf.data()), buf.size());
         std::cout.flush();
       } else {

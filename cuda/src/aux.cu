@@ -95,9 +95,10 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
 
   // Total length
   int bytes_for_stego = 8; // 64 bits for stego seed
-  int bytes_for_r_params = (img_dimensions.cols + numBlocks) * 4; // per-seed chaotic r
-  int length_bytes =
-      bytes_for_columns + bytes_for_blocks + bytes_for_flow + bytes_for_r_params + bytes_for_stego;
+  int bytes_for_r_params =
+      (img_dimensions.cols + numBlocks) * 4; // per-seed chaotic r
+  int length_bytes = bytes_for_columns + bytes_for_blocks + bytes_for_flow +
+                     bytes_for_r_params + bytes_for_stego;
 
   if (verbose)
     std::cout << "[DEBUG] Key Requirements:" << std::endl
@@ -136,11 +137,10 @@ calculate_password(const std::string &input, Image_dimensions img_dimensions,
                               password.begin() + bytes_for_columns +
                                   bytes_for_blocks +
                                   bytes_for_flow); // Blocks and flow
-  password_segments[2].assign(password.begin() + bytes_for_columns +
-                                  bytes_for_blocks + bytes_for_flow,
-                              password.begin() + bytes_for_columns +
-                                  bytes_for_blocks + bytes_for_flow +
-                                  bytes_for_r_params); // R params
+  password_segments[2].assign(
+      password.begin() + bytes_for_columns + bytes_for_blocks + bytes_for_flow,
+      password.begin() + bytes_for_columns + bytes_for_blocks + bytes_for_flow +
+          bytes_for_r_params); // R params
   password_segments[3].assign(password.begin() + bytes_for_columns +
                                   bytes_for_blocks + bytes_for_flow +
                                   bytes_for_r_params,
@@ -294,7 +294,8 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
   int channels = input.channels();
 
   size_t totalPixelsOriginal = input.total();
-  int bytesNeeded = 5; // 2 bytes for W + 2 bytes for H + 1 byte for original_channels
+  int bytesNeeded =
+      5; // 2 bytes for W + 2 bytes for H + 1 byte for original_channels
   int minS = std::ceil(std::sqrt(totalPixelsOriginal + bytesNeeded));
   int S = ((minS + blockSize - 1) / blockSize) * blockSize;
 
@@ -304,7 +305,8 @@ cv::Mat padImageToSquare(const cv::Mat &input, int blockSize,
 
   // Direct memory copy of image bytes without OpenCV reshape overhead
   std::memcpy(squared.data, input.data, copyBytes);
-  // Zero-fill only the remaining padding bytes (avoid full-matrix memset zeroing)
+  // Zero-fill only the remaining padding bytes (avoid full-matrix memset
+  // zeroing)
   if (totalBytes > copyBytes) {
     std::memset(squared.data + copyBytes, 0, totalBytes - copyBytes);
   }
@@ -333,7 +335,8 @@ cv::Mat unpadFromSquare(const cv::Mat &squared, int *out_original_channels) {
   uchar is_color_flag = dataPtr[lastByteIdx - 1];
   int original_channels = (is_color_flag == 1) ? 3 : 1;
 
-  // Validation: Check for corrupted metadata (common sign of decryption failure)
+  // Validation: Check for corrupted metadata (common sign of decryption
+  // failure)
   size_t required_pixels = (size_t)W * H;
   if (required_pixels == 0 || required_pixels > squared.total() || W == 0 ||
       H == 0) {

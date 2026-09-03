@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+import os
+os.environ['OPENCV_LOG_LEVEL'] = 'OFF'
+os.environ['CRYPTODOME_DISABLE_AESNI'] = '1'
+
 import cv2
 import numpy as np
 import argparse
@@ -8,14 +13,10 @@ from scipy.stats import entropy, chisquare
 from skimage.feature import graycomatrix, graycoprops
 from tabulate import tabulate
 import subprocess
-import os
 import time
 import random
 import string
 import math
-
-# Force software-only AES in PyCryptodome (disable AES-NI)
-os.environ['CRYPTODOME_DISABLE_AESNI'] = '1'
 
 try:
     from Crypto.Cipher import AES
@@ -302,7 +303,7 @@ class ExternalCipherTester:
         mode_flag = '1' if mode_enc else '0'
         password_to_use = override_password if override_password else self.password
         
-        success, encoded_buffer = cv2.imencode(".tif", image_matrix)
+        success, encoded_buffer = cv2.imencode(".png", image_matrix)
         binary_flag = '1' if self.is_binary else '0'
         cmd = [
             self.exe, "STDIN", "STDOUT",
