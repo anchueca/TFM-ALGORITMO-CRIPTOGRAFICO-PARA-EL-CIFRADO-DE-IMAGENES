@@ -52,7 +52,7 @@ void print_encryption_report(const cv::Mat &image,
 }
 
 void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
-                                 const EncryptionParams &params, bool verbose) {
+                                 bool verbose) {
 
   if (verbose)
     std::cout << " > Allocating Device Memory for Image Buffers..."
@@ -126,7 +126,7 @@ __host__ void encrypt_image(cv::Mat &image,
   if (verbose)
     print_encryption_report(image, img_dimensions, params, encrypt);
 
-  allocate_and_transfer_image(d_pointers, image, params, verbose);
+  allocate_and_transfer_image(d_pointers, image, verbose);
 
   if (verbose)
     std::cout << " > Initializing Cellular Automata and CML Parameters..."
@@ -257,7 +257,7 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
     keystream_time = keystream_end - keystream_start;
     if (verbose)
       std::cout << "\tBlock permutations generated in "
-                << transition_time.count() * 1000.0f << " ms" << std::endl;
+                << keystream_time.count() * 1000.0f << " ms" << std::endl;
 
     keystream_start = std::chrono::high_resolution_clock::now();
     // Step B & C: Permute the keystream and apply Diffusion (XOR)

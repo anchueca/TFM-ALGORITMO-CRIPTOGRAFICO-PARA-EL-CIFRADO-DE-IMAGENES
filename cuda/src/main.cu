@@ -90,10 +90,10 @@ int main(int argc, char **argv) {
 
   start = std::chrono::high_resolution_clock::now();
 
-  // Ophuscated phase
+  // Image hash phase
   try {
     if (config.encrypt) {
-        const size_t cml_blocks = calculate_cml_blocks(img_dimensions.cols);
+      const size_t cml_blocks = calculate_cml_blocks(img_dimensions.cols);
       config.params.image_hash =
           calculate_image_hash(processed_image, cml_blocks * 2);
       if (config.verbose)

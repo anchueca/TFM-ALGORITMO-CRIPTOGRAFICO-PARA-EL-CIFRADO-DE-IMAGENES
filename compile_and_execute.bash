@@ -19,14 +19,15 @@ set -o pipefail
 ROUNDS=${1:-3}
 PRECISION=${2:-float}
 PROFILE=${3:-0}   # 0 = no profiling, 1 = use Nsight Systems
+JOBS=${JOBS:-$(nproc)}
 
 # Configure build command
 if [ "$PRECISION" == "double" ]; then
     echo "[SCRIPT] Building with Double Precision..."
-    BUILD_CMD="make -j 8 PRECISION=double"
+    BUILD_CMD="make -j $JOBS PRECISION=double"
 else
     echo "[SCRIPT] Building with Standard Float Precision..."
-    BUILD_CMD="make -j 8"
+    BUILD_CMD="make -j $JOBS"
 fi
 
 # Build the cipher
@@ -55,7 +56,6 @@ process_image() {
     local decrypted_path="$output_dir/${stem}.dec.tif"
     local recovery_hex
     local encrypt_output
-    local nsys_cmd=()
 
     mkdir -p "$output_dir"
 
@@ -63,13 +63,16 @@ process_image() {
         local timestamp
         local nsys_out
         timestamp=$(date +%Y%m%d_%H%M%S)
-        nsys_out="./cuda/bin/nsys_report_${dataset}_${stem}_${timestamp}"
-        nsys_cmd=(nsys profile -o "$nsys_out" --stats=true)
-        echo "[SCRIPT] Profiling output: $nsys_out"
     fi
 
     echo -e "\n[SCRIPT] Encrypting: $input_path"
-    if ! encrypt_output=$("${nsys_cmd[@]}" ./cuda/bin/cipher.out \
+    local encrypt_cmd=()
+    if [ "${NSYS_ENABLED:-0}" -eq 1 ]; then
+        nsys_out="./cuda/bin/nsys_report_${dataset}_${stem}_${timestamp}_enc"
+        encrypt_cmd=(nsys profile -o "$nsys_out" --stats=true)
+        echo "[SCRIPT] Profiling output: $nsys_out"
+    fi
+    if ! encrypt_output=$("${encrypt_cmd[@]}" ./cuda/bin/cipher.out \
         "$input_path" "$encrypted_path" password9 "$ROUNDS" 1 8 20 10 1 0 2>&1); then
         echo "$encrypt_output"
         echo "[ERROR] Encryption failed for $input_path"
@@ -89,7 +92,13 @@ process_image() {
     echo "[SCRIPT] Captured Recovery Hex: $recovery_hex"
 
     echo "[SCRIPT] Decrypting: $encrypted_path"
-    if ! "${nsys_cmd[@]}" ./cuda/bin/cipher.out \
+    local decrypt_cmd=()
+    if [ "${NSYS_ENABLED:-0}" -eq 1 ]; then
+        nsys_out="./cuda/bin/nsys_report_${dataset}_${stem}_${timestamp}_dec"
+        decrypt_cmd=(nsys profile -o "$nsys_out" --stats=true)
+        echo "[SCRIPT] Profiling output: $nsys_out"
+    fi
+    if ! "${decrypt_cmd[@]}" ./cuda/bin/cipher.out \
         "$encrypted_path" "$decrypted_path" password9 "$ROUNDS" 0 8 20 10 0 0 "$recovery_hex"; then
         echo "[ERROR] Decryption failed for $input_path"
         return 1

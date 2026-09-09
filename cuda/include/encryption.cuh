@@ -6,7 +6,6 @@
 
 // Standard headers
 #include <algorithm>
-#include <algorithm> // For std::swap
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -100,10 +99,9 @@ void print_encryption_report(const cv::Mat &image,
  *
  * @param d_pointers Struct containing device pointers.
  * @param image The image (already unstacked and padded on CPU).
- * @param params Encryption parameters.
  */
 void allocate_and_transfer_image(D_pointers &d_pointers, cv::Mat &image,
-                                 const EncryptionParams &params, bool verbose);
+                                 bool verbose);
 
 /**
  * @brief Transfers the processed image back from GPU and frees GPU memory.
