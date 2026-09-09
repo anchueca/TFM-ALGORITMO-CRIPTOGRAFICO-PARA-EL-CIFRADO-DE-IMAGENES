@@ -212,11 +212,20 @@ void warmup_gpu() {
   cudaDeviceSynchronize();
 }
 
-unsigned short calculate_image_hash(const cv::Mat &image, size_t length) {
+std::vector<unsigned short> calculate_image_hash(const cv::Mat &image,
+                                                 size_t length) {
   cv::Mat temp = image.isContinuous() ? image : image.clone();
   std::vector<unsigned char> h =
       generate_hash(temp.data, temp.total() * temp.elemSize(), length);
-  return h.size() >= 2 ? (h[0] << 8 | h[1]) : (h.size() ? h[0] : 0);
+  std::vector<unsigned short> hashes;
+  hashes.reserve((h.size() + 1) / 2);
+  for (size_t i = 0; i < h.size(); i += 2) {
+    unsigned short value = static_cast<unsigned short>(h[i]) << 8;
+    if (i + 1 < h.size())
+      value |= h[i + 1];
+    hashes.push_back(value);
+  }
+  return hashes;
 }
 
 #include "../include/steganography.hpp"
@@ -247,10 +256,11 @@ static std::vector<bool> hex_to_bits_local(const std::string &hex_str) {
   return bits;
 }
 
-unsigned short extract_message_caos(cv::Mat &image,
-                                    const std::vector<unsigned char> &stego_key,
-                                    const std::string &input_path,
-                                    const std::string &exif_hex) {
+std::vector<unsigned short>
+extract_message_caos(cv::Mat &image,
+                    const std::vector<unsigned char> &stego_key,
+                    const std::string &input_path,
+                    const std::string &exif_hex) {
   std::vector<bool> key_bits = bytes_to_bits(stego_key);
   std::vector<bool> msg_bits;
 
@@ -261,24 +271,29 @@ unsigned short extract_message_caos(cv::Mat &image,
     msg_bits = extract_message_caos_with_exif(image, key_bits, input_path);
   }
 
-  if (msg_bits.size() < 16)
-    return 0;
-
-  unsigned short hash = 0;
-  for (int i = 0; i < 16; ++i) {
-    if (msg_bits[i])
-      hash |= (1 << i);
+  std::vector<unsigned short> hashes;
+  hashes.reserve(msg_bits.size() / 16);
+  for (size_t offset = 0; offset + 16 <= msg_bits.size(); offset += 16) {
+    unsigned short hash = 0;
+    for (size_t i = 0; i < 16; ++i) {
+      if (msg_bits[offset + i])
+        hash |= static_cast<unsigned short>(1u << i);
+    }
+    hashes.push_back(hash);
   }
-  return hash;
+  return hashes;
 }
 
-void embed_message_caos(cv::Mat &image, unsigned short image_hash,
+void embed_message_caos(cv::Mat &image,
+                        const std::vector<unsigned short> &image_hash,
                         const std::vector<unsigned char> &stego_key,
                         const std::string &output_path) {
   std::vector<bool> key_bits = bytes_to_bits(stego_key);
-  std::vector<bool> msg_bits(16);
-  for (int i = 0; i < 16; ++i) {
-    msg_bits[i] = (image_hash >> i) & 1;
+  std::vector<bool> msg_bits(image_hash.size() * 16);
+  for (size_t hash_index = 0; hash_index < image_hash.size(); ++hash_index) {
+    for (size_t bit = 0; bit < 16; ++bit) {
+      msg_bits[hash_index * 16 + bit] = (image_hash[hash_index] >> bit) & 1;
+    }
   }
   embed_message_caos_with_exif(image, msg_bits, key_bits, output_path);
 }

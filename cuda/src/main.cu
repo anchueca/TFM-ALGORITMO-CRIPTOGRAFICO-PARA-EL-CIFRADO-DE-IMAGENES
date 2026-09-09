@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
                 << std::endl;
   }
 
-  // Calculate dimensions AFTER padding (or after unstack for decryption)
+  // Calculate dimensions AFTER padding
   const Image_dimensions img_dimensions = {
       static_cast<size_t>(processed_image.cols),
       static_cast<size_t>(processed_image.rows)};
@@ -93,18 +93,20 @@ int main(int argc, char **argv) {
   // Ophuscated phase
   try {
     if (config.encrypt) {
-      config.params.image_hash = calculate_image_hash(processed_image, 2);
+        const size_t cml_blocks = calculate_cml_blocks(img_dimensions.cols);
+      config.params.image_hash =
+          calculate_image_hash(processed_image, cml_blocks * 2);
       if (config.verbose)
-        std::cerr << " [INFO] Calculated Image Hash: "
-                  << config.params.image_hash << std::endl;
+        std::cerr << " [INFO] Calculated " << config.params.image_hash.size()
+                  << " per-block image hashes" << std::endl;
     } else {
       // Recovery the ophuscated image hash
       config.params.image_hash =
           extract_message_caos(processed_image, password_segments[3],
                                config.input_image_path, config.exif_hex);
       if (config.verbose)
-        std::cerr << " [INFO] Recovered Image Hash: "
-                  << config.params.image_hash << std::endl;
+        std::cerr << " [INFO] Recovered " << config.params.image_hash.size()
+                  << " per-block image hashes" << std::endl;
     }
   } catch (const std::exception &e) {
     cerr << "\n[FATAL ERROR] During image hash process: " << e.what() << endl;

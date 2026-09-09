@@ -15,6 +15,11 @@
 
 #define MAX_THREADS 64
 
+inline size_t calculate_cml_blocks(size_t columns) {
+    const size_t effective_threads = MAX_THREADS - 1;
+    return (columns + effective_threads - 1) / effective_threads;
+}
+
 /**
  * @brief Inverts a batch of permutations stored on the GPU.
  *

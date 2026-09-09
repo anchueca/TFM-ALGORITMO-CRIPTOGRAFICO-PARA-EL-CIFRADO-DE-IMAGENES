@@ -188,10 +188,8 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
   // threads only gives ~2-4 blocks. Using 64 threads gives ~8-16 blocks,
   // utilizing more SMs. Effective threads = MAX_THREADS - 1 (tid=0 is used for
   // halo/coupling)
-  int effective_threads = MAX_THREADS - 1;
   dim3 threadsPerBlock(MAX_THREADS);
-  dim3 numBlocks((img_dimensions.cols + effective_threads - 1) /
-                 effective_threads);
+  dim3 numBlocks(calculate_cml_blocks(img_dimensions.cols));
 
   // For permutations
   size_t block_size = params.block_size * params.block_size;
@@ -216,7 +214,11 @@ __host__ void generate_flow_stream_parallel(D_pointers &d_pointers,
                               numBlocks.x * sizeof(unsigned short)),
                    "Failed to allocate device memory for image automata state");
 
-    std::vector<unsigned short> init_states(numBlocks.x, params.image_hash);
+    if (params.image_hash.size() != numBlocks.x) {
+      throw std::runtime_error("Image hash count does not match CML blocks");
+    }
+
+    const std::vector<unsigned short> &init_states = params.image_hash;
 
     checkCudaError(cudaMemcpy(d_pointers.d_image_automata_state,
                               init_states.data(),

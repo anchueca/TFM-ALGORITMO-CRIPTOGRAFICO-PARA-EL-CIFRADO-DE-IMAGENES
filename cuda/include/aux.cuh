@@ -88,9 +88,10 @@ void stack_channels(cv::Mat &image, const cv::Mat &processed_image,
  *
  * @param image Input image.
  * @param length Desired hash length in bytes.
- * @return unsigned short 16-bit hash (truncated if length > 2).
+ * @return Hash split into 16-bit values, two bytes per value.
  */
-unsigned short calculate_image_hash(const cv::Mat &image, size_t length);
+std::vector<unsigned short> calculate_image_hash(const cv::Mat &image,
+                                                 size_t length);
 
 /**
  * @brief Extracts a hidden message (image hash) using EXIF metadata.
@@ -98,22 +99,24 @@ unsigned short calculate_image_hash(const cv::Mat &image, size_t length);
  * @param image The image with hidden info.
  * @param stego_key The password segment for steganography.
  * @param input_path Path to the image file to read EXIF.
- * @return unsigned short The extracted 16-bit hash.
+ * @return Hash split into 16-bit values, two bytes per value.
  */
-unsigned short extract_message_caos(cv::Mat &image,
-                                    const std::vector<unsigned char> &stego_key,
-                                    const std::string &input_path,
-                                    const std::string &exif_hex = "");
+std::vector<unsigned short>
+extract_message_caos(cv::Mat &image,
+                    const std::vector<unsigned char> &stego_key,
+                    const std::string &input_path,
+                    const std::string &exif_hex = "");
 
 /**
  * @brief Embeds a message (image hash) and stores recovery info in EXIF.
  *
  * @param image The image to modify.
- * @param image_hash The 16-bit hash to hide.
+ * @param image_hash The per-block 16-bit hashes to hide.
  * @param stego_key The password segment for steganography.
  * @param output_path Path to save the image (for EXIF).
  */
-void embed_message_caos(cv::Mat &image, unsigned short image_hash,
+void embed_message_caos(cv::Mat &image,
+                        const std::vector<unsigned short> &image_hash,
                         const std::vector<unsigned char> &stego_key,
                         const std::string &output_path);
 

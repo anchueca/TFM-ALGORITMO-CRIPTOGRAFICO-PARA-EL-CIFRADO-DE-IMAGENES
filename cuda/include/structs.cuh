@@ -1,6 +1,8 @@
 #ifndef STRUCT_CUH
 #define STRUCT_CUH
 
+#include <vector>
+
 /**
  * @file structs.cuh
  * @brief Data structures used throughout the encryption system.
@@ -58,7 +60,7 @@ struct EncryptionParams {
   size_t block_size;
   size_t automata_steps;
   size_t transition_length;
-  unsigned short image_hash;
+    std::vector<unsigned short> image_hash;
 };
 
 /**

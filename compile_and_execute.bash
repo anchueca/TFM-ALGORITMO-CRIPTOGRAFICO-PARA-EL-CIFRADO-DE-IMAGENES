@@ -13,6 +13,8 @@
 # Example:
 #   ./compile_and_execute.bash 3 float 1
 
+set -o pipefail
+
 # Parse arguments with defaults
 ROUNDS=${1:-3}
 PRECISION=${2:-float}
@@ -34,32 +36,80 @@ eval $BUILD_CMD || { echo "[ERROR] Build failed"; exit 1; }
 if [ "$PROFILE" -eq 1 ]; then
     if ! command -v nsys &>/dev/null; then
         echo "[WARNING] Nsight Systems not found. Continuing without profiling."
-        NSYS_CMD=""
+        NSYS_CMD=()
     else
-        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-        NSYS_OUT="./cuda/bin/nsys_report_$TIMESTAMP.qdrep"
-        NSYS_CMD="nsys profile -o $NSYS_OUT --stats=true"
-        echo "[SCRIPT] Profiling enabled. Output will be saved to $NSYS_OUT"
+        NSYS_ENABLED=1
     fi
 fi
 
-# Encrypt the test image
-echo "[SCRIPT] Running encryption..."
-ENCRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./repositorio/set3/lena3.tif ./cuda/bin/salida.tif password9 $ROUNDS 1 8 20 10 1 0"
-ENCRYPT_OUTPUT=$(eval $ENCRYPT_CMD 2>&1)
-echo "$ENCRYPT_OUTPUT"
+# Process every image while preserving the encryption/decryption flow used by
+# the original single-image test.
+process_image() {
+    local input_path="$1"
+    local relative_path="${input_path#./repositorio/}"
+    local dataset="${relative_path%%/*}"
+    local filename="${relative_path##*/}"
+    local stem="${filename%.*}"
+    local output_dir="./cuda/bin/results/$dataset"
+    local encrypted_path="$output_dir/${stem}.enc.tif"
+    local decrypted_path="$output_dir/${stem}.dec.tif"
+    local recovery_hex
+    local encrypt_output
+    local nsys_cmd=()
 
-# Extract Recovery Hex
-RECOVERY_HEX=$(echo "$ENCRYPT_OUTPUT" | grep "Recovery hex:" | tail -n 1 | sed 's/.*Recovery hex: \([0-9a-f]*\).*/\1/')
-RECOVERY_HEX=$(echo "$RECOVERY_HEX" | tr -d '[:space:]')
+    mkdir -p "$output_dir"
 
-if [ -n "$RECOVERY_HEX" ]; then
-    echo "[SCRIPT] Captured Recovery Hex: $RECOVERY_HEX"
-else
-    echo "[WARNING] Could not capture Recovery Hex. Decryption might fail if EXIF reading is broken."
+    if [ "${NSYS_ENABLED:-0}" -eq 1 ]; then
+        local timestamp
+        local nsys_out
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        nsys_out="./cuda/bin/nsys_report_${dataset}_${stem}_${timestamp}"
+        nsys_cmd=(nsys profile -o "$nsys_out" --stats=true)
+        echo "[SCRIPT] Profiling output: $nsys_out"
+    fi
+
+    echo -e "\n[SCRIPT] Encrypting: $input_path"
+    if ! encrypt_output=$("${nsys_cmd[@]}" ./cuda/bin/cipher.out \
+        "$input_path" "$encrypted_path" password9 "$ROUNDS" 1 8 20 10 1 0 2>&1); then
+        echo "$encrypt_output"
+        echo "[ERROR] Encryption failed for $input_path"
+        return 1
+    fi
+    echo "$encrypt_output"
+
+    recovery_hex=$(echo "$encrypt_output" |
+        grep "Recovery hex:" | tail -n 1 |
+        sed 's/.*Recovery hex: \([0-9a-fA-F]*\).*/\1/' |
+        tr -d '[:space:]')
+
+    if [ -z "$recovery_hex" ]; then
+        echo "[ERROR] Could not capture Recovery Hex for $input_path"
+        return 1
+    fi
+    echo "[SCRIPT] Captured Recovery Hex: $recovery_hex"
+
+    echo "[SCRIPT] Decrypting: $encrypted_path"
+    if ! "${nsys_cmd[@]}" ./cuda/bin/cipher.out \
+        "$encrypted_path" "$decrypted_path" password9 "$ROUNDS" 0 8 20 10 0 0 "$recovery_hex"; then
+        echo "[ERROR] Decryption failed for $input_path"
+        return 1
+    fi
+}
+
+mapfile -d '' IMAGES < <(find ./repositorio -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \
+    -o -iname '*.tif' -o -iname '*.tiff' -o -iname '*.bmp' \) \
+    -print0 | sort -z)
+
+if [ "${#IMAGES[@]}" -eq 0 ]; then
+    echo "[ERROR] No images found under ./repositorio"
+    exit 1
 fi
 
-# Decrypt the encrypted image
-echo -e "\n[SCRIPT] Running decryption..."
-DECRYPT_CMD="$NSYS_CMD ./cuda/bin/cipher.out ./cuda/bin/salida.tif ./cuda/bin/salidaC.tif password9 $ROUNDS 0 8 20 10 0 0 $RECOVERY_HEX"
-eval $DECRYPT_CMD
+FAILED=0
+for image_path in "${IMAGES[@]}"; do
+    process_image "$image_path" || FAILED=$((FAILED + 1))
+done
+
+echo -e "\n[SCRIPT] Processed ${#IMAGES[@]} image(s). Failed: $FAILED"
+exit "$FAILED"
