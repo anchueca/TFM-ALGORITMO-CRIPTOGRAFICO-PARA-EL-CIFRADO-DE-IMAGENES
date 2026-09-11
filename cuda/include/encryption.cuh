@@ -40,7 +40,7 @@ using namespace std;
  * @param encrypt True to encrypt, False to decrypt.
  */
 __host__ void encrypt_image(cv::Mat &image,
-                            std::vector<std::vector<unsigned char>> &password,
+                            const std::vector<std::vector<unsigned char>> &password,
                             const Image_dimensions &img_dimensions,
                             const EncryptionParams &params, bool verbose,
                             bool encrypt);
@@ -80,9 +80,9 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
  * @param block_size Block size used for block permutations.
  * @param rounds Number of rounds for this stage.
  */
-void unencryption_process(D_pointers &d_pointers,
-                          Image_dimensions img_dimensions, size_t block_size,
-                          const EncryptionParams &params, bool verbose);
+void decryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
+                        size_t block_size, const EncryptionParams &params,
+                        bool verbose);
 
 void warmup_gpu();
 

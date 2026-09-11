@@ -117,7 +117,7 @@ void transfer_back_and_cleanup(D_pointers &d_pointers, cv::Mat &image) {
 // =================================================================================
 
 __host__ void encrypt_image(cv::Mat &image,
-                            std::vector<std::vector<unsigned char>> &password,
+                            const std::vector<std::vector<unsigned char>> &password,
                             const Image_dimensions &img_dimensions,
                             const EncryptionParams &params, bool verbose,
                             bool encrypt) {
@@ -153,8 +153,8 @@ __host__ void encrypt_image(cv::Mat &image,
     encryption_process(d_pointers, img_dimensions, params.block_size, params,
                        verbose);
   } else {
-    unencryption_process(d_pointers, img_dimensions, params.block_size, params,
-                         verbose);
+    decryption_process(d_pointers, img_dimensions, params.block_size, params,
+                       verbose);
   }
 
   if (verbose)
@@ -318,9 +318,9 @@ void encryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
  *     c) XOR to reverse diffusion
  *  3. Reverse Initial Confusion: Inverse permutation
  */
-void unencryption_process(D_pointers &d_pointers,
-                          Image_dimensions img_dimensions, size_t block_size,
-                          const EncryptionParams &params, bool verbose) {
+void decryption_process(D_pointers &d_pointers, Image_dimensions img_dimensions,
+                        size_t block_size, const EncryptionParams &params,
+                        bool verbose) {
   if (verbose)
     std::cout << " > Starting Decryption (" << params.rounds << " rounds)..."
               << std::endl;
