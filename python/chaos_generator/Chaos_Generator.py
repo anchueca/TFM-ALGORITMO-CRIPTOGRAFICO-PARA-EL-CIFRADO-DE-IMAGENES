@@ -21,8 +21,15 @@ if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
 
+def cosine_cosine_map(x, r=6.1):
+    """Cosine-cosine map used by the CUDA implementation."""
+    t = r + 3 * x * x
+    return np.abs(np.cos(np.pi * r * np.cos(np.pi * t) * t))
+
+
 def uno(x, r=6.1):
-    return np.abs(np.cos(r * np.cos(np.pi * (r + 3 * x * x)) * (r + 3 * x * x) * np.pi))
+    """Backward-compatible name for the cosine-cosine map."""
+    return cosine_cosine_map(x, r)
 
 
 def logistic_map(x, r=3.9999):
@@ -76,14 +83,16 @@ def selectFunction(name):
         return henon_map, True
     elif name == "uno":
         return uno, False
+    elif name in ["cosine-cosine", "cosine_cosine", "coseno-coseno", "coseno_coseno"]:
+        return cosine_cosine_map, False
     else:
         return None, False
 
 
 def main():
     parser = argparse.ArgumentParser(description="Simulador de Mapas Caóticos")
-    parser.add_argument("--map", type=str, default="all", choices=["all", "logistic", "tent", "sine", "henon", "uno"],
-                        help="Mapa caótico a simular (default: all)")
+    parser.add_argument("--map", type=str, default="cosine-cosine", choices=["all", "logistic", "tent", "sine", "henon", "uno", "cosine-cosine", "coseno-coseno"],
+                        help="Mapa caótico a simular (default: cosine-cosine)")
     parser.add_argument("--iterations", type=int, default=100, help="Número de iteraciones (default: 100)")
     parser.add_argument("--x0", type=float, default=0.4, help="Condición inicial x0 (default: 0.4)")
     parser.add_argument("--save", type=str, default="", help="Ruta para guardar la imagen PNG (opcional)")

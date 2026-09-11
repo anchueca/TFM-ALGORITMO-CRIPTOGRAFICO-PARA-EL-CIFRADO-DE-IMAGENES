@@ -66,7 +66,7 @@ def compute_exponents(f, r_values, x0, iterations, points):
 
 def get_arguments():
     parser = argparse.ArgumentParser(description="Calcular los exponentes de Lyapunov para mapas 1D.")
-    parser.add_argument('function', nargs="?", type=str, default="logistic", help="Función caótica (ej: 'logistic', 'sine', 'tent', 'uno')")
+    parser.add_argument('function', nargs="?", type=str, default="cosine-cosine", help="Función caótica (ej: 'cosine-cosine', 'logistic', 'sine', 'tent')")
     parser.add_argument('r_min', nargs="?", type=float, default=2.5, help="Valor mínimo de r")
     parser.add_argument('r_max', nargs="?", type=float, default=4.0, help="Valor máximo de r")
     parser.add_argument('r_steps', nargs="?", type=int, default=500, help="Número de pasos en el intervalo r")

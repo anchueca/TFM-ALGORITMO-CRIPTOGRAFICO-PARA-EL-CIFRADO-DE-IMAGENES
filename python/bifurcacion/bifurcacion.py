@@ -53,7 +53,7 @@ def bifurcation(function, r, r_min, r_max, num_r, iterations, transition, initia
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Diagrama de bifurcación para mapas 1D")
-    parser.add_argument("functionName", nargs="?", default="logistic", help="Nombre de la función (ej: 'logistic', 'sine', 'tent', 'uno')", type=str)
+    parser.add_argument("functionName", nargs="?", default="cosine-cosine", help="Nombre de la función (ej: 'cosine-cosine', 'logistic', 'sine', 'tent')", type=str)
     parser.add_argument("r_min", nargs="?", default=2.5, help="Extremo inferior del intervalo r", type=float)
     parser.add_argument("r_max", nargs="?", default=4.0, help="Extremo superior del intervalo r", type=float)
     parser.add_argument("r_num", nargs="?", default=1000, help="Número de valores de r", type=int)
